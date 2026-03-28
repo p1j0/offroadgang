@@ -1,31 +1,27 @@
-# macOS
+# OS
 .DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.suo
+*.user
 
 # Logs
 *.log
-
-# Node (falls ihr später erweitert)
-node_modules/
 npm-debug.log*
 
-# Environment / Secrets
+# Dependencies (if you add a build step later)
+node_modules/
+package-lock.json
+yarn.lock
+
+# Environment / secrets
 .env
 .env.local
+.env.*.local
 
-# Editor files
-.vscode/
-.idea/
-
-# OS files
-Thumbs.db
-
-# Netlify (optional)
-.netlify
-
-# Build files (falls später)
+# Build output (if you add Vite/Webpack later)
 dist/
 build/
-
-# Temporary files
-*.tmp
-*.swp
