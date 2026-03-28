@@ -1,0 +1,31 @@
+# macOS
+.DS_Store
+
+# Logs
+*.log
+
+# Node (falls ihr später erweitert)
+node_modules/
+npm-debug.log*
+
+# Environment / Secrets
+.env
+.env.local
+
+# Editor files
+.vscode/
+.idea/
+
+# OS files
+Thumbs.db
+
+# Netlify (optional)
+.netlify
+
+# Build files (falls später)
+dist/
+build/
+
+# Temporary files
+*.tmp
+*.swp
