@@ -3,8 +3,6 @@
 Motorrad-Touren gemeinsam entdecken und planen.  
 Eine Single-Page-App ohne Build-Step – einfach die Dateien auf einen Webserver legen und loslegen.
 
-Web: https://offroadtours.netlify.app
-
 ---
 
 ## Features

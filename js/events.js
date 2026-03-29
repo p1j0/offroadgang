@@ -79,7 +79,6 @@ function attachEvents() {
     const date  =  document.getElementById('f-date')?.value  || '';
     const edate =  document.getElementById('f-edate')?.value || '';
     const dest  = (document.getElementById('f-dest')?.value  || '').trim();
-    const dist  = (document.getElementById('f-dist')?.value  || '').trim();
     const pw    =  document.getElementById('f-pw')?.value    || '';
 
     if (!name)           { toast('Tour-Name ist Pflichtfeld.', 'error'); return; }
@@ -91,7 +90,8 @@ function attachEvents() {
       const t = await createTour({
         name, description: desc, date,
         end_date: edate || null,
-        destination: dest, distance: dist,
+        destination: dest,
+        distance: '',
         join_password: pw,
       });
       state.myTourIds.add(t.id);
@@ -150,7 +150,11 @@ function attachEvents() {
 
 function afterTabRender() {
   if (state.currentTab === 'map') {
-    setTimeout(() => { initMap(state.currentTour); attachMapEvents(); }, 80);
+    setTimeout(() => {
+      initMap(state.currentTour);
+      attachMapEvents();
+      attachSidebarEvents();
+    }, 80);
   }
   if (state.currentTab === 'chat') {
     setTimeout(() => {
@@ -174,15 +178,30 @@ function attachMapEvents() {
     const file = e.target.files[0];
     if (!file) return;
 
-    const text  = await file.text();
-    const route = parseGPX(text);
+    const text = await file.text();
+    const data = parseGPX(text);  // returns { tracks, waypoints }
 
-    if (!route.length) { toast('Keine Route in GPX-Datei gefunden.', 'error'); return; }
+    const totalPts = data.tracks.reduce((s, t) => s + t.points.length, 0);
+    if (!totalPts && !data.waypoints.length) {
+      toast('Keine Route oder Wegpunkte in GPX-Datei gefunden.', 'error'); return;
+    }
 
     try {
-      await saveGPX(route);
-      toast(`✓ Route gespeichert (${route.length} Punkte)`);
-      drawRoute(route);
+      await saveGPX(data);
+
+      // Auto-calculate and persist distance from track data
+      const dist = calculateTotalDistance(data);
+      if (dist) {
+        await updateTourInfo({ distance: dist });
+        const hd = document.getElementById('hdr-dist'); if (hd) hd.textContent = '📏 ' + dist;
+      }
+
+      const summary = [
+        data.tracks.length    ? `${data.tracks.length} Track${data.tracks.length !== 1 ? 's' : ''}` : '',
+        data.waypoints.length ? `${data.waypoints.length} Wegpunkt${data.waypoints.length !== 1 ? 'e' : ''}` : '',
+        dist                  ? dist : '',
+      ].filter(Boolean).join(' · ');
+      toast(`✓ Gespeichert: ${summary}`);
       _refreshMapTab();
     } catch (e) { toast(e.message, 'error'); }
   });
@@ -200,6 +219,77 @@ function attachMapEvents() {
       toast('Route gelöscht');
       _refreshMapTab();
     } catch (e) { toast(e.message, 'error'); }
+  });
+}
+
+/* ----------------------------------------------------------
+   Map sidebar: track & waypoint click-to-highlight
+   ---------------------------------------------------------- */
+
+function attachSidebarEvents() {
+  let activeTrackIdx = null;
+  let activeWpIdx    = null;
+
+  const allItems = document.querySelectorAll('.map-sidebar-item[data-track-idx], .map-sidebar-item[data-wp-idx]');
+
+  function setActive(el) {
+    document.querySelectorAll('.map-sidebar-item').forEach(i => i.classList.remove('active'));
+    if (el) el.classList.add('active');
+  }
+
+  /* Waypoint visibility toggle */
+  document.getElementById('toggle-waypoints')?.addEventListener('click', e => {
+    e.stopPropagation();
+    const btn     = e.currentTarget;
+    const visible = toggleWaypoints();
+    btn.textContent = visible ? '👁 Alle' : '🚫 Alle';
+    btn.classList.toggle('map-sidebar-toggle--off', !visible);
+    // Dim sidebar items when hidden
+    document.querySelectorAll('[data-wp-idx]').forEach(el =>
+      el.style.opacity = visible ? '' : '0.35'
+    );
+  });
+
+  /* Track items */
+  document.querySelectorAll('[data-track-idx]').forEach(el => {
+    el.addEventListener('click', () => {
+      const idx = parseInt(el.dataset.trackIdx);
+      if (activeTrackIdx === idx) {
+        resetHighlight();
+        setActive(null);
+        activeTrackIdx = null;
+      } else {
+        highlightTrack(idx);
+        setActive(el);
+        activeTrackIdx = idx;
+        activeWpIdx    = null;
+      }
+    });
+  });
+
+  /* Waypoint items */
+  document.querySelectorAll('[data-wp-idx]').forEach(el => {
+    el.addEventListener('click', () => {
+      const idx = parseInt(el.dataset.wpIdx);
+      if (activeWpIdx === idx) {
+        resetHighlight();
+        setActive(null);
+        activeWpIdx = null;
+      } else {
+        highlightWaypoint(idx);
+        setActive(el);
+        activeWpIdx    = idx;
+        activeTrackIdx = null;
+      }
+    });
+  });
+
+  /* Reset button */
+  document.getElementById('reset-highlight')?.addEventListener('click', () => {
+    resetHighlight();
+    setActive(null);
+    activeTrackIdx = null;
+    activeWpIdx    = null;
   });
 }
 
@@ -255,17 +345,13 @@ function attachInfoEvents() {
   document.getElementById('edit-save')?.addEventListener('click', async () => {
     const updates = {
       destination: (document.getElementById('edit-dest')?.value || '').trim(),
-      distance:    (document.getElementById('edit-dist')?.value || '').trim(),
       description: (document.getElementById('edit-desc')?.value || '').trim(),
     };
     try {
       await updateTourInfo(updates);
       toast('✓ Gespeichert');
-      // Update header badges without a full re-render
       const hd = document.getElementById('hdr-dest'); if (hd) hd.textContent = '📍 ' + (updates.destination || 'Kein Ziel');
-      const hi = document.getElementById('hdr-dist'); if (hi) hi.textContent = '📏 ' + (updates.distance    || '—');
       const id = document.getElementById('info-dest'); if (id) id.textContent = updates.destination || '—';
-      const ii = document.getElementById('info-dist'); if (ii) ii.textContent = updates.distance    || '—';
     } catch (e) { toast(e.message, 'error'); }
   });
 

@@ -189,6 +189,12 @@ function renderTourCard(tour, locked) {
    Home calendar widget
    ---------------------------------------------------------- */
 
+/** Color palette for tours in the calendar — distinct from track colors */
+const TOUR_PALETTE = [
+  '#f07800', '#3dba7b', '#4a9eff', '#e04444',
+  '#c97bff', '#f5c400', '#ff6b9d', '#00d4aa',
+];
+
 function renderCalWidget() {
   const y = state.calMonth.getFullYear();
   const m = state.calMonth.getMonth();
@@ -196,29 +202,67 @@ function renderCalWidget() {
   const days     = daysInMonth(y, m);
   const firstDay = (new Date(y, m, 1).getDay() + 6) % 7;
   const today    = new Date();
+  const monthStart = new Date(y, m, 1);
+  const monthEnd   = new Date(y, m, days);
 
-  // Collect tour dates for the current user
-  const tourDates = new Set();
-  state.tours
-    .filter(t => state.myTourIds.has(t.id))
-    .forEach(t => {
-      const d = new Date(t.date + 'T12:00:00');
-      if (d.getFullYear() === y && d.getMonth() === m) tourDates.add(d.getDate());
-    });
+  const myTours = state.tours.filter(t => state.myTourIds.has(t.id));
+
+  // Map: dayNumber → [{name, color}]
+  const dayMap = {};
+  // Tours visible this month (for legend)
+  const visibleTours = [];
+
+  myTours.forEach((tour, idx) => {
+    const color = TOUR_PALETTE[idx % TOUR_PALETTE.length];
+    const start = new Date(tour.date + 'T12:00:00');
+    const end   = tour.end_date ? new Date(tour.end_date + 'T12:00:00') : start;
+
+    if (start > monthEnd || end < monthStart) return;
+    visibleTours.push({ name: tour.name, color });
+
+    // Walk every day of this tour that falls in the current month
+    const cursor = new Date(Math.max(start, monthStart));
+    const limit  = new Date(Math.min(end,   monthEnd));
+    while (cursor <= limit) {
+      const dn = cursor.getDate();
+      if (!dayMap[dn]) dayMap[dn] = [];
+      dayMap[dn].push({ name: tour.name, color });
+      cursor.setDate(cursor.getDate() + 1);
+    }
+  });
 
   const monthName = state.calMonth.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' });
   const total     = Math.ceil((firstDay + days) / 7) * 7;
 
   let cells = '';
   for (let i = 0; i < total; i++) {
-    const dn   = i - firstDay + 1;
-    const inM  = dn >= 1 && dn <= days;
-    const isToday  = inM && today.getDate() === dn && today.getMonth() === m && today.getFullYear() === y;
-    const hasTour  = inM && tourDates.has(dn);
-    const cls = ['cal-day', !inM && 'other-month', isToday && 'today', hasTour && 'has-tour']
+    const dn  = i - firstDay + 1;
+    const inM = dn >= 1 && dn <= days;
+
+    const isToday = inM && today.getDate() === dn && today.getMonth() === m && today.getFullYear() === y;
+    const tours   = inM ? (dayMap[dn] || []) : [];
+
+    const cls = ['cal-day', !inM && 'other-month', isToday && 'today', tours.length && 'has-tour']
       .filter(Boolean).join(' ');
-    cells += `<div class="${cls}">${inM ? dn : ''}</div>`;
+
+    // Subtle tint from the first tour
+    const bg = tours.length ? `background:${tours[0].color}26;` : '';
+
+    // Up to 3 colored dots for overlapping tours
+    const dots = tours.slice(0, 3)
+      .map(t => `<span class="cal-day-dot" style="background:${t.color}"></span>`)
+      .join('');
+
+    cells += `<div class="${cls}" style="${bg}">${inM ? dn : ''}${dots ? `<div class="cal-day-dots">${dots}</div>` : ''}</div>`;
   }
+
+  const legendHtml = visibleTours.length
+    ? visibleTours.map(t => `
+        <div class="cal-legend-item">
+          <span class="cal-legend-swatch" style="background:${t.color}"></span>
+          <span class="cal-legend-name">${esc(t.name)}</span>
+        </div>`).join('')
+    : `<span style="color:var(--muted);font-size:11px">Keine Touren in diesem Monat</span>`;
 
   return `
 <div class="calendar-widget">
@@ -231,9 +275,7 @@ function renderCalWidget() {
     ${['Mo','Di','Mi','Do','Fr','Sa','So'].map(d => `<div class="cal-dow">${d}</div>`).join('')}
     ${cells}
   </div>
-  <div class="cal-legend">
-    <span><span class="cal-legend-dot" style="background:rgba(240,120,0,0.25)"></span> Tour-Termin</span>
-  </div>
+  <div class="cal-legend-list">${legendHtml}</div>
 </div>`;
 }
 
@@ -271,10 +313,6 @@ function renderCreate() {
     <div class="form-group">
       <label>Ziel / Region</label>
       <input type="text" id="f-dest" placeholder="z.B. Titisee, BW" maxlength="80" />
-    </div>
-    <div class="form-group">
-      <label>Geschätzte Distanz</label>
-      <input type="text" id="f-dist" placeholder="z.B. 350 km" maxlength="30" />
     </div>
   </div>
   <div class="form-group">
@@ -388,28 +426,79 @@ function renderTab(tour) {
    ---------------------------------------------------------- */
 
 function renderMapTab(tour) {
-  const hasRoute = tour.gpx_route?.length > 0;
-  const isAdmin  = tour.admin_id === state.currentUser.id;
+  const gpxData = normalizeGPXRoute(tour.gpx_route);
+  const isAdmin = tour.admin_id === state.currentUser.id;
+  const hasTracks = gpxData?.tracks?.length > 0;
+  const hasWaypoints = gpxData?.waypoints?.length > 0;
+  const hasAny = hasTracks || hasWaypoints;
+
+  // Build sidebar track list
+  let sidebarHtml = '';
+  if (gpxData) {
+    if (hasTracks) {
+      const tracksHtml = gpxData.tracks.map((t, i) => {
+        const color = t.color || TRACK_COLORS[i % TRACK_COLORS.length];
+        return `<div class="map-sidebar-item" data-track-idx="${i}" title="${esc(t.name)}">
+          <span class="map-sidebar-dot" style="background:${color}"></span>
+          <span class="map-sidebar-label">${esc(t.name)}</span>
+          <span class="map-sidebar-count">${t.points.length} Pkt.</span>
+        </div>`;
+      }).join('');
+      sidebarHtml += `<div class="map-sidebar-section">
+        <div class="map-sidebar-title">Tracks (${gpxData.tracks.length})</div>
+        ${tracksHtml}
+        <div class="map-sidebar-item map-sidebar-reset" id="reset-highlight" style="margin-top:6px">
+          <span style="font-size:13px">↩</span>
+          <span class="map-sidebar-label" style="color:var(--muted)">Alle anzeigen</span>
+        </div>
+      </div>`;
+    }
+    if (hasWaypoints) {
+      const wpsHtml = gpxData.waypoints.map((w, i) => `
+        <div class="map-sidebar-item" data-wp-idx="${i}" title="${esc(w.name)}">
+          <span style="font-size:15px;flex-shrink:0">📍</span>
+          <span class="map-sidebar-label">${esc(w.name)}</span>
+        </div>`).join('');
+      sidebarHtml += `<div class="map-sidebar-section">
+        <div class="map-sidebar-title" style="display:flex;align-items:center;justify-content:space-between">
+          <span>Wegpunkte (${gpxData.waypoints.length})</span>
+          <button id="toggle-waypoints" class="map-sidebar-toggle" title="Wegpunkte ein-/ausblenden">👁 Alle</button>
+        </div>
+        ${wpsHtml}
+      </div>`;
+    }
+  } else {
+    sidebarHtml = `<div class="map-sidebar-empty">
+      ${isAdmin ? '📁 GPX hochladen um Tracks zu sehen' : 'Kein GPX vorhanden'}
+    </div>`;
+  }
 
   return `
-<div id="map-container">
-  <div id="map"></div>
-  <div class="map-controls">
-    ${isAdmin ? `
-    <label class="map-btn" for="gpx-up" style="cursor:pointer">
-      📁 GPX hochladen
-      <input type="file" id="gpx-up" accept=".gpx" style="display:none" />
-    </label>` : ''}
-    ${hasRoute ? `<button class="map-btn" id="gpx-dl">⬇️ GPX herunterladen</button>` : ''}
-    ${hasRoute && isAdmin ? `<button class="map-btn map-btn-danger" id="gpx-del">🗑️ Route löschen</button>` : ''}
+<div class="map-layout">
+  <div id="map-container">
+    <div id="map"></div>
+    <div class="map-controls">
+      ${isAdmin ? `
+      <label class="map-btn" for="gpx-up" style="cursor:pointer">
+        📁 GPX hochladen
+        <input type="file" id="gpx-up" accept=".gpx" style="display:none" />
+      </label>` : ''}
+      ${hasAny ? `<button class="map-btn" id="gpx-dl">⬇️ GPX herunterladen</button>` : ''}
+      ${hasAny && isAdmin ? `<button class="map-btn map-btn-danger" id="gpx-del">🗑️ Route löschen</button>` : ''}
+    </div>
+    <div class="map-info">
+      ${hasAny
+        ? `<span>📍 ${gpxData.tracks.length} Track${gpxData.tracks.length !== 1 ? 's' : ''}</span>
+           ${hasWaypoints ? `<span>🚩 ${gpxData.waypoints.length} Wegpunkt${gpxData.waypoints.length !== 1 ? 'e' : ''}</span>` : ''}`
+        : `<span>${isAdmin ? 'Keine Route — GPX-Datei hochladen' : 'Admin hat noch keine Route hochgeladen'}</span>`}
+    </div>
   </div>
-  <div class="map-info">
-    ${hasRoute
-      ? `<span>📍 Route geladen</span><span>📏 Punkte: <strong>${tour.gpx_route.length}</strong></span>`
-      : `<span>${isAdmin ? 'Keine Route — GPX-Datei hochladen um die Route anzuzeigen' : 'Admin hat noch keine Route hochgeladen'}</span>`}
+  <div class="map-sidebar" id="map-sidebar">
+    ${sidebarHtml}
   </div>
 </div>`;
 }
+
 
 /* ----------------------------------------------------------
    Chat tab
@@ -504,7 +593,7 @@ function renderInfoTab(tour) {
             <div id="info-dest">${esc(tour.destination || '—')}</div>
           </div>
           <div class="info-block">
-            <div class="info-label">Distanz</div>
+            <div class="info-label">Distanz <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted);font-size:10px">— automatisch aus GPX</span></div>
             <div id="info-dist">${esc(tour.distance || '—')}</div>
           </div>
           <div class="info-block">
@@ -519,10 +608,6 @@ function renderInfoTab(tour) {
         <div class="form-group">
           <label>Ziel / Region</label>
           <input type="text" id="edit-dest" value="${esc(tour.destination || '')}" />
-        </div>
-        <div class="form-group">
-          <label>Distanz</label>
-          <input type="text" id="edit-dist" value="${esc(tour.distance || '')}" />
         </div>
         <div class="form-group">
           <label>Beschreibung</label>
@@ -586,18 +671,30 @@ function renderTourCal(tour) {
   const firstDay = (new Date(y, m, 1).getDay() + 6) % 7;
   const today    = new Date();
 
-  // Plan dates in this month
   const planSet = new Set();
   state.tourPlanDates.forEach(pd => {
     const d = new Date(pd.date + 'T12:00:00');
     if (d.getFullYear() === y && d.getMonth() === m) planSet.add(d.getDate());
   });
 
-  // Tour start date
-  const tourD       = new Date(tour.date + 'T12:00:00');
-  const tourInMonth = tourD.getFullYear() === y && tourD.getMonth() === m;
+  // Full tour date range
+  const tourStart   = new Date(tour.date + 'T12:00:00');
+  const tourEnd     = tour.end_date ? new Date(tour.end_date + 'T12:00:00') : tourStart;
+  const monthStart  = new Date(y, m, 1);
+  const monthEnd    = new Date(y, m, days);
 
-  const total  = Math.ceil((firstDay + days) / 7) * 7;
+  // Which days in this month are inside the tour range?
+  const tourDays = new Set();
+  if (tourStart <= monthEnd && tourEnd >= monthStart) {
+    const cursor = new Date(Math.max(tourStart, monthStart));
+    const limit  = new Date(Math.min(tourEnd, monthEnd));
+    while (cursor <= limit) {
+      tourDays.add(cursor.getDate());
+      cursor.setDate(cursor.getDate() + 1);
+    }
+  }
+
+  const total     = Math.ceil((firstDay + days) / 7) * 7;
   const monthName = state.tourCalMonth.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' });
 
   let cells = '';
@@ -605,15 +702,33 @@ function renderTourCal(tour) {
     const dn  = i - firstDay + 1;
     const inM = dn >= 1 && dn <= days;
 
-    const isToday   = inM && today.getDate() === dn && today.getMonth() === m && today.getFullYear() === y;
-    const hasPlan   = inM && planSet.has(dn);
-    const isTourDay = tourInMonth && inM && tourD.getDate() === dn;
+    const isToday    = inM && today.getDate() === dn && today.getMonth() === m && today.getFullYear() === y;
+    const hasPlan    = inM && planSet.has(dn);
+    const inTour     = inM && tourDays.has(dn);
+    const isStart    = inTour && new Date(y, m, dn).toDateString() === tourStart.toDateString();
+    const isEnd      = inTour && new Date(y, m, dn).toDateString() === tourEnd.toDateString();
+    const isSingle   = isStart && isEnd;
 
-    const cls   = ['cal-day', !inM && 'other-month', isToday && 'today', hasPlan && 'has-tour'].filter(Boolean).join(' ');
-    const style = isTourDay ? ' style="background:var(--accent)!important;color:#000!important;font-weight:700"' : '';
+    const cls = ['cal-day', !inM && 'other-month', isToday && 'today', hasPlan && 'has-tour']
+      .filter(Boolean).join(' ');
 
-    cells += `<div class="${cls}"${style}>${inM ? dn : ''}</div>`;
+    let style = '';
+    if (inTour) {
+      if (isSingle) {
+        style = 'background:var(--accent);color:#000;font-weight:700;border-radius:6px;';
+      } else if (isStart) {
+        style = 'background:var(--accent);color:#000;font-weight:700;border-radius:6px 0 0 6px;';
+      } else if (isEnd) {
+        style = 'background:var(--accent);color:#000;font-weight:700;border-radius:0 6px 6px 0;';
+      } else {
+        style = 'background:rgba(240,120,0,0.35);color:var(--text);border-radius:0;';
+      }
+    }
+
+    cells += `<div class="${cls}" style="${style}">${inM ? dn : ''}</div>`;
   }
+
+  const hasRange = tour.end_date && tour.end_date !== tour.date;
 
   return `
 <div class="calendar-widget" style="background:var(--surface2)">
@@ -626,9 +741,15 @@ function renderTourCal(tour) {
     ${['Mo','Di','Mi','Do','Fr','Sa','So'].map(d => `<div class="cal-dow">${d}</div>`).join('')}
     ${cells}
   </div>
-  <div class="cal-legend">
-    <span><span class="cal-legend-dot" style="background:var(--accent)"></span> Startdatum</span>
-    <span><span class="cal-legend-dot" style="background:rgba(240,120,0,0.25)"></span> Planungstermin</span>
+  <div class="cal-legend-list" style="margin-top:12px">
+    <div class="cal-legend-item">
+      <span class="cal-legend-swatch" style="background:var(--accent)"></span>
+      <span class="cal-legend-name">${hasRange ? 'Tourdauer' : 'Startdatum'}</span>
+    </div>
+    <div class="cal-legend-item">
+      <span class="cal-legend-swatch" style="background:rgba(240,120,0,0.35)"></span>
+      <span class="cal-legend-name">Planungstermin</span>
+    </div>
   </div>
 </div>`;
 }

@@ -390,15 +390,49 @@ select option       { background: var(--surface2); }
   background: var(--accent);
 }
 
-.cal-legend {
-  margin-top: 12px;
+.cal-day.has-tour { font-weight: 600; }
+.cal-day.has-tour::after { display: none; } /* dots handled by .cal-day-dots */
+
+/* Per-tour colored dots inside a day cell */
+.cal-day-dots {
   display: flex;
-  gap: 14px;
-  font-size: 11px;
-  color: var(--muted);
-  flex-wrap: wrap;
+  justify-content: center;
+  gap: 2px;
+  position: absolute;
+  bottom: 3px;
+  left: 0; right: 0;
 }
-.cal-legend-dot { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.cal-day-dot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+/* Legend list below calendar */
+.cal-legend-list {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cal-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text);
+}
+.cal-legend-swatch {
+  width: 12px; height: 12px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.cal-legend-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 /* ============================================================
    PAGE FORM (create / join)
@@ -677,3 +711,126 @@ select option       { background: var(--surface2); }
   from { opacity: 0; transform: translateY(24px); }
   to   { opacity: 1; transform: translateY(0);    }
 }
+
+/* ============================================================
+   MAP LAYOUT WITH SIDEBAR
+   ============================================================ */
+
+.map-layout {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* #map-container already has position:relative from earlier rules;
+   we just need it to fill the remaining horizontal space */
+#map-container {
+  flex: 1;
+  min-width: 0; /* prevent flex overflow */
+  position: relative;
+}
+
+/* ---- Sidebar ---- */
+.map-sidebar {
+  width: 256px;
+  flex-shrink: 0;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.map-sidebar-section {
+  padding: 14px 12px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.map-sidebar-section:last-child { border-bottom: none; }
+
+.map-sidebar-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  margin-bottom: 8px;
+  padding: 0 4px;
+}
+
+.map-sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 8px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background 0.12s;
+  min-width: 0;
+}
+.map-sidebar-item:hover { background: var(--surface2); }
+.map-sidebar-item.active {
+  background: rgba(240, 120, 0, 0.14);
+  outline: 1px solid rgba(240, 120, 0, 0.3);
+}
+
+.map-sidebar-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 2px rgba(255,255,255,0.15);
+}
+
+.map-sidebar-label {
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
+.map-sidebar-count {
+  font-size: 11px;
+  color: var(--muted);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.map-sidebar-reset {
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  padding-top: 8px;
+}
+
+.map-sidebar-empty {
+  padding: 24px 16px;
+  font-size: 13px;
+  color: var(--muted);
+  text-align: center;
+  line-height: 1.6;
+}
+
+/* Responsive: sidebar moves below map on small screens */
+@media (max-width: 720px) {
+  .map-layout    { flex-direction: column; }
+  .map-sidebar   { width: 100%; height: 180px; border-left: none; border-top: 1px solid var(--border); }
+  #map-container { flex: 1; }
+}
+
+/* Waypoint toggle button inside sidebar */
+.map-sidebar-toggle {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-family: var(--font-body);
+  padding: 2px 7px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.map-sidebar-toggle:hover          { border-color: var(--accent); color: var(--text); }
+.map-sidebar-toggle--off           { border-color: var(--danger); color: var(--danger); }
+.map-sidebar-toggle--off:hover     { border-color: var(--danger); }
