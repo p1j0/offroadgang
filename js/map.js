@@ -16,9 +16,14 @@ function initMap(tour) {
   const container = document.getElementById('map');
   if (!container) return;
 
+  // Das DOM-Element wurde beim Tab-Wechsel neu erstellt,
+  // daher immer die alte Instanz zerstören und neu aufbauen.
   if (mapInstance) {
-    mapInstance.invalidateSize();
-    return;
+    mapInstance.remove();
+    mapInstance  = null;
+    gpxLayer     = null;
+    startMarker  = null;
+    endMarker    = null;
   }
 
   mapInstance = L.map('map', { center: [48.2, 9.5], zoom: 7, zoomControl: true });
