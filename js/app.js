@@ -74,6 +74,13 @@ function render() {
  * Checks for an existing Supabase session and routes accordingly.
  */
 async function init() {
+  // Read invite hash once, then clean the URL so it doesn't interfere
+  const joinId = location.hash.startsWith('#join=') ? location.hash.slice(6) : null;
+  if (joinId) {
+    state.preJoinId = joinId;
+    history.replaceState(null, '', location.pathname + location.search);
+  }
+
   try {
     const { data: { session } } = await sb.auth.getSession();
 
@@ -87,7 +94,18 @@ async function init() {
       if (profile) {
         state.currentUser = { id: session.user.id, username: profile.username };
         state.profileCache[session.user.id] = profile.username;
-        await navigateTo('home');
+
+        if (joinId) {
+          // Load tours so we know if the user is already a member
+          await loadHomeData();
+          if (state.myTourIds.has(joinId)) {
+            await navigateTo('tour', { currentTourId: joinId, currentTab: 'map' });
+          } else {
+            await navigateTo('join');
+          }
+        } else {
+          await navigateTo('home');
+        }
         return;
       }
     }
@@ -95,7 +113,7 @@ async function init() {
     console.error('[init] session check failed:', e);
   }
 
-  // No valid session → show auth screen
+  // No valid session → auth screen (preJoinId already saved above)
   state.authMode = 'login';
   state.view     = 'auth';
   render();

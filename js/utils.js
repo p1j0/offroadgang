@@ -57,3 +57,17 @@ function setBtn(id, loading, label = '') {
 function usernameToEmail(username) {
   return username.toLowerCase().replace(/[^a-z0-9_.-]/g, '_') + '@motoroute.app';
 }
+
+/**
+ * Copy a shareable tour invite link to the clipboard.
+ * Format: <origin><pathname>#join=TOUR_ID
+ * @param {string} tourId
+ */
+function copyTourLink(tourId) {
+  const url = location.origin + location.pathname + '#join=' + tourId;
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(url).then(() => toast('🔗 Einladungslink kopiert!'));
+  } else {
+    prompt('Link kopieren:', url);
+  }
+}

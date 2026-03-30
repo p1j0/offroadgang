@@ -129,7 +129,7 @@ label {
   margin-bottom: 7px;
 }
 
-input,
+input:not([type="checkbox"]),
 textarea,
 select {
   width: 100%;
@@ -834,3 +834,54 @@ select option       { background: var(--surface2); }
 .map-sidebar-toggle:hover          { border-color: var(--accent); color: var(--text); }
 .map-sidebar-toggle--off           { border-color: var(--danger); color: var(--danger); }
 .map-sidebar-toggle--off:hover     { border-color: var(--danger); }
+
+/* Invite link icon button on tour cards */
+.btn-copy-link {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--muted);
+  font-size: 15px;
+  width: 30px; height: 30px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+.btn-copy-link:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(240,120,0,0.08);
+}
+
+/* Calendar "Alle Touren anzeigen" checkbox */
+.cal-show-all-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+.cal-show-all-label input[type="checkbox"] {
+  width: 15px; height: 15px;
+  accent-color: var(--accent);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.cal-show-all-label:hover { color: var(--text); }
+
+/* Divider inside legend for "Andere Touren" */
+.cal-legend-divider {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  margin-top: 8px;
+  margin-bottom: 4px;
+}

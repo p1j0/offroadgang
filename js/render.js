@@ -178,9 +178,12 @@ function renderTourCard(tour, locked) {
   </div>
   <div class="tour-card-footer">
     <span style="font-size:12px;color:var(--muted)">von ${esc(adminName)}</span>
-    ${isMine
-      ? `<button class="btn btn-primary btn-sm" data-open-id="${tour.id}">Öffnen →</button>`
-      : `<button class="btn btn-ghost btn-sm"   data-join-id="${tour.id}">Beitreten</button>`}
+    <div style="display:flex;gap:6px;align-items:center">
+      <button class="btn-copy-link" data-copy-id="${tour.id}" title="Einladungslink kopieren">🔗</button>
+      ${isMine
+        ? `<button class="btn btn-primary btn-sm" data-open-id="${tour.id}">Öffnen →</button>`
+        : `<button class="btn btn-ghost btn-sm"   data-join-id="${tour.id}">Beitreten</button>`}
+    </div>
   </div>
 </div>`;
 }
@@ -205,28 +208,35 @@ function renderCalWidget() {
   const monthStart = new Date(y, m, 1);
   const monthEnd   = new Date(y, m, days);
 
-  const myTours = state.tours.filter(t => state.myTourIds.has(t.id));
+  const myTours    = state.tours.filter(t =>  state.myTourIds.has(t.id));
+  const otherTours = state.tours.filter(t => !state.myTourIds.has(t.id));
+  const toursToShow = state.calShowAll ? [...myTours, ...otherTours] : myTours;
 
-  // Map: dayNumber → [{name, color}]
+  // Map: dayNumber → [{name, color, isMine}]
   const dayMap = {};
-  // Tours visible this month (for legend)
-  const visibleTours = [];
+  const visibleMine  = [];
+  const visibleOther = [];
 
-  myTours.forEach((tour, idx) => {
-    const color = TOUR_PALETTE[idx % TOUR_PALETTE.length];
+  toursToShow.forEach((tour, idx) => {
+    const isMine = state.myTourIds.has(tour.id);
+    // Own tours use the palette; other tours use muted grey tones
+    const color  = isMine
+      ? TOUR_PALETTE[myTours.indexOf(tour) % TOUR_PALETTE.length]
+      : '#7a7880';
+
     const start = new Date(tour.date + 'T12:00:00');
     const end   = tour.end_date ? new Date(tour.end_date + 'T12:00:00') : start;
 
     if (start > monthEnd || end < monthStart) return;
-    visibleTours.push({ name: tour.name, color });
+    if (isMine) visibleMine.push({ name: tour.name, color });
+    else        visibleOther.push({ name: tour.name, color });
 
-    // Walk every day of this tour that falls in the current month
     const cursor = new Date(Math.max(start, monthStart));
     const limit  = new Date(Math.min(end,   monthEnd));
     while (cursor <= limit) {
       const dn = cursor.getDate();
       if (!dayMap[dn]) dayMap[dn] = [];
-      dayMap[dn].push({ name: tour.name, color });
+      dayMap[dn].push({ name: tour.name, color, isMine });
       cursor.setDate(cursor.getDate() + 1);
     }
   });
@@ -236,33 +246,43 @@ function renderCalWidget() {
 
   let cells = '';
   for (let i = 0; i < total; i++) {
-    const dn  = i - firstDay + 1;
-    const inM = dn >= 1 && dn <= days;
-
+    const dn   = i - firstDay + 1;
+    const inM  = dn >= 1 && dn <= days;
     const isToday = inM && today.getDate() === dn && today.getMonth() === m && today.getFullYear() === y;
     const tours   = inM ? (dayMap[dn] || []) : [];
+
+    // Tint based on first own tour; fall back to first other tour (dimmer)
+    const firstMine  = tours.find(t => t.isMine);
+    const firstOther = tours.find(t => !t.isMine);
+    const bg = firstMine  ? `background:${firstMine.color}26;`
+             : firstOther ? `background:${firstOther.color}18;` : '';
 
     const cls = ['cal-day', !inM && 'other-month', isToday && 'today', tours.length && 'has-tour']
       .filter(Boolean).join(' ');
 
-    // Subtle tint from the first tour
-    const bg = tours.length ? `background:${tours[0].color}26;` : '';
-
-    // Up to 3 colored dots for overlapping tours
     const dots = tours.slice(0, 3)
-      .map(t => `<span class="cal-day-dot" style="background:${t.color}"></span>`)
+      .map(t => `<span class="cal-day-dot" style="background:${t.color};opacity:${t.isMine ? 1 : 0.45}"></span>`)
       .join('');
 
     cells += `<div class="${cls}" style="${bg}">${inM ? dn : ''}${dots ? `<div class="cal-day-dots">${dots}</div>` : ''}</div>`;
   }
 
-  const legendHtml = visibleTours.length
-    ? visibleTours.map(t => `
-        <div class="cal-legend-item">
-          <span class="cal-legend-swatch" style="background:${t.color}"></span>
-          <span class="cal-legend-name">${esc(t.name)}</span>
-        </div>`).join('')
-    : `<span style="color:var(--muted);font-size:11px">Keine Touren in diesem Monat</span>`;
+  const legendMine  = visibleMine.map(t => `
+    <div class="cal-legend-item">
+      <span class="cal-legend-swatch" style="background:${t.color}"></span>
+      <span class="cal-legend-name">${esc(t.name)}</span>
+    </div>`).join('');
+
+  const legendOther = visibleOther.length && state.calShowAll ? `
+    <div class="cal-legend-divider">Andere Touren</div>
+    ${visibleOther.map(t => `
+    <div class="cal-legend-item" style="opacity:.55">
+      <span class="cal-legend-swatch" style="background:${t.color}"></span>
+      <span class="cal-legend-name">${esc(t.name)}</span>
+    </div>`).join('')}` : '';
+
+  const legendHtml = (legendMine + legendOther) ||
+    `<span style="color:var(--muted);font-size:11px">Keine Touren in diesem Monat</span>`;
 
   return `
 <div class="calendar-widget">
@@ -276,6 +296,10 @@ function renderCalWidget() {
     ${cells}
   </div>
   <div class="cal-legend-list">${legendHtml}</div>
+  <label class="cal-show-all-label">
+    <input type="checkbox" id="cal-show-all" ${state.calShowAll ? 'checked' : ''} />
+    Alle Touren anzeigen
+  </label>
 </div>`;
 }
 
@@ -395,6 +419,7 @@ function renderTour() {
       </span>
       <span class="tag tag-muted" id="hdr-dest">📍 ${esc(tour.destination || 'Kein Ziel')}</span>
       <span class="tag tag-muted" id="hdr-dist">📏 ${esc(tour.distance    || '—')}</span>
+      <button class="btn btn-ghost btn-sm" data-copy-id="${tour.id}">🔗 Einladen</button>
     </div>
   </div>
 
@@ -516,7 +541,17 @@ function renderChatTab() {
          </div>`
       : msgs.map(m => {
           const mine = m.user_id === state.currentUser.id;
-          const time = new Date(m.created_at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+          const msgDate = new Date(m.created_at);
+          const today   = new Date();
+          const isToday = msgDate.toDateString() === today.toDateString();
+          const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
+          const isYesterday = msgDate.toDateString() === yesterday.toDateString();
+
+          const datePart = isToday     ? 'Heute'
+                         : isYesterday ? 'Gestern'
+                         : msgDate.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' });
+          const timePart = msgDate.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+          const time = `${datePart}, ${timePart}`;
           return `
 <div class="chat-msg ${mine ? 'mine' : ''}">
   <div class="chat-bubble">${esc(m.text)}</div>
@@ -606,6 +641,10 @@ function renderInfoTab(tour) {
         <div class="divider"></div>
         <h3 style="font-size:15px;font-weight:600;margin-bottom:14px">⚙️ Infos bearbeiten</h3>
         <div class="form-group">
+          <label>Tour-Name</label>
+          <input type="text" id="edit-name" value="${esc(tour.name)}" maxlength="60" />
+        </div>
+        <div class="form-group">
           <label>Ziel / Region</label>
           <input type="text" id="edit-dest" value="${esc(tour.destination || '')}" />
         </div>
@@ -614,7 +653,13 @@ function renderInfoTab(tour) {
           <textarea id="edit-desc">${esc(tour.description || '')}</textarea>
         </div>
         <button class="btn btn-primary btn-sm" id="edit-save">Änderungen speichern</button>
-        ` : ''}
+        <div class="divider"></div>
+        <h3 style="font-size:15px;font-weight:600;margin-bottom:12px;color:var(--danger)">⚠️ Gefahrenzone</h3>
+        <button class="btn btn-danger btn-sm" id="delete-tour-btn" style="width:100%;justify-content:center">🗑️ Tour endgültig löschen</button>
+        ` : `
+        <div class="divider"></div>
+        <button class="btn btn-ghost btn-sm" id="leave-tour-btn" style="width:100%;justify-content:center;color:var(--danger);border-color:var(--danger)">🚪 Tour verlassen</button>
+        `}
       </div>
 
       <!-- Right: planning calendar -->
