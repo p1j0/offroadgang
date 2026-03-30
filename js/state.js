@@ -23,6 +23,8 @@ const state = {
   tourMembers:   [],
   tourMessages:  [],
   tourPlanDates: [],
+  tourChangelog: [],
+  tabBadges:     {},   // { chat: [{text,time},...], changelog: [...], info: [...] }
 
   /* Calendar */
   calMonth:     new Date(),   // home calendar

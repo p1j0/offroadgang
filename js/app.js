@@ -16,9 +16,71 @@
  * @param {string} view   – target view name
  * @param {object} [params] – extra state fields to merge
  */
+/* ----------------------------------------------------------
+   Realtime chat subscription
+   ---------------------------------------------------------- */
+
+let realtimeChannel = null;
+
+/**
+ * Subscribe to new messages for the given tour via Supabase Realtime.
+ * Automatically appends incoming messages to the chat DOM.
+ * @param {string} tourId
+ */
+function subscribeToChat(tourId) {
+  unsubscribeFromChat(); // always clean up first
+
+  realtimeChannel = sb
+    .channel(`chat:${tourId}`)
+    .on(
+      'postgres_changes',
+      {
+        event:  'INSERT',
+        schema: 'public',
+        table:  'messages',
+        filter: `tour_id=eq.${tourId}`,
+      },
+      (payload) => {
+        const msg = payload.new;
+        // Avoid duplicates: skip messages sent by this user
+        // (already added optimistically — but we removed that, so always append)
+        state.tourMessages.push(msg);
+        _appendChatMessage(msg);
+      }
+    )
+    .subscribe();
+}
+
+/**
+ * Remove the active Realtime subscription, if any.
+ */
+function unsubscribeFromChat() {
+  if (realtimeChannel) {
+    sb.removeChannel(realtimeChannel);
+    realtimeChannel = null;
+  }
+}
+
+/**
+ * Returns true if the current user is admin or co-admin of the current tour.
+ */
+function isCurrentUserAdmin() {
+  const tour = state.currentTour;
+  if (!tour) return false;
+  if (tour.admin_id === state.currentUser?.id) return true;
+  return (tour.co_admin_ids || []).includes(state.currentUser?.id);
+}
+
+/* ----------------------------------------------------------
+   Router
+   ---------------------------------------------------------- */
+
 async function navigateTo(view, params = {}) {
   // Tear down map when leaving the tour detail page
   if (mapInstance && view !== 'tour') destroyMap();
+
+  // Tear down realtime when leaving a tour
+  if (view !== 'tour') unsubscribeFromChat();
 
   // Merge any extra params into global state
   Object.assign(state, params);
@@ -26,7 +88,10 @@ async function navigateTo(view, params = {}) {
   // Load data required for the target view
   try {
     if (view === 'home' && state.currentUser) await loadHomeData();
-    if (view === 'tour' && state.currentTourId) await loadTourData(state.currentTourId);
+    if (view === 'tour' && state.currentTourId) {
+      await loadTourData(state.currentTourId);
+      subscribeToChat(state.currentTourId);
+    }
   } catch (e) {
     console.error('[navigateTo] data fetch error:', e);
   }

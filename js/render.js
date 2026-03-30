@@ -154,7 +154,7 @@ function renderHome() {
 
 function renderTourCard(tour, locked) {
   const date     = new Date(tour.date + 'T12:00:00');
-  const isAdmin  = tour.admin_id === state.currentUser.id;
+  const isAdmin  = tour.admin_id === state.currentUser.id || (tour.co_admin_ids||[]).includes(state.currentUser.id);
   const isMine   = state.myTourIds.has(tour.id);
   const dateStr  = date.toLocaleDateString('de-DE', { day: '2-digit', month: 'short', year: 'numeric' });
   const adminName = state.profileCache[tour.admin_id] || '…';
@@ -304,6 +304,56 @@ function renderCalWidget() {
 }
 
 /* ----------------------------------------------------------
+   Changelog tab
+   ---------------------------------------------------------- */
+
+function renderChangelogTab() {
+  const entries = state.tourChangelog;
+
+  if (!entries.length) {
+    return `<div class="tab-scroll"><div style="padding:40px;text-align:center;color:var(--muted)">
+      <div style="font-size:40px;margin-bottom:12px">📝</div>
+      <div style="font-family:var(--font-display);font-size:22px;letter-spacing:1px;color:var(--text);margin-bottom:6px">Noch keine Einträge</div>
+      <div style="font-size:13px">Änderungen an der Tour werden hier automatisch protokolliert.</div>
+    </div></div>`;
+  }
+
+  const rows = entries.map(e => {
+    const dt  = new Date(e.created_at);
+    const date = dt.toLocaleDateString('de-DE', { day:'2-digit', month:'2-digit', year:'2-digit' });
+    const time = dt.toLocaleTimeString('de-DE', { hour:'2-digit', minute:'2-digit' });
+
+    const hasOld = e.old_value && e.old_value !== '';
+    const hasNew = e.new_value && e.new_value !== '';
+
+    let changeHtml = '';
+    if (hasOld && hasNew) {
+      changeHtml = `<span class="cl-old">${esc(e.old_value)}</span>
+                    <span class="cl-arrow">→</span>
+                    <span class="cl-new">${esc(e.new_value)}</span>`;
+    } else if (hasNew) {
+      changeHtml = `<span class="cl-new">+ ${esc(e.new_value)}</span>`;
+    } else if (hasOld) {
+      changeHtml = `<span class="cl-old">− ${esc(e.old_value)}</span>`;
+    }
+
+    return `<div class="cl-row">
+      <div class="cl-meta">
+        <span class="cl-user">${esc(e.username)}</span>
+        <span class="cl-time">${date}, ${time}</span>
+      </div>
+      <div class="cl-field">${esc(e.field)}</div>
+      <div class="cl-change">${changeHtml}</div>
+    </div>`;
+  }).join('');
+
+  return `<div class="tab-scroll"><div style="padding:24px;max-width:760px">
+    <h2 style="font-family:var(--font-display);font-size:28px;letter-spacing:1px;margin-bottom:20px">Change Log</h2>
+    <div class="cl-list">${rows}</div>
+  </div></div>`;
+}
+
+/* ----------------------------------------------------------
    Create tour form
    ---------------------------------------------------------- */
 
@@ -399,12 +449,13 @@ function renderTour() {
   const tour = state.currentTour;
   if (!tour) return '<div style="padding:40px;color:var(--muted)">Tour nicht gefunden.</div>';
 
-  const isAdmin = tour.admin_id === state.currentUser.id;
+  const isAdmin = isCurrentUserAdmin();
   const tabs    = [
     { id: 'map',          label: '🗺️ Karte' },
     { id: 'chat',         label: '💬 Chat' },
     { id: 'participants', label: '👥 Teilnehmer' },
     { id: 'info',         label: '📋 Info & Kalender' },
+    { id: 'changelog',    label: '📝 Change Log' },
   ];
 
   return `
@@ -424,10 +475,24 @@ function renderTour() {
   </div>
 
   <div class="tour-tabs">
-    ${tabs.map(t => `
-      <button class="tab-btn ${state.currentTab === t.id ? 'active' : ''}" data-tab="${t.id}">
+    ${tabs.map(t => {
+      const badge   = state.tabBadges[t.id];
+      const isActive = state.currentTab === t.id;
+      const tooltipLines = badge
+        ? badge.slice(0, 5).map(b => {
+            const time = b.time.toLocaleTimeString('de-DE', { hour:'2-digit', minute:'2-digit' });
+            const date = b.time.toLocaleDateString('de-DE', { day:'2-digit', month:'2-digit' });
+            return `${date} ${time}  ${b.text}`;
+          }).join('&#10;')
+        : '';
+      return `
+      <button class="tab-btn ${isActive ? 'active' : ''}" data-tab="${t.id}">
         ${t.label}
-      </button>`).join('')}
+        ${badge && !isActive
+          ? `<span class="tab-badge" title="${tooltipLines}">${badge.length > 9 ? '9+' : badge.length}</span>`
+          : ''}
+      </button>`;
+    }).join('')}
   </div>
 
   <div class="tab-content" id="tab-content">
@@ -442,6 +507,7 @@ function renderTab(tour) {
     case 'chat':         return renderChatTab();
     case 'participants': return renderParticipantsTab();
     case 'info':         return renderInfoTab(tour);
+    case 'changelog':    return renderChangelogTab();
     default: return '';
   }
 }
@@ -452,7 +518,7 @@ function renderTab(tour) {
 
 function renderMapTab(tour) {
   const gpxData = normalizeGPXRoute(tour.gpx_route);
-  const isAdmin = tour.admin_id === state.currentUser.id;
+  const isAdmin = isCurrentUserAdmin();
   const hasTracks = gpxData?.tracks?.length > 0;
   const hasWaypoints = gpxData?.waypoints?.length > 0;
   const hasAny = hasTracks || hasWaypoints;
@@ -505,11 +571,18 @@ function renderMapTab(tour) {
     <div class="map-controls">
       ${isAdmin ? `
       <label class="map-btn" for="gpx-up" style="cursor:pointer">
-        📁 GPX hochladen
+        <span class="map-btn-icon">📁</span>
+        <span class="map-btn-label">GPX hochladen</span>
         <input type="file" id="gpx-up" accept=".gpx" style="display:none" />
       </label>` : ''}
-      ${hasAny ? `<button class="map-btn" id="gpx-dl">⬇️ GPX herunterladen</button>` : ''}
-      ${hasAny && isAdmin ? `<button class="map-btn map-btn-danger" id="gpx-del">🗑️ Route löschen</button>` : ''}
+      ${hasAny ? `<button class="map-btn" id="gpx-dl">
+        <span class="map-btn-icon">⬇️</span>
+        <span class="map-btn-label">GPX herunterladen</span>
+      </button>` : ''}
+      ${hasAny && isAdmin ? `<button class="map-btn map-btn-danger" id="gpx-del">
+        <span class="map-btn-icon">🗑️</span>
+        <span class="map-btn-label">Route löschen</span>
+      </button>` : ''}
     </div>
     <div class="map-info">
       ${hasAny
@@ -571,6 +644,11 @@ function renderChatTab() {
    ---------------------------------------------------------- */
 
 function renderParticipantsTab() {
+  const viewerIsAdmin = isCurrentUserAdmin();
+  const tour          = state.currentTour;
+  const coAdmins      = tour?.co_admin_ids || [];
+  const creatorId     = tour?.admin_id;
+
   return `
 <div class="tab-scroll">
   <div class="participants-layout">
@@ -579,17 +657,32 @@ function renderParticipantsTab() {
         Teilnehmer (${state.tourMembers.length})
       </h2>
     </div>
-    ${state.tourMembers.map(m => `
+    ${state.tourMembers.map(m => {
+      const isCreator  = m.user_id === creatorId;
+      const isCoAdmin  = coAdmins.includes(m.user_id);
+      const isMe       = m.user_id === state.currentUser.id;
+      const roleLabel  = isCreator ? 'Admin & Ersteller' : isCoAdmin ? 'Co-Admin' : 'Mitfahrer';
+      const roleColor  = (isCreator || isCoAdmin) ? 'var(--accent)' : 'var(--muted)';
+
+      // Admin can promote members (not creator, not themselves, not already co-admin)
+      const canPromote = viewerIsAdmin && !isCreator && !isCoAdmin && !isMe;
+      // Creator can demote co-admins (not themselves)
+      const canDemote  = tour?.admin_id === state.currentUser.id && isCoAdmin && !isMe;
+
+      return `
     <div class="participant-item">
-      <div class="participant-avatar">${(m.username || '?')[0].toUpperCase()}</div>
-      <div>
+      <div class="participant-avatar" style="${(isCreator||isCoAdmin)?'background:var(--accent)':''}">${(m.username||'?')[0].toUpperCase()}</div>
+      <div style="flex:1;min-width:0">
         <div style="font-weight:500">${esc(m.username)}</div>
-        <div style="font-size:12px;color:var(--muted)">${m.isAdmin ? 'Admin & Ersteller' : 'Mitfahrer'}</div>
+        <div style="font-size:12px;color:${roleColor}">${roleLabel}</div>
       </div>
-      ${m.user_id === state.currentUser.id
-        ? '<span class="tag tag-accent" style="margin-left:auto">Du</span>'
-        : ''}
-    </div>`).join('')}
+      <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+        ${isMe ? '<span class="tag tag-accent">Du</span>' : ''}
+        ${canPromote ? `<button class="btn btn-ghost btn-sm" data-promote="${m.user_id}" title="Zum Co-Admin machen">⬆️ Co-Admin</button>` : ''}
+        ${canDemote  ? `<button class="btn btn-ghost btn-sm" data-demote="${m.user_id}"  title="Co-Admin entfernen" style="color:var(--danger)">✕</button>` : ''}
+      </div>
+    </div>`;
+    }).join('')}
   </div>
 </div>`;
 }
@@ -599,7 +692,7 @@ function renderParticipantsTab() {
    ---------------------------------------------------------- */
 
 function renderInfoTab(tour) {
-  const isAdmin = tour.admin_id === state.currentUser.id;
+  const isAdmin = isCurrentUserAdmin();
 
   return `
 <div class="tab-scroll">
@@ -643,6 +736,16 @@ function renderInfoTab(tour) {
         <div class="form-group">
           <label>Tour-Name</label>
           <input type="text" id="edit-name" value="${esc(tour.name)}" maxlength="60" />
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Startdatum</label>
+            <input type="date" id="edit-date" value="${esc(tour.date || '')}" />
+          </div>
+          <div class="form-group">
+            <label>Enddatum</label>
+            <input type="date" id="edit-edate" value="${esc(tour.end_date || '')}" />
+          </div>
         </div>
         <div class="form-group">
           <label>Ziel / Region</label>

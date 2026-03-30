@@ -133,15 +133,25 @@ function attachEvents() {
     }
   });
 
+  /* --- Participants: promote / demote --- */
+  attachParticipantEvents();
+
   /* --- Tour tabs --- */
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       state.currentTab = btn.dataset.tab;
-      if (state.currentTab === 'chat') await loadMessages();
+      if (state.currentTab === 'chat')      await loadMessages();
+      if (state.currentTab === 'changelog') await loadChangelog();
+
+      // Mark as seen → clear badge, recompute
+      markTabSeen(state.currentTourId, state.currentTab);
+      computeTabBadges(state.currentTourId);
 
       document.querySelectorAll('.tab-btn').forEach(b =>
         b.classList.toggle('active', b.dataset.tab === state.currentTab)
       );
+      // Re-render tab bar to remove the badge
+      _refreshTabBar();
 
       const tc = document.getElementById('tab-content');
       if (tc && state.currentTour) {
@@ -152,7 +162,12 @@ function attachEvents() {
   });
 
   /* --- Initial tab setup (on tour page) --- */
-  if (state.view === 'tour') afterTabRender();
+  if (state.view === 'tour') {
+    // Mark the initially active tab as seen
+    markTabSeen(state.currentTourId, state.currentTab);
+    computeTabBadges(state.currentTourId);
+    afterTabRender();
+  }
 }
 
 /* ----------------------------------------------------------
@@ -174,10 +189,98 @@ function afterTabRender() {
       if (el) el.scrollTop = el.scrollHeight;
     }, 50);
     attachChatEvents();
+    // Reload messages that arrived while on another tab
+    loadMessages().then(() => {
+      const tc = document.getElementById('tab-content');
+      if (tc && state.currentTour && state.currentTab === 'chat') {
+        tc.innerHTML = renderTab(state.currentTour);
+        attachChatEvents();
+        const el = document.getElementById('chat-msgs');
+        if (el) el.scrollTop = el.scrollHeight;
+      }
+    });
   }
   if (state.currentTab === 'info') {
     attachInfoEvents();
   }
+  if (state.currentTab === 'participants') {
+    attachParticipantEvents();
+  }
+}
+
+/**
+ * Re-render only the tab bar (to update badges) without touching tab content.
+ */
+function _refreshTabBar() {
+  const tour = state.currentTour;
+  if (!tour) return;
+  const tabs = [
+    { id: 'map',          label: '🗺️ Karte' },
+    { id: 'chat',         label: '💬 Chat' },
+    { id: 'participants', label: '👥 Teilnehmer' },
+    { id: 'info',         label: '📋 Info & Kalender' },
+    { id: 'changelog',    label: '📝 Change Log' },
+  ];
+  const bar = document.querySelector('.tour-tabs');
+  if (!bar) return;
+  bar.innerHTML = tabs.map(t => {
+    const badge    = state.tabBadges[t.id];
+    const isActive = state.currentTab === t.id;
+    const tooltipLines = badge
+      ? badge.slice(0, 5).map(b => {
+          const time = b.time.toLocaleTimeString('de-DE', { hour:'2-digit', minute:'2-digit' });
+          const date = b.time.toLocaleDateString('de-DE', { day:'2-digit', month:'2-digit' });
+          return `${date} ${time}  ${b.text}`;
+        }).join('&#10;')
+      : '';
+    return `<button class="tab-btn ${isActive ? 'active' : ''}" data-tab="${t.id}">
+      ${t.label}
+      ${badge && !isActive
+        ? `<span class="tab-badge" title="${tooltipLines}">${badge.length > 9 ? '9+' : badge.length}</span>`
+        : ''}
+    </button>`;
+  }).join('');
+  // Re-attach tab click handlers on the new buttons
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      state.currentTab = btn.dataset.tab;
+      if (state.currentTab === 'chat')      await loadMessages();
+      if (state.currentTab === 'changelog') await loadChangelog();
+      markTabSeen(state.currentTourId, state.currentTab);
+      computeTabBadges(state.currentTourId);
+      _refreshTabBar();
+      const tc = document.getElementById('tab-content');
+      if (tc && state.currentTour) { tc.innerHTML = renderTab(state.currentTour); afterTabRender(); }
+    });
+  });
+}
+
+/* ----------------------------------------------------------
+   Participants tab events
+   ---------------------------------------------------------- */
+
+function attachParticipantEvents() {
+  document.querySelectorAll('[data-promote]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      try {
+        await promoteToAdmin(btn.dataset.promote);
+        toast('✓ Co-Admin gesetzt');
+        const tc = document.getElementById('tab-content');
+        if (tc) { tc.innerHTML = renderTab(state.currentTour); attachParticipantEvents(); }
+      } catch (e) { toast(e.message, 'error'); }
+    });
+  });
+
+  document.querySelectorAll('[data-demote]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      try {
+        await demoteAdmin(btn.dataset.demote);
+        toast('Co-Admin entfernt');
+        const tc = document.getElementById('tab-content');
+        if (tc) { tc.innerHTML = renderTab(state.currentTour); attachParticipantEvents(); }
+      } catch (e) { toast(e.message, 'error'); }
+    });
+  });
 }
 
 /* ----------------------------------------------------------
@@ -314,7 +417,7 @@ function _refreshMapTab() {
 }
 
 /* ----------------------------------------------------------
-   Chat tab events
+   Chat tab events + Realtime subscription
    ---------------------------------------------------------- */
 
 function attachChatEvents() {
@@ -322,23 +425,13 @@ function attachChatEvents() {
     const input = document.getElementById('chat-in');
     const text  = (input?.value || '').trim();
     if (!text) return;
-
     input.value = '';
     try {
-      const msg = await sendMessage(text);
-      state.tourMessages.push(msg);
-      const tc = document.getElementById('tab-content');
-      if (tc) {
-        tc.innerHTML = renderTab(state.currentTour);
-        attachChatEvents();
-        setTimeout(() => {
-          const el = document.getElementById('chat-msgs');
-          if (el) el.scrollTop = el.scrollHeight;
-        }, 30);
-      }
+      await sendMessage(text);
+      // Realtime will append the message via the subscription
     } catch (e) {
       toast(e.message, 'error');
-      input.value = text; // restore on failure
+      input.value = text;
     }
   };
 
@@ -348,6 +441,48 @@ function attachChatEvents() {
   });
 }
 
+/**
+ * Append a single message to the chat DOM without a full re-render.
+ * Called by the Realtime subscription handler.
+ * @param {object} msg – row from the messages table
+ */
+function _appendChatMessage(msg) {
+  const container = document.getElementById('chat-msgs');
+  if (!container) return; // chat tab not visible
+
+  const mine = msg.user_id === state.currentUser?.id;
+  const dt   = new Date(msg.created_at);
+  const today = new Date();
+  const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
+  const isToday     = dt.toDateString() === today.toDateString();
+  const isYesterday = dt.toDateString() === yesterday.toDateString();
+  const datePart = isToday ? 'Heute' : isYesterday ? 'Gestern'
+    : dt.toLocaleDateString('de-DE', { day:'2-digit', month:'2-digit', year:'2-digit' });
+  const timePart = dt.toLocaleTimeString('de-DE', { hour:'2-digit', minute:'2-digit' });
+
+  // If user is on chat tab → mark seen; otherwise update badge
+  if (state.currentTab === 'chat') {
+    markTabSeen(state.currentTourId, 'chat');
+  } else {
+    computeTabBadges(state.currentTourId);
+    _refreshTabBar();
+    return; // don't try to append to invisible DOM
+  }
+
+  // Remove empty-state placeholder if present
+  const empty = container.querySelector('div[style*="flex:1"]') || container.querySelector('div[style*="flex: 1"]');
+  if (empty) empty.remove();
+
+  const el = document.createElement('div');
+  el.className = `chat-msg ${mine ? 'mine' : ''}`;
+  el.innerHTML = `
+    <div class="chat-bubble">${esc(msg.text)}</div>
+    <div class="chat-meta">${esc(msg.username)} · ${datePart}, ${timePart}</div>
+  `;
+  container.appendChild(el);
+  container.scrollTop = container.scrollHeight;
+}
+
 /* ----------------------------------------------------------
    Info tab events
    ---------------------------------------------------------- */
@@ -355,10 +490,15 @@ function attachChatEvents() {
 function attachInfoEvents() {
   /* Save edits (name + destination + description) */
   document.getElementById('edit-save')?.addEventListener('click', async () => {
-    const name = (document.getElementById('edit-name')?.value || '').trim();
+    const name  = (document.getElementById('edit-name')?.value  || '').trim();
+    const date  =  document.getElementById('edit-date')?.value  || '';
+    const edate =  document.getElementById('edit-edate')?.value || '';
     if (!name) { toast('Tour-Name darf nicht leer sein.', 'error'); return; }
+    if (!date) { toast('Startdatum darf nicht leer sein.', 'error'); return; }
     const updates = {
       name,
+      date,
+      end_date:    edate || null,
       destination: (document.getElementById('edit-dest')?.value || '').trim(),
       description: (document.getElementById('edit-desc')?.value || '').trim(),
     };
