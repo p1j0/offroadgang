@@ -153,6 +153,34 @@ async function updateTourInfo(updates) {
   if (state.currentTour) Object.assign(state.currentTour, updates);
 }
 
+/**
+ * Permanently delete the current tour (admin only).
+ * Supabase cascades deletes to members, messages and plan_dates.
+ */
+async function deleteTour() {
+  const { error } = await sb
+    .from('tours')
+    .delete()
+    .eq('id', state.currentTourId);
+  if (error) throw new Error(error.message);
+  state.myTourIds.delete(state.currentTourId);
+  state.tours = state.tours.filter(t => t.id !== state.currentTourId);
+}
+
+/**
+ * Remove the current user from a tour they joined (non-admin).
+ */
+async function leaveTour() {
+  const { error } = await sb
+    .from('tour_members')
+    .delete()
+    .eq('tour_id', state.currentTourId)
+    .eq('user_id', state.currentUser.id);
+  if (error) throw new Error(error.message);
+  state.myTourIds.delete(state.currentTourId);
+  state.tours = state.tours.filter(t => t.id !== state.currentTourId);
+}
+
 /* ----------------------------------------------------------
    Messages
    ---------------------------------------------------------- */

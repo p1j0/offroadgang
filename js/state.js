@@ -26,6 +26,7 @@ const state = {
 
   /* Calendar */
   calMonth:     new Date(),   // home calendar
+  calShowAll:   false,        // show non-member tours on calendar
   tourCalMonth: new Date(),   // tour info calendar
 
   /* Join helper */

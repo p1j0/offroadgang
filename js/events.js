@@ -38,6 +38,14 @@ function attachEvents() {
   document.getElementById('go-create')?.addEventListener('click', () => navigateTo('create'));
   document.getElementById('go-join')?.addEventListener('click',   () => navigateTo('join'));
 
+  /* Copy invite link */
+  document.querySelectorAll('[data-copy-id]').forEach(el => {
+    el.addEventListener('click', e => {
+      e.stopPropagation();
+      copyTourLink(el.dataset.copyId);
+    });
+  });
+
   /* Open / join from tour card buttons */
   document.querySelectorAll('[data-open-id]').forEach(el => {
     el.addEventListener('click', e => {
@@ -69,6 +77,10 @@ function attachEvents() {
   });
   document.getElementById('cal-next')?.addEventListener('click', () => {
     state.calMonth = new Date(state.calMonth.getFullYear(), state.calMonth.getMonth() + 1, 1);
+    render();
+  });
+  document.getElementById('cal-show-all')?.addEventListener('change', e => {
+    state.calShowAll = e.target.checked;
     render();
   });
 
@@ -341,18 +353,47 @@ function attachChatEvents() {
    ---------------------------------------------------------- */
 
 function attachInfoEvents() {
-  /* Save edits */
+  /* Save edits (name + destination + description) */
   document.getElementById('edit-save')?.addEventListener('click', async () => {
+    const name = (document.getElementById('edit-name')?.value || '').trim();
+    if (!name) { toast('Tour-Name darf nicht leer sein.', 'error'); return; }
     const updates = {
+      name,
       destination: (document.getElementById('edit-dest')?.value || '').trim(),
       description: (document.getElementById('edit-desc')?.value || '').trim(),
     };
     try {
       await updateTourInfo(updates);
       toast('✓ Gespeichert');
-      const hd = document.getElementById('hdr-dest'); if (hd) hd.textContent = '📍 ' + (updates.destination || 'Kein Ziel');
-      const id = document.getElementById('info-dest'); if (id) id.textContent = updates.destination || '—';
+      // Update header live
+      const hn = document.querySelector('.tour-detail-title'); if (hn) hn.textContent = name;
+      const hd = document.getElementById('hdr-dest');          if (hd) hd.textContent = '📍 ' + (updates.destination || 'Kein Ziel');
+      const id = document.getElementById('info-dest');          if (id) id.textContent = updates.destination || '—';
     } catch (e) { toast(e.message, 'error'); }
+  });
+
+  /* Delete tour (admin only) */
+  document.getElementById('delete-tour-btn')?.addEventListener('click', async () => {
+    const name = state.currentTour?.name || 'diese Tour';
+    if (!confirm(`„${name}" wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.`)) return;
+    setBtn('delete-tour-btn', true, '');
+    try {
+      await deleteTour();
+      toast('Tour gelöscht');
+      await navigateTo('home');
+    } catch (e) { toast(e.message, 'error'); setBtn('delete-tour-btn', false, '🗑️ Tour endgültig löschen'); }
+  });
+
+  /* Leave tour (non-admin members) */
+  document.getElementById('leave-tour-btn')?.addEventListener('click', async () => {
+    const name = state.currentTour?.name || 'diese Tour';
+    if (!confirm(`„${name}" wirklich verlassen?`)) return;
+    setBtn('leave-tour-btn', true, '');
+    try {
+      await leaveTour();
+      toast('Du hast die Tour verlassen.');
+      await navigateTo('home');
+    } catch (e) { toast(e.message, 'error'); setBtn('leave-tour-btn', false, '🚪 Tour verlassen'); }
   });
 
   /* Tour calendar navigation */
