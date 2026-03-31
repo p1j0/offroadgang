@@ -23,6 +23,40 @@ const NAMED_COLORS = {
   Transparent: null,
 };
 
+/**
+ * Reverse map: hex → closest Garmin color name.
+ * Built once from NAMED_COLORS.
+ */
+const HEX_TO_GARMIN = Object.fromEntries(
+  Object.entries(NAMED_COLORS)
+    .filter(([, v]) => v !== null)
+    .map(([name, hex]) => [hex.toLowerCase(), name])
+);
+
+/**
+ * Find the closest Garmin named color for a hex string.
+ * First tries exact match, then finds nearest by RGB distance.
+ * @param {string|null} hex
+ * @returns {string|null} Garmin color name, or null if no reasonable match
+ */
+function _hexToGarminName(hex) {
+  if (!hex) return null;
+  const h = hex.toLowerCase();
+  if (HEX_TO_GARMIN[h]) return HEX_TO_GARMIN[h];
+
+  // Parse target RGB
+  const tr = parseInt(h.slice(1,3),16), tg = parseInt(h.slice(3,5),16), tb = parseInt(h.slice(5,7),16);
+  if (isNaN(tr)) return null;
+
+  let best = null, bestDist = Infinity;
+  for (const [ghex, name] of Object.entries(HEX_TO_GARMIN)) {
+    const r = parseInt(ghex.slice(1,3),16), g = parseInt(ghex.slice(3,5),16), b = parseInt(ghex.slice(5,7),16);
+    const dist = (tr-r)**2 + (tg-g)**2 + (tb-b)**2;
+    if (dist < bestDist) { bestDist = dist; best = name; }
+  }
+  return best;
+}
+
 /* ----------------------------------------------------------
    Module-level layer references
    ---------------------------------------------------------- */
@@ -89,26 +123,31 @@ function buildGPX(tour) {
   const data = normalizeGPXRoute(tour.gpx_route);
   if (!data) return '';
 
-  const tracksXml = data.tracks.map(t => `
-  <trk>
-    <name>${esc(t.name)}</name>
-    <trkseg>
-      ${t.points.map(([lat, lon]) => `<trkpt lat="${lat}" lon="${lon}"></trkpt>`).join('\n      ')}
-    </trkseg>
-  </trk>`).join('');
+  const tracksXml = data.tracks.map((t, i) => {
+    const color       = t.color || TRACK_COLORS[i % TRACK_COLORS.length];
+    const garminColor = _hexToGarminName(color);
+    const colorExt    = garminColor
+      ? '\n    <extensions>\n      <gpxx:TrackExtension>\n        <gpxx:DisplayColor>' + garminColor + '</gpxx:DisplayColor>\n      </gpxx:TrackExtension>\n    </extensions>'
+      : '';
+    const pts = t.points.map(([lat, lon]) => '<trkpt lat="' + lat + '" lon="' + lon + '"></trkpt>').join('\n      ');
+    return '\n  <trk>\n    <name>' + esc(t.name) + '</name>' + colorExt + '\n    <trkseg>\n      ' + pts + '\n    </trkseg>\n  </trk>';
+  }).join('');
 
-  const waypointsXml = (data.waypoints || []).map(w => `
-  <wpt lat="${w.lat}" lon="${w.lon}">
-    <name>${esc(w.name)}</name>
-    ${w.desc ? `<desc>${esc(w.desc)}</desc>` : ''}
-  </wpt>`).join('');
+  const waypointsXml = (data.waypoints || []).map(w => {
+    const desc = w.desc ? '\n    <desc>' + esc(w.desc) + '</desc>' : '';
+    return '\n  <wpt lat="' + w.lat + '" lon="' + w.lon + '">\n    <name>' + esc(w.name) + '</name>' + desc + '\n  </wpt>';
+  }).join('');
 
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<gpx version="1.1" creator="MotoRoute" xmlns="http://www.topografix.com/GPX/1/1">
-  <metadata><name>${esc(tour.name)}</name></metadata>
-  ${waypointsXml}
-  ${tracksXml}
-</gpx>`;
+  return '<?xml version="1.0" encoding="UTF-8"?>\n'
+    + '<gpx version="1.1" creator="MotoRoute"\n'
+    + '  xmlns="http://www.topografix.com/GPX/1/1"\n'
+    + '  xmlns:gpxx="http://www.garmin.com/xmlschemas/GpxExtensions/v3"\n'
+    + '  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"\n'
+    + '  xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd '
+    + 'http://www.garmin.com/xmlschemas/GpxExtensions/v3 http://www.garmin.com/xmlschemas/GpxExtensionsv3.xsd">\n'
+    + '  <metadata><name>' + esc(tour.name) + '</name></metadata>'
+    + waypointsXml + tracksXml
+    + '\n</gpx>';
 }
 
 function downloadGPX(tour) {
