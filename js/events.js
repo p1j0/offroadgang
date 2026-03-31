@@ -301,30 +301,77 @@ function attachParticipantEvents() {
    Map tab events
    ---------------------------------------------------------- */
 
+/* ----------------------------------------------------------
+   CSS-based fullscreen helpers (cross-platform / iOS compatible)
+   ---------------------------------------------------------- */
+
+function _cssFullscreen(container, enable) {
+  container.classList.toggle('map-fullscreen-active', enable);
+  // Prevent body scroll while fullscreen
+  document.body.style.overflow = enable ? 'hidden' : '';
+  _updateFsUi(container, enable);
+}
+
+function _updateFsUi(container, isFs) {
+  container.classList.toggle('map-fullscreen-active', isFs);
+  document.body.style.overflow = isFs ? 'hidden' : '';
+  const icon  = document.getElementById('map-fs-icon');
+  const label = document.getElementById('map-fs-label');
+  if (icon)  icon.textContent  = isFs ? '✕' : '⛶';
+  if (label) label.textContent = isFs ? 'Vollbild beenden' : 'Vollbild';
+  setTimeout(() => mapInstance?.invalidateSize(), 200);
+}
+
 function attachMapEvents() {
-  /* Fullscreen toggle */
+  /* Fullscreen toggle — CSS-based for mobile compatibility (iOS Safari
+     does not support requestFullscreen on non-video elements) */
   document.getElementById('map-fullscreen')?.addEventListener('click', () => {
     const container = document.getElementById('map-container');
     if (!container) return;
 
-    const isFs = document.fullscreenElement === container;
+    const isFs = container.classList.contains('map-fullscreen-active');
+
     if (!isFs) {
-      container.requestFullscreen?.();
+      // Try native API first (desktop), fall back to CSS approach
+      if (document.fullscreenEnabled && container.requestFullscreen) {
+        container.requestFullscreen().catch(() => _cssFullscreen(container, true));
+      } else if (container.webkitRequestFullscreen) {
+        container.webkitRequestFullscreen(); // Safari desktop
+      } else {
+        _cssFullscreen(container, true);     // iOS + others
+      }
     } else {
-      document.exitFullscreen?.();
+      if (document.fullscreenElement) {
+        document.exitFullscreen?.();
+      } else {
+        _cssFullscreen(container, false);
+      }
     }
   });
 
-  // Update icon + label when fullscreen state changes
+  // Native fullscreen change (desktop)
   document.getElementById('map-container')?.addEventListener('fullscreenchange', () => {
+    const container = document.getElementById('map-container');
+    if (!container) return;
     const isFs = !!document.fullscreenElement;
-    const icon  = document.getElementById('map-fs-icon');
-    const label = document.getElementById('map-fs-label');
-    if (icon)  icon.textContent  = isFs ? '✕' : '⛶';
-    if (label) label.textContent = isFs ? 'Vollbild beenden' : 'Vollbild';
-    // Leaflet needs a size update after fullscreen change
-    setTimeout(() => mapInstance?.invalidateSize(), 200);
+    _updateFsUi(container, isFs);
   });
+  document.getElementById('map-container')?.addEventListener('webkitfullscreenchange', () => {
+    const container = document.getElementById('map-container');
+    if (!container) return;
+    const isFs = !!document.webkitFullscreenElement;
+    _updateFsUi(container, isFs);
+  });
+
+  // Close CSS fullscreen with Escape key
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      const container = document.getElementById('map-container');
+      if (container?.classList.contains('map-fullscreen-active')) {
+        _cssFullscreen(container, false);
+      }
+    }
+  }, { once: false });
 
   /* GPX upload (admin only) */
   document.getElementById('gpx-up')?.addEventListener('change', async e => {
