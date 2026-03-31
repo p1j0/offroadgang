@@ -49,6 +49,7 @@ async function doRegister() {
 
   state.currentUser = { id: data.user.id, username };
   state.profileCache[data.user.id] = username;
+  startHeartbeat();
   await navigateTo('home');
 }
 
@@ -77,6 +78,7 @@ async function doLogin() {
   const { data: profile } = await sb.from('profiles').select('username').eq('id', data.user.id).single();
   state.currentUser = { id: data.user.id, username: profile?.username || username };
   state.profileCache[data.user.id] = state.currentUser.username;
+  startHeartbeat();
   await navigateTo('home');
 }
 

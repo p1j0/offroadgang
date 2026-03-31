@@ -27,7 +27,21 @@ function attachEvents() {
 
   /* --- Navigation bar --- */
   document.getElementById('nav-logo')?.addEventListener('click', () => navigateTo('home'));
+  document.getElementById('go-profile')?.addEventListener('click', () => navigateTo('profile'));
   document.getElementById('logout-btn')?.addEventListener('click', doLogout);
+
+  /* --- Profile save --- */
+  document.getElementById('profile-save')?.addEventListener('click', async () => {
+    const email   = (document.getElementById('p-email')?.value || '').trim();
+    const chat    = document.getElementById('p-notify-chat')?.checked    ?? true;
+    const changes = document.getElementById('p-notify-changes')?.checked ?? true;
+    setBtn('profile-save', true, '');
+    try {
+      await saveProfile({ notification_email: email, notify_chat: chat, notify_changes: changes });
+      toast('✓ Einstellungen gespeichert');
+    } catch(e) { toast(e.message, 'error'); }
+    setBtn('profile-save', false, 'Einstellungen speichern');
+  });
 
   /* --- Generic "back" buttons --- */
   document.querySelectorAll('#back-home').forEach(el => {
@@ -288,13 +302,37 @@ function attachParticipantEvents() {
    ---------------------------------------------------------- */
 
 function attachMapEvents() {
+  /* Fullscreen toggle */
+  document.getElementById('map-fullscreen')?.addEventListener('click', () => {
+    const container = document.getElementById('map-container');
+    if (!container) return;
+
+    const isFs = document.fullscreenElement === container;
+    if (!isFs) {
+      container.requestFullscreen?.();
+    } else {
+      document.exitFullscreen?.();
+    }
+  });
+
+  // Update icon + label when fullscreen state changes
+  document.getElementById('map-container')?.addEventListener('fullscreenchange', () => {
+    const isFs = !!document.fullscreenElement;
+    const icon  = document.getElementById('map-fs-icon');
+    const label = document.getElementById('map-fs-label');
+    if (icon)  icon.textContent  = isFs ? '✕' : '⛶';
+    if (label) label.textContent = isFs ? 'Vollbild beenden' : 'Vollbild';
+    // Leaflet needs a size update after fullscreen change
+    setTimeout(() => mapInstance?.invalidateSize(), 200);
+  });
+
   /* GPX upload (admin only) */
   document.getElementById('gpx-up')?.addEventListener('change', async e => {
     const file = e.target.files[0];
     if (!file) return;
 
     const text = await file.text();
-    const data = parseGPX(text);  // returns { tracks, waypoints }
+    const data = parseGPX(text);
 
     const totalPts = data.tracks.reduce((s, t) => s + t.points.length, 0);
     if (!totalPts && !data.waypoints.length) {
@@ -303,25 +341,15 @@ function attachMapEvents() {
 
     try {
       await saveGPX(data);
-
-      // Auto-calculate and persist distance from track data
-      const dist = calculateTotalDistance(data);
-      if (dist) {
-        await updateTourInfo({ distance: dist });
-        const hd = document.getElementById('hdr-dist'); if (hd) hd.textContent = '📏 ' + dist;
-      }
-
       const summary = [
         data.tracks.length    ? `${data.tracks.length} Track${data.tracks.length !== 1 ? 's' : ''}` : '',
         data.waypoints.length ? `${data.waypoints.length} Wegpunkt${data.waypoints.length !== 1 ? 'e' : ''}` : '',
-        dist                  ? dist : '',
       ].filter(Boolean).join(' · ');
-      toast(`✓ Gespeichert: ${summary}`);
+      toast(`✓ Gespeichert: ${summary} — Distanz im Seitenmenü auswählen`);
       _refreshMapTab();
     } catch (e) { toast(e.message, 'error'); }
   });
 
-  /* GPX download */
   document.getElementById('gpx-dl')?.addEventListener('click', () => {
     downloadGPX(state.currentTour);
   });
@@ -488,27 +516,45 @@ function _appendChatMessage(msg) {
    ---------------------------------------------------------- */
 
 function attachInfoEvents() {
-  /* Save edits (name + destination + description) */
+  /* Distance dropdown: show/hide manual input */
+  document.getElementById('dist-source')?.addEventListener('change', e => {
+    const wrap = document.getElementById('dist-manual-wrap');
+    if (wrap) wrap.style.display = e.target.value === 'manual' ? 'block' : 'none';
+  });
+
+  /* Save edits (name + dates + destination + description + optional distance) */
   document.getElementById('edit-save')?.addEventListener('click', async () => {
     const name  = (document.getElementById('edit-name')?.value  || '').trim();
     const date  =  document.getElementById('edit-date')?.value  || '';
     const edate =  document.getElementById('edit-edate')?.value || '';
     if (!name) { toast('Tour-Name darf nicht leer sein.', 'error'); return; }
     if (!date) { toast('Startdatum darf nicht leer sein.', 'error'); return; }
+
+    // Distance from dropdown (if present)
+    const distSource = document.getElementById('dist-source')?.value;
+    let dist = '';
+    if (distSource) {
+      const gpxData = normalizeGPXRoute(state.currentTour?.gpx_route);
+      if (distSource === 'total' && gpxData)       dist = calculateTotalDistance(gpxData);
+      else if (distSource.startsWith('track:') && gpxData) dist = calculateTrackDistance(gpxData, parseInt(distSource.split(':')[1]));
+      else if (distSource === 'manual') dist = (document.getElementById('dist-manual')?.value || '').trim();
+    }
+
     const updates = {
       name,
       date,
       end_date:    edate || null,
       destination: (document.getElementById('edit-dest')?.value || '').trim(),
       description: (document.getElementById('edit-desc')?.value || '').trim(),
+      ...(dist ? { distance: dist } : {}),
     };
     try {
       await updateTourInfo(updates);
       toast('✓ Gespeichert');
-      // Update header live
       const hn = document.querySelector('.tour-detail-title'); if (hn) hn.textContent = name;
-      const hd = document.getElementById('hdr-dest');          if (hd) hd.textContent = '📍 ' + (updates.destination || 'Kein Ziel');
-      const id = document.getElementById('info-dest');          if (id) id.textContent = updates.destination || '—';
+      const hd = document.getElementById('hdr-dest'); if (hd) hd.textContent = '📍 ' + (updates.destination || 'Kein Ziel');
+      const id = document.getElementById('info-dest'); if (id) id.textContent = updates.destination || '—';
+      if (dist) { const hdi = document.getElementById('hdr-dist'); if (hdi) hdi.textContent = '📏 ' + dist; }
     } catch (e) { toast(e.message, 'error'); }
   });
 

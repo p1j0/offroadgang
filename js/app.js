@@ -5,18 +5,6 @@
    ============================================================ */
 
 /* ----------------------------------------------------------
-   Router
-   ---------------------------------------------------------- */
-
-/**
- * Navigate to a new view.
- * Optionally merges extra state params (e.g. currentTourId, currentTab).
- * Destroys the Leaflet map if we're leaving the tour page.
- *
- * @param {string} view   – target view name
- * @param {object} [params] – extra state fields to merge
- */
-/* ----------------------------------------------------------
    Realtime chat subscription
    ---------------------------------------------------------- */
 
@@ -59,6 +47,38 @@ function unsubscribeFromChat() {
     sb.removeChannel(realtimeChannel);
     realtimeChannel = null;
   }
+}
+
+let _heartbeatTimer = null;
+
+/**
+ * Start sending a "last_seen_at" heartbeat to Supabase every 2 minutes.
+ * Called after successful login.
+ */
+function startHeartbeat() {
+  stopHeartbeat();
+  const ping = () => {
+    if (state.currentUser) {
+      sb.from('profiles')
+        .update({ last_seen_at: new Date().toISOString() })
+        .eq('id', state.currentUser.id)
+        .then(() => {});
+    }
+  };
+  ping(); // immediately on login
+  _heartbeatTimer = setInterval(ping, 2 * 60 * 1000); // every 2 minutes
+
+  // Also ping on visibility change (tab becomes active again)
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) ping();
+  });
+}
+
+/**
+ * Stop the heartbeat (on logout).
+ */
+function stopHeartbeat() {
+  if (_heartbeatTimer) { clearInterval(_heartbeatTimer); _heartbeatTimer = null; }
 }
 
 /**
@@ -117,6 +137,15 @@ function render() {
 
   let html = showNav ? renderNav() : '';
 
+  if (state.view === 'profile') {
+    app.innerHTML = html + '<div class="loading-screen" style="font-size:20px">Lade…</div>';
+    renderProfile().then(profileHtml => {
+      app.innerHTML = html + profileHtml;
+      attachEvents();
+    });
+    return;
+  }
+
   switch (state.view) {
     case 'auth':   html += renderAuth();   break;
     case 'home':   html += renderHome();   break;
@@ -159,6 +188,7 @@ async function init() {
       if (profile) {
         state.currentUser = { id: session.user.id, username: profile.username };
         state.profileCache[session.user.id] = profile.username;
+        startHeartbeat();
 
         if (joinId) {
           // Load tours so we know if the user is already a member
