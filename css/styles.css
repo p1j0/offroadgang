@@ -1039,7 +1039,22 @@ select option       { background: var(--surface2); }
 .toggle-switch input:checked + .toggle-slider             { background: var(--accent); }
 .toggle-switch input:checked + .toggle-slider::before     { transform: translateX(20px); }
 
-/* Map fullscreen mode */
+/* Map fullscreen — CSS-based, works on iOS Safari + all browsers */
+#map-container.map-fullscreen-active {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  z-index: 9000;
+  border-radius: 0 !important;
+}
+#map-container.map-fullscreen-active #map {
+  height: 100vh !important;
+}
+#map-container.map-fullscreen-active .map-info {
+  display: none;
+}
+/* Also support native fullscreen on desktop */
 #map-container:fullscreen,
 #map-container:-webkit-full-screen {
   width: 100vw;
@@ -1049,7 +1064,6 @@ select option       { background: var(--surface2); }
 #map-container:-webkit-full-screen #map {
   height: 100vh;
 }
-/* Hide map-info bar in fullscreen (no room) */
 #map-container:fullscreen .map-info,
 #map-container:-webkit-full-screen .map-info {
   display: none;
