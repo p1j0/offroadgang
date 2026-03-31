@@ -4,7 +4,7 @@
 
 const state = {
   /* Routing */
-  view:          'loading',   // 'auth' | 'home' | 'create' | 'join' | 'tour'
+  view:          'loading',   // 'auth' | 'home' | 'create' | 'join' | 'tour' | 'profile'
   authMode:      'login',     // 'login' | 'register'
   authErr:       '',
 

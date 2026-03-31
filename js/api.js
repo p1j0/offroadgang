@@ -211,6 +211,12 @@ async function joinTour(tourId, password) {
   // Ignore "duplicate key" error – user already joined
   if (error && !error.message.includes('duplicate')) throw new Error(error.message);
   state.myTourIds.add(tourId);
+
+  // Log join — use tourId directly since currentTourId isn't set yet
+  const savedId = state.currentTourId;
+  state.currentTourId = tourId;
+  await logChange('Teilnehmer beigetreten', '', state.currentUser.username);
+  state.currentTourId = savedId;
 }
 
 /** Human-readable labels for changelog field names. */
@@ -302,6 +308,7 @@ async function leaveTour() {
     .eq('tour_id', state.currentTourId)
     .eq('user_id', state.currentUser.id);
   if (error) throw new Error(error.message);
+  await logChange('Teilnehmer verlassen', state.currentUser.username, '');
   state.myTourIds.delete(state.currentTourId);
   state.tours = state.tours.filter(t => t.id !== state.currentTourId);
 }
@@ -395,4 +402,34 @@ async function deleteGPX() {
   if (error) throw new Error(error.message);
   if (state.currentTour) state.currentTour.gpx_route = null;
   await logChange('Route', 'Route vorhanden', 'Gelöscht');
+}
+
+/* ----------------------------------------------------------
+   User profile
+   ---------------------------------------------------------- */
+
+/**
+ * Load the current user's full profile (including notification prefs).
+ * @returns {object}
+ */
+async function loadProfile() {
+  const { data, error } = await sb
+    .from('profiles')
+    .select('username, notification_email, notify_chat, notify_changes')
+    .eq('id', state.currentUser.id)
+    .single();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+/**
+ * Save notification preferences + email to the profile.
+ * @param {object} updates – { notification_email, notify_chat, notify_changes }
+ */
+async function saveProfile(updates) {
+  const { error } = await sb
+    .from('profiles')
+    .update(updates)
+    .eq('id', state.currentUser.id);
+  if (error) throw new Error(error.message);
 }

@@ -96,6 +96,7 @@ function renderNav() {
   <div class="nav-logo" id="nav-logo">MOTO<span>ROUTE</span></div>
   <div class="nav-user">
     🏍️ <strong>${esc(state.currentUser?.username || '')}</strong>
+    <button class="btn-ghost btn-sm" id="go-profile" title="Profil & Benachrichtigungen">⚙️</button>
     <button class="btn-logout" id="logout-btn">Abmelden</button>
   </div>
 </nav>`;
@@ -529,10 +530,11 @@ function renderMapTab(tour) {
     if (hasTracks) {
       const tracksHtml = gpxData.tracks.map((t, i) => {
         const color = t.color || TRACK_COLORS[i % TRACK_COLORS.length];
+        const dist = calculateTrackDistance(gpxData, i);
         return `<div class="map-sidebar-item" data-track-idx="${i}" title="${esc(t.name)}">
           <span class="map-sidebar-dot" style="background:${color}"></span>
           <span class="map-sidebar-label">${esc(t.name)}</span>
-          <span class="map-sidebar-count">${t.points.length} Pkt.</span>
+          <span class="map-sidebar-count">${dist || '—'}</span>
         </div>`;
       }).join('');
       sidebarHtml += `<div class="map-sidebar-section">
@@ -558,6 +560,8 @@ function renderMapTab(tour) {
         ${wpsHtml}
       </div>`;
     }
+
+
   } else {
     sidebarHtml = `<div class="map-sidebar-empty">
       ${isAdmin ? '📁 GPX hochladen um Tracks zu sehen' : 'Kein GPX vorhanden'}
@@ -569,6 +573,10 @@ function renderMapTab(tour) {
   <div id="map-container">
     <div id="map"></div>
     <div class="map-controls">
+      <button class="map-btn" id="map-fullscreen">
+        <span class="map-btn-icon" id="map-fs-icon">⛶</span>
+        <span class="map-btn-label" id="map-fs-label">Vollbild</span>
+      </button>
       ${isAdmin ? `
       <label class="map-btn" for="gpx-up" style="cursor:pointer">
         <span class="map-btn-icon">📁</span>
@@ -691,6 +699,32 @@ function renderParticipantsTab() {
    Info & calendar tab
    ---------------------------------------------------------- */
 
+function renderDistanceSelector(tour) {
+  const gpxData = normalizeGPXRoute(tour.gpx_route);
+  if (!gpxData?.tracks?.length) {
+    return '<p style="font-size:12px;color:var(--muted);margin-bottom:4px">Noch keine GPX-Route hochgeladen.</p>';
+  }
+  const totalDist = calculateTotalDistance(gpxData);
+  const trackOpts = gpxData.tracks.map((t, i) => {
+    const d = calculateTrackDistance(gpxData, i);
+    return '<option value="track:' + i + '">Track: ' + esc(t.name) + (d ? ' (' + d + ')' : '') + '</option>';
+  }).join('');
+  const opts =
+    '<option value="total">' + (totalDist ? 'Gesamtdistanz (' + totalDist + ')' : 'Gesamtdistanz') + '</option>' +
+    trackOpts +
+    '<option value="manual">Manuell eingeben</option>';
+  return [
+    '<div class="form-group" style="margin-bottom:8px">',
+    '  <label>Quelle</label>',
+    '  <select id="dist-source">' + opts + '</select>',
+    '</div>',
+    '<div id="dist-manual-wrap" style="display:none" class="form-group">',
+    '  <label>Manuelle Eingabe</label>',
+    '  <input type="text" id="dist-manual" placeholder="z.B. 350 km" />',
+    '</div>',
+  ].join('');
+}
+
 function renderInfoTab(tour) {
   const isAdmin = isCurrentUserAdmin();
 
@@ -755,6 +789,11 @@ function renderInfoTab(tour) {
           <label>Beschreibung</label>
           <textarea id="edit-desc">${esc(tour.description || '')}</textarea>
         </div>
+        <div class="divider" style="margin:16px 0 14px"></div>
+        <h4 style="font-size:13px;font-weight:600;margin-bottom:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em">
+          📏 Distanz berechnen
+        </h4>
+        ${renderDistanceSelector(tour)}
         <button class="btn btn-primary btn-sm" id="edit-save">Änderungen speichern</button>
         <div class="divider"></div>
         <h3 style="font-size:15px;font-weight:600;margin-bottom:12px;color:var(--danger)">⚠️ Gefahrenzone</h3>
@@ -899,5 +938,68 @@ function renderTourCal(tour) {
       <span class="cal-legend-name">Planungstermin</span>
     </div>
   </div>
+</div>`;
+}
+
+/* ----------------------------------------------------------
+   Profile page
+   ---------------------------------------------------------- */
+
+async function renderProfile() {
+  let profile = { notification_email: '', notify_chat: true, notify_changes: true };
+  try { profile = await loadProfile(); } catch(e) {}
+
+  return `
+<div class="page-form">
+  <button class="btn btn-ghost btn-sm" style="margin-bottom:24px" id="back-home">← Zurück</button>
+  <div class="page-title">Profil</div>
+  <div class="page-sub">Verwalte deine Benachrichtigungseinstellungen.</div>
+
+  <div class="info-block" style="margin-bottom:24px">
+    <div class="info-label">Benutzername</div>
+    <div style="font-size:16px;font-weight:500">${esc(state.currentUser?.username || '')}</div>
+  </div>
+
+  <div class="divider"></div>
+  <h3 style="font-size:15px;font-weight:600;margin-bottom:6px">🔔 E-Mail-Benachrichtigungen</h3>
+  <p style="color:var(--muted);font-size:13px;margin-bottom:20px">
+    Erhalte eine E-Mail, wenn du offline bist und Aktivitäten in deinen Touren stattfinden.
+  </p>
+
+  <div class="form-group">
+    <label>Benachrichtigungs-E-Mail</label>
+    <input type="email" id="p-email" value="${esc(profile.notification_email || '')}"
+           placeholder="deine@email.de" />
+    <div style="font-size:11px;color:var(--muted);margin-top:5px">
+      Diese E-Mail-Adresse wird ausschliesslich für Benachrichtigungen verwendet.
+    </div>
+  </div>
+
+  <div class="profile-toggle-row">
+    <div>
+      <div style="font-weight:500;font-size:14px">💬 Chat-Nachrichten</div>
+      <div style="color:var(--muted);font-size:12px">Neue Nachrichten in deinen Touren</div>
+    </div>
+    <label class="toggle-switch">
+      <input type="checkbox" id="p-notify-chat" ${profile.notify_chat !== false ? 'checked' : ''} />
+      <span class="toggle-slider"></span>
+    </label>
+  </div>
+
+  <div class="profile-toggle-row">
+    <div>
+      <div style="font-weight:500;font-size:14px">📋 Tour-Änderungen</div>
+      <div style="color:var(--muted);font-size:12px">Änderungen an Route, Terminen, Info usw.</div>
+    </div>
+    <label class="toggle-switch">
+      <input type="checkbox" id="p-notify-changes" ${profile.notify_changes !== false ? 'checked' : ''} />
+      <span class="toggle-slider"></span>
+    </label>
+  </div>
+
+  <button class="btn btn-primary" id="profile-save"
+    style="width:100%;justify-content:center;padding:13px;font-size:15px;margin-top:24px">
+    Einstellungen speichern
+  </button>
 </div>`;
 }
