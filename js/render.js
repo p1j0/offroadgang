@@ -158,7 +158,18 @@ function renderTourCard(tour, locked) {
   const isAdmin  = tour.admin_id === state.currentUser.id || (tour.co_admin_ids||[]).includes(state.currentUser.id);
   const isMine   = state.myTourIds.has(tour.id);
   const dateStr  = date.toLocaleDateString('de-DE', { day: '2-digit', month: 'short', year: 'numeric' });
-  const adminName = state.profileCache[tour.admin_id] || '…';
+  const adminName   = state.profileCache[tour.admin_id] || '…';
+  // +1 for the admin who is not in tour_members
+  const memberCount = (state.memberCounts[tour.id] || 0) + 1;
+
+  // Unread badges (only for tours the user is a member of)
+  const newMsgs    = isMine ? (state.homeBadges[tour.id]?.chat     || 0) : 0;
+  const newChanges = isMine ? (state.homeBadges[tour.id]?.changelog || 0) : 0;
+  const badgesHtml = (newMsgs > 0 || newChanges > 0) ? `
+    <div class="tour-card-badges">
+      ${newMsgs    > 0 ? `<span class="tour-card-badge">💬 ${newMsgs    > 99 ? '99+' : newMsgs}</span>`    : ''}
+      ${newChanges > 0 ? `<span class="tour-card-badge">📋 ${newChanges > 99 ? '99+' : newChanges}</span>` : ''}
+    </div>` : '';
 
   return `
 <div class="card tour-card" data-tour-id="${tour.id}">
@@ -178,12 +189,18 @@ function renderTourCard(tour, locked) {
     </div>
   </div>
   <div class="tour-card-footer">
-    <span style="font-size:12px;color:var(--muted)">von ${esc(adminName)}</span>
-    <div style="display:flex;gap:6px;align-items:center">
-      <button class="btn-copy-link" data-copy-id="${tour.id}" title="Einladungslink kopieren">🔗</button>
-      ${isMine
-        ? `<button class="btn btn-primary btn-sm" data-open-id="${tour.id}">Öffnen →</button>`
-        : `<button class="btn btn-ghost btn-sm"   data-join-id="${tour.id}">Beitreten</button>`}
+    <div style="display:flex;flex-direction:column;gap:3px">
+      <span style="font-size:12px;color:var(--muted)">von ${esc(adminName)}</span>
+      <span style="font-size:12px;color:var(--muted)">👥 ${memberCount} Mitfahrer</span>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
+      ${badgesHtml}
+      <div style="display:flex;gap:6px;align-items:center">
+        <button class="btn-copy-link" data-copy-id="${tour.id}" title="Einladungslink kopieren">🔗</button>
+        ${isMine
+          ? `<button class="btn btn-primary btn-sm" data-open-id="${tour.id}">Öffnen →</button>`
+          : `<button class="btn btn-ghost btn-sm"   data-join-id="${tour.id}">Beitreten</button>`}
+      </div>
     </div>
   </div>
 </div>`;
@@ -547,11 +564,14 @@ function renderMapTab(tour) {
       </div>`;
     }
     if (hasWaypoints) {
-      const wpsHtml = gpxData.waypoints.map((w, i) => `
-        <div class="map-sidebar-item" data-wp-idx="${i}" title="${esc(w.name)}">
-          <span style="font-size:15px;flex-shrink:0">📍</span>
+      const wpsHtml = gpxData.waypoints.map((w, i) => {
+        const emoji = garminSymToEmoji(w.sym);
+        return `
+        <div class="map-sidebar-item" data-wp-idx="${i}" title="${esc(w.name)}${w.sym ? ' (' + esc(w.sym) + ')' : ''}">
+          <span style="font-size:15px;flex-shrink:0">${emoji}</span>
           <span class="map-sidebar-label">${esc(w.name)}</span>
-        </div>`).join('');
+        </div>`;
+      }).join('');
       sidebarHtml += `<div class="map-sidebar-section">
         <div class="map-sidebar-title" style="display:flex;align-items:center;justify-content:space-between">
           <span>Wegpunkte (${gpxData.waypoints.length})</span>

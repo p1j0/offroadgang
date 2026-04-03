@@ -15,6 +15,8 @@ const state = {
   tours:         [],          // all tours fetched from DB
   myTourIds:     new Set(),   // tour IDs where user is admin or member
   profileCache:  {},          // userId -> username
+  memberCounts:  {},          // tourId -> member count
+  homeBadges:    {},          // tourId -> { chat: N, changelog: N }
 
   /* Active tour */
   currentTourId: null,
