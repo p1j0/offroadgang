@@ -11,9 +11,10 @@
  * Load all tours + the current user's memberships and cache admin usernames.
  */
 async function loadHomeData() {
-  const [toursRes, membershipsRes] = await Promise.all([
+  const [toursRes, membershipsRes, memberCountsRes] = await Promise.all([
     sb.from('tours').select('*').order('date', { ascending: true }),
     sb.from('tour_members').select('tour_id').eq('user_id', state.currentUser.id),
+    sb.from('tour_members').select('tour_id'),
   ]);
 
   state.tours = toursRes.data || [];
@@ -25,6 +26,12 @@ async function loadHomeData() {
 
   state.myTourIds = new Set([...memberIds, ...adminIds]);
 
+  // Build member count map: tourId → count (admin not in tour_members, so +1 later)
+  state.memberCounts = {};
+  (memberCountsRes.data || []).forEach(m => {
+    state.memberCounts[m.tour_id] = (state.memberCounts[m.tour_id] || 0) + 1;
+  });
+
   // Cache admin usernames that we haven't seen yet
   const uncached = [...new Set(
     state.tours.map(t => t.admin_id).filter(id => !state.profileCache[id])
@@ -33,6 +40,44 @@ async function loadHomeData() {
     const { data: profs } = await sb.from('profiles').select('id,username').in('id', uncached);
     (profs || []).forEach(p => { state.profileCache[p.id] = p.username; });
   }
+
+  // Compute unread badges for home page (my tours only)
+  await computeHomeBadges();
+}
+
+/**
+ * Compute unread chat + changelog counts for each of the user's tours.
+ * Uses the same localStorage last-seen timestamps as the in-tour tab badges.
+ */
+async function computeHomeBadges() {
+  state.homeBadges = {};
+  const myTourIds = [...state.myTourIds];
+  if (!myTourIds.length) return;
+
+  // For each tour, find events newer than last-seen timestamp
+  await Promise.all(myTourIds.map(async tourId => {
+    const seenChat = getLastSeen(tourId, 'chat');
+    const seenLog  = getLastSeen(tourId, 'changelog');
+
+    const [msgsRes, logRes] = await Promise.all([
+      sb.from('messages')
+        .select('id', { count: 'exact', head: true })
+        .eq('tour_id', tourId)
+        .neq('user_id', state.currentUser.id)
+        .gt('created_at', seenChat.toISOString()),
+      sb.from('change_log')
+        .select('id', { count: 'exact', head: true })
+        .eq('tour_id', tourId)
+        .neq('user_id', state.currentUser.id)
+        .gt('created_at', seenLog.toISOString()),
+    ]);
+
+    const chat      = msgsRes.count || 0;
+    const changelog = logRes.count  || 0;
+    if (chat > 0 || changelog > 0) {
+      state.homeBadges[tourId] = { chat, changelog };
+    }
+  }));
 }
 
 /* ----------------------------------------------------------
