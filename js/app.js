@@ -95,49 +95,59 @@ function isCurrentUserAdmin() {
    Router
    ---------------------------------------------------------- */
 
+let _navigating = false;
+
 async function navigateTo(view, params = {}) {
-  // Tear down map when leaving the tour detail page
-  if (mapInstance && view !== 'tour') destroyMap();
+  // Guard against concurrent calls (double-click, stacked event listeners, etc.)
+  if (_navigating) return;
+  _navigating = true;
 
-  // Tear down realtime when leaving a tour
-  if (view !== 'tour') unsubscribeFromChat();
-
-  // Destroy plan map when leaving planning page
-  if (view !== 'planning' && typeof _planMapInstance !== 'undefined' && _planMapInstance) {
-    try { _planMapInstance.stop(); _planMapInstance.remove(); } catch(e) {}
-    _planMapInstance = null;
-    _planMapLayers   = [];
-  }
-
-  // Merge any extra params into global state
-  Object.assign(state, params);
-
-  // Load data required for the target view
   try {
-    if (view === 'communities' && state.currentUser) await loadCommunities();
-    if ((view === 'community-home' || view === 'community-settings' || view === 'planning') && state.currentCommunityId) {
-      await loadCommunityData(state.currentCommunityId);
-      if (view === 'community-home') {
-        await loadHomeData();
-        await computePlanningBadges();
-      }
-      if (view === 'planning') {
-        await loadPlanningData();
-        markTabSeen(state.currentCommunityId, 'plan-chat');
-        markTabSeen(state.currentCommunityId, 'plan-polls');
-        state.planningBadges = { chat: 0, polls: 0 };
-      }
-    }
-    if (view === 'tour' && state.currentTourId) {
-      await loadTourData(state.currentTourId);
-      subscribeToChat(state.currentTourId);
-    }
-  } catch (e) {
-    console.error('[navigateTo] data fetch error:', e);
-  }
+    // Tear down map when leaving the tour detail page
+    if (mapInstance && view !== 'tour') destroyMap();
 
-  state.view = view;
-  render();
+    // Tear down realtime when leaving a tour
+    if (view !== 'tour') unsubscribeFromChat();
+
+    // Destroy plan map when leaving planning page
+    if (view !== 'planning' && typeof _planMapInstance !== 'undefined' && _planMapInstance) {
+      try { _planMapInstance.stop(); _planMapInstance.remove(); } catch(e) {}
+      _planMapInstance = null;
+      _planMapLayers   = [];
+    }
+
+    // Merge any extra params into global state
+    Object.assign(state, params);
+
+    // Load data required for the target view
+    try {
+      if (view === 'communities' && state.currentUser) await loadCommunities();
+      if ((view === 'community-home' || view === 'community-settings' || view === 'planning') && state.currentCommunityId) {
+        await loadCommunityData(state.currentCommunityId);
+        if (view === 'community-home') {
+          await loadHomeData();
+          await computePlanningBadges();
+        }
+        if (view === 'planning') {
+          await loadPlanningData();
+          markTabSeen(state.currentCommunityId, 'plan-chat');
+          markTabSeen(state.currentCommunityId, 'plan-polls');
+          state.planningBadges = { chat: 0, polls: 0 };
+        }
+      }
+      if (view === 'tour' && state.currentTourId) {
+        await loadTourData(state.currentTourId);
+        subscribeToChat(state.currentTourId);
+      }
+    } catch (e) {
+      console.error('[navigateTo] data fetch error:', e);
+    }
+
+    state.view = view;
+    render();
+  } finally {
+    _navigating = false;
+  }
 }
 
 /* ----------------------------------------------------------

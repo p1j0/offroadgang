@@ -11,16 +11,30 @@
  * Load all tours + the current user's memberships and cache admin usernames.
  */
 async function loadHomeData() {
-  const [toursRes, membershipsRes, memberCountsRes] = await Promise.all([
-    sb.from('tours').select('*')
-      .eq('community_id', state.currentCommunityId)
-      .order('date', { ascending: true }),
-    sb.from('tour_members').select('tour_id').eq('user_id', state.currentUser.id),
-    sb.from('tour_members').select('tour_id'),
-  ]);
+  const cid = state.currentCommunityId;
+
+  // Load tours for this community
+  const toursRes = await sb.from('tours').select('*')
+    .eq('community_id', cid)
+    .order('date', { ascending: true });
 
   state.tours = toursRes.data || [];
   if (!state.calMonth) state.calMonth = new Date();
+
+  if (!state.tours.length) {
+    state.myTourIds   = new Set();
+    state.memberCounts = {};
+    state.homeBadges   = {};
+    return;
+  }
+
+  const tourIds = state.tours.map(t => t.id);
+
+  // Load memberships and member counts filtered to this community's tours
+  const [membershipsRes, memberCountsRes] = await Promise.all([
+    sb.from('tour_members').select('tour_id').eq('user_id', state.currentUser.id).in('tour_id', tourIds),
+    sb.from('tour_members').select('tour_id').in('tour_id', tourIds),
+  ]);
 
   const memberIds = (membershipsRes.data || []).map(m => m.tour_id);
   const adminIds  = state.tours
@@ -29,13 +43,12 @@ async function loadHomeData() {
 
   state.myTourIds = new Set([...memberIds, ...adminIds]);
 
-  // Build member count map: tourId → count (admin not in tour_members, so +1 later)
   state.memberCounts = {};
   (memberCountsRes.data || []).forEach(m => {
     state.memberCounts[m.tour_id] = (state.memberCounts[m.tour_id] || 0) + 1;
   });
 
-  // Cache admin usernames that we haven't seen yet
+  // Cache admin usernames
   const uncached = [...new Set(
     state.tours.map(t => t.admin_id).filter(id => !state.profileCache[id])
   )];
@@ -44,7 +57,6 @@ async function loadHomeData() {
     (profs || []).forEach(p => { state.profileCache[p.id] = p.username; });
   }
 
-  // Compute unread badges for home page (my tours only)
   await computeHomeBadges();
 }
 
