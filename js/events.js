@@ -485,36 +485,8 @@ function attachMapEvents() {
   /* Fullscreen toggle — CSS-based for mobile compatibility (iOS Safari
      does not support requestFullscreen on non-video elements) */
   document.getElementById('map-fullscreen')?.addEventListener('click', () => {
-    const container = document.getElementById('map-container');
-    if (!container) return;
-
-    const isFs = container.classList.contains('map-fullscreen-active')
-               || !!document.fullscreenElement
-               || !!document.webkitFullscreenElement;
-
-    if (!isFs) {
-      // Use native fullscreen on desktop; CSS fallback on iOS Safari
-      // (iOS has webkitRequestFullscreen but it silently fails for div elements;
-      //  distinguish iOS from Safari desktop via webkitFullscreenEnabled)
-      if (document.fullscreenEnabled && container.requestFullscreen) {
-        container.requestFullscreen().catch(() => _cssFullscreen(container, true));
-      } else if (document.webkitFullscreenEnabled && container.webkitRequestFullscreen) {
-        container.webkitRequestFullscreen(); // Safari desktop — works
-      } else {
-        _cssFullscreen(container, true); // iOS Safari — CSS only
-      }
-    } else {
-      if (document.fullscreenElement) {
-        document.exitFullscreen();
-      } else if (document.webkitFullscreenElement) {
-        document.webkitExitFullscreen();
-      } else {
-        _cssFullscreen(container, false);
-      }
-    }
-  });
-
-  // Native fullscreen change (desktop)
+    _toggleFullscreen(document.getElementById('map-container'));
+  });  // Native fullscreen change (desktop)
   document.getElementById('map-container')?.addEventListener('fullscreenchange', () => {
     const container = document.getElementById('map-container');
     if (!container) return;
@@ -1046,30 +1018,7 @@ function attachPlanningContentEvents() {
 
   /* ── Plan Map: fullscreen ── */
   document.getElementById('plan-map-fullscreen')?.addEventListener('click', () => {
-    const container = document.getElementById('plan-map-container');
-    if (!container) return;
-
-    const isFs = container.classList.contains('map-fullscreen-active')
-               || !!document.fullscreenElement
-               || !!document.webkitFullscreenElement;
-
-    if (!isFs) {
-      if (document.fullscreenEnabled && container.requestFullscreen) {
-        container.requestFullscreen().catch(() => _cssFullscreen(container, true));
-      } else if (document.webkitFullscreenEnabled && container.webkitRequestFullscreen) {
-        container.webkitRequestFullscreen();
-      } else {
-        _cssFullscreen(container, true);
-      }
-    } else {
-      if (document.fullscreenElement) {
-        document.exitFullscreen();
-      } else if (document.webkitFullscreenElement) {
-        document.webkitExitFullscreen();
-      } else {
-        _cssFullscreen(container, false);
-      }
-    }
+    _toggleFullscreen(document.getElementById('plan-map-container'));
   });
   document.getElementById('plan-map-container')?.addEventListener('fullscreenchange', () => {
     const isFs = !!document.fullscreenElement;
@@ -1112,6 +1061,42 @@ function attachPlanningContentEvents() {
 
 let _planMapInstance = null;
 let _planMapLayers   = [];
+
+/** Returns true on iOS Safari where native fullscreen doesn't work for divs */
+function _isIOS() {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); // iPadOS
+}
+
+/** Enter or exit fullscreen for a map container — works on all platforms */
+function _toggleFullscreen(container, fsIcon, fsLabel, mapRef) {
+  if (!container) return;
+
+  const isFs = container.classList.contains('map-fullscreen-active')
+             || !!document.fullscreenElement
+             || !!document.webkitFullscreenElement;
+
+  if (!isFs) {
+    if (_isIOS()) {
+      // iOS Safari: CSS only — native API silently fails for divs
+      _cssFullscreen(container, true);
+    } else if (document.fullscreenEnabled && container.requestFullscreen) {
+      container.requestFullscreen().catch(() => _cssFullscreen(container, true));
+    } else if (container.webkitRequestFullscreen) {
+      container.webkitRequestFullscreen(); // Safari desktop
+    } else {
+      _cssFullscreen(container, true);
+    }
+  } else {
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else if (document.webkitFullscreenElement) {
+      document.webkitExitFullscreen();
+    } else {
+      _cssFullscreen(container, false);
+    }
+  }
+}
 
 function _initPlanMap() {
   const el = document.getElementById('plan-map');
