@@ -467,14 +467,11 @@ function _cssFullscreen(container, enable) {
 function _updateFsUi(container, isFs) {
   container.classList.toggle('map-fullscreen-active', isFs);
   document.body.style.overflow = isFs ? 'hidden' : '';
-
-  // Support both tour map (map-fs-icon) and plan map (plan-fs-icon) icons
-  const icon  = container.querySelector('[id$="-fs-icon"]')  || document.getElementById('map-fs-icon')  || document.getElementById('plan-fs-icon');
-  const label = container.querySelector('[id$="-fs-label"]') || document.getElementById('map-fs-label') || document.getElementById('plan-fs-label');
+  const isPlan = container.id === 'plan-map-container';
+  const icon  = document.getElementById(isPlan ? 'plan-fs-icon'  : 'map-fs-icon');
+  const label = document.getElementById(isPlan ? 'plan-fs-label' : 'map-fs-label');
   if (icon)  icon.textContent  = isFs ? '✕' : '⛶';
   if (label) label.textContent = isFs ? 'Vollbild beenden' : 'Vollbild';
-
-  // Invalidate whichever map is active
   setTimeout(() => {
     mapInstance?.invalidateSize();
     _planMapInstance?.invalidateSize();
@@ -485,7 +482,34 @@ function attachMapEvents() {
   /* Fullscreen toggle — CSS-based for mobile compatibility (iOS Safari
      does not support requestFullscreen on non-video elements) */
   document.getElementById('map-fullscreen')?.addEventListener('click', () => {
-    _toggleFullscreen(document.getElementById('map-container'));
+    const container = document.getElementById('map-container');
+    if (!container) return;
+    const isFs = container.classList.contains('map-fullscreen-active');
+    if (!isFs) {
+      if (document.fullscreenEnabled && container.requestFullscreen) {
+        container.requestFullscreen().catch(() => _cssFullscreen(container, true));
+      } else if (container.webkitRequestFullscreen) {
+        container.webkitRequestFullscreen();
+      } else {
+        _cssFullscreen(container, true);
+      }
+    } else {
+      if (document.fullscreenElement) {
+        document.exitFullscreen?.();
+      } else {
+        _cssFullscreen(container, false);
+      }
+    }
+  });
+  document.getElementById('map-container')?.addEventListener('fullscreenchange', () => {
+    const container = document.getElementById('map-container');
+    if (!container) return;
+    _updateFsUi(container, !!document.fullscreenElement);
+  });
+  document.getElementById('map-container')?.addEventListener('webkitfullscreenchange', () => {
+    const container = document.getElementById('map-container');
+    if (!container) return;
+    _updateFsUi(container, !!document.webkitFullscreenElement);
   });  // Native fullscreen change (desktop)
   document.getElementById('map-container')?.addEventListener('fullscreenchange', () => {
     const container = document.getElementById('map-container');
@@ -1018,7 +1042,34 @@ function attachPlanningContentEvents() {
 
   /* ── Plan Map: fullscreen ── */
   document.getElementById('plan-map-fullscreen')?.addEventListener('click', () => {
-    _toggleFullscreen(document.getElementById('plan-map-container'));
+    const container = document.getElementById('plan-map-container');
+    if (!container) return;
+    const isFs = container.classList.contains('map-fullscreen-active');
+    if (!isFs) {
+      if (document.fullscreenEnabled && container.requestFullscreen) {
+        container.requestFullscreen().catch(() => _cssFullscreen(container, true));
+      } else if (container.webkitRequestFullscreen) {
+        container.webkitRequestFullscreen();
+      } else {
+        _cssFullscreen(container, true);
+      }
+    } else {
+      if (document.fullscreenElement) {
+        document.exitFullscreen?.();
+      } else {
+        _cssFullscreen(container, false);
+      }
+    }
+  });
+  document.getElementById('plan-map-container')?.addEventListener('fullscreenchange', () => {
+    const container = document.getElementById('plan-map-container');
+    if (!container) return;
+    _updateFsUi(container, !!document.fullscreenElement);
+  });
+  document.getElementById('plan-map-container')?.addEventListener('webkitfullscreenchange', () => {
+    const container = document.getElementById('plan-map-container');
+    if (!container) return;
+    _updateFsUi(container, !!document.webkitFullscreenElement);
   });
   document.getElementById('plan-map-container')?.addEventListener('fullscreenchange', () => {
     const isFs = !!document.fullscreenElement;
@@ -1061,42 +1112,6 @@ function attachPlanningContentEvents() {
 
 let _planMapInstance = null;
 let _planMapLayers   = [];
-
-/** Returns true on iOS Safari where native fullscreen doesn't work for divs */
-function _isIOS() {
-  return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); // iPadOS
-}
-
-/** Enter or exit fullscreen for a map container — works on all platforms */
-function _toggleFullscreen(container, fsIcon, fsLabel, mapRef) {
-  if (!container) return;
-
-  const isFs = container.classList.contains('map-fullscreen-active')
-             || !!document.fullscreenElement
-             || !!document.webkitFullscreenElement;
-
-  if (!isFs) {
-    if (_isIOS()) {
-      // iOS Safari: CSS only — native API silently fails for divs
-      _cssFullscreen(container, true);
-    } else if (document.fullscreenEnabled && container.requestFullscreen) {
-      container.requestFullscreen().catch(() => _cssFullscreen(container, true));
-    } else if (container.webkitRequestFullscreen) {
-      container.webkitRequestFullscreen(); // Safari desktop
-    } else {
-      _cssFullscreen(container, true);
-    }
-  } else {
-    if (document.fullscreenElement) {
-      document.exitFullscreen();
-    } else if (document.webkitFullscreenElement) {
-      document.webkitExitFullscreen();
-    } else {
-      _cssFullscreen(container, false);
-    }
-  }
-}
 
 function _initPlanMap() {
   const el = document.getElementById('plan-map');
