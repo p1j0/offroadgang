@@ -281,6 +281,17 @@ select option       { background: var(--surface2); }
 /* ============================================================
    HOME LAYOUT
    ============================================================ */
+.home-wrap { max-width: 1280px; margin: 0 auto; }
+
+.home-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 20px 28px 0;
+}
+
 .home-layout {
   display: grid;
   grid-template-columns: 1fr 320px;
@@ -483,6 +494,9 @@ select option       { background: var(--surface2); }
 
 .tab-content { flex: 1; overflow: hidden; position: relative; }
 .tab-scroll  { height: 100%; overflow-y: auto; }
+
+/* Planning polls tab needs its own scroll */
+.plan-polls-scroll { height: 100%; overflow-y: auto; }
 
 /* ============================================================
    MAP TAB
@@ -1087,4 +1101,244 @@ select option       { background: var(--surface2); }
   font-weight: 600;
   padding: 2px 8px;
   white-space: nowrap;
+}
+
+/* ============================================================
+   COMMUNITY CARDS (landing page)
+   ============================================================ */
+
+.community-card {
+  margin-bottom: 12px;
+  cursor: default;
+  transition: border-color 0.15s;
+}
+.community-card:hover { border-color: var(--accent); }
+.community-card-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 4px 0;
+}
+.community-card-name {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: .03em;
+}
+
+/* Community Home header */
+.home-section-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  color: var(--muted);
+  margin-bottom: 12px;
+  padding-top: 4px;
+}
+
+/* ============================================================
+   PLANNING PAGE — POLLS
+   ============================================================ */
+
+.poll-options { display: flex; flex-direction: column; gap: 8px; }
+
+.poll-option {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  transition: border-color 0.15s;
+}
+.poll-option:hover:not([style*="default"]) { border-color: var(--accent); }
+.poll-option-voted { border-color: var(--accent); }
+
+.poll-option-bar {
+  position: absolute;
+  inset: 0;
+  background: rgba(240,120,0,0.12);
+  transition: width 0.4s ease;
+  pointer-events: none;
+}
+
+.poll-option-inner {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  font-size: 14px;
+}
+
+.poll-option-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px; height: 18px;
+  border: 2px solid var(--border);
+  border-radius: 4px;
+  font-size: 11px;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+.poll-option-check-on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #000;
+}
+
+/* ============================================================
+   PLANNING PAGE — MAP
+   ============================================================ */
+
+#plan-map-container {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+}
+#plan-map { width: 100%; height: 100%; }
+
+/* ============================================================
+   PLANNING PAGE — POLLS LAYOUT
+   ============================================================ */
+
+.plan-polls-layout {
+  display: flex;
+  gap: 24px;
+  padding: 16px;
+  align-items: flex-start;
+  min-height: 100%;
+}
+.plan-polls-main    { flex: 1; min-width: 0; }
+.plan-polls-sidebar { width: 420px; flex-shrink: 0; }
+
+@media (max-width: 900px) {
+  .plan-polls-layout  { flex-direction: column; }
+  .plan-polls-sidebar { width: 100%; }
+}
+
+/* ============================================================
+   YEAR CALENDAR
+   ============================================================ */
+
+.ycal-wrap {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 12px;
+  position: sticky;
+  top: 0;
+}
+
+.ycal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.ycal-months {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.ycal-month-name {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--accent);
+  margin-bottom: 3px;
+}
+
+/* Day-of-week header */
+.ycal-grid-header {
+  display: grid;
+  grid-template-columns: 24px repeat(7, 1fr);
+  gap: 1px;
+  margin-bottom: 1px;
+}
+
+.ycal-head {
+  font-size: 9px;
+  text-align: center;
+  color: var(--muted);
+  font-weight: 600;
+  padding: 2px 0;
+}
+
+/* All week rows stacked */
+.ycal-rows { display: flex; flex-direction: column; gap: 0; }
+
+/* Numbers row */
+.ycal-num-row {
+  display: grid;
+  grid-template-columns: 24px repeat(7, 1fr);
+  gap: 1px;
+}
+
+/* KW cell */
+.ycal-kw-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  color: var(--muted);
+  line-height: 1;
+}
+
+/* Day number cell */
+.ycal-day {
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  border-radius: 2px;
+  color: var(--text);
+}
+.ycal-day.ycal-out   { color: var(--muted); opacity: 0.3; }
+.ycal-day.ycal-today { font-weight: 800; color: var(--accent); outline: 1px solid var(--accent); border-radius: 2px; }
+
+/* Events row — same 8-column grid as numbers row */
+.ycal-events-row {
+  display: grid;
+  grid-template-columns: 24px repeat(7, 1fr);
+  gap: 1px;
+  margin-bottom: 2px;
+}
+
+/* Spanning event bar */
+.ycal-event-bar {
+  font-size: 7px;
+  font-weight: 700;
+  border-radius: 2px;
+  padding: 1px 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.5;
+  cursor: default;
+}
+
+
+
+/* ============================================================
+   POLL EDIT MODAL
+   ============================================================ */
+
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 99999;
+  padding: 20px;
+  box-sizing: border-box;
 }

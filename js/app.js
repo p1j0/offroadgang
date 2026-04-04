@@ -102,12 +102,32 @@ async function navigateTo(view, params = {}) {
   // Tear down realtime when leaving a tour
   if (view !== 'tour') unsubscribeFromChat();
 
+  // Destroy plan map when leaving planning page
+  if (view !== 'planning' && typeof _planMapInstance !== 'undefined' && _planMapInstance) {
+    try { _planMapInstance.stop(); _planMapInstance.remove(); } catch(e) {}
+    _planMapInstance = null;
+    _planMapLayers   = [];
+  }
+
   // Merge any extra params into global state
   Object.assign(state, params);
 
   // Load data required for the target view
   try {
-    if (view === 'home' && state.currentUser) await loadHomeData();
+    if (view === 'communities' && state.currentUser) await loadCommunities();
+    if ((view === 'community-home' || view === 'community-settings' || view === 'planning') && state.currentCommunityId) {
+      await loadCommunityData(state.currentCommunityId);
+      if (view === 'community-home') {
+        await loadHomeData();
+        await computePlanningBadges();
+      }
+      if (view === 'planning') {
+        await loadPlanningData();
+        markTabSeen(state.currentCommunityId, 'plan-chat');
+        markTabSeen(state.currentCommunityId, 'plan-polls');
+        state.planningBadges = { chat: 0, polls: 0 };
+      }
+    }
     if (view === 'tour' && state.currentTourId) {
       await loadTourData(state.currentTourId);
       subscribeToChat(state.currentTourId);
@@ -132,31 +152,47 @@ function render() {
   const app = document.getElementById('app');
   if (!app) return;
 
-  // Navigation bar is shown on every view except auth / loading
   const showNav = !['auth', 'loading'].includes(state.view);
 
-  let html = showNav ? renderNav() : '';
+  try {
+    let html = showNav ? renderNav() : '';
 
-  if (state.view === 'profile') {
-    app.innerHTML = html + '<div class="loading-screen" style="font-size:20px">Lade…</div>';
-    renderProfile().then(profileHtml => {
-      app.innerHTML = html + profileHtml;
+    if (state.view === 'profile') {
+      app.innerHTML = html + '<div class="loading-screen" style="font-size:20px">Lade…</div>';
+      renderProfile().then(profileHtml => {
+        app.innerHTML = html + profileHtml;
+        attachEvents();
+      });
+      return;
+    }
+
+    if (state.view === 'community-settings') {
+      app.innerHTML = html + renderCommunitySettings();
       attachEvents();
-    });
-    return;
-  }
+      return;
+    }
 
-  switch (state.view) {
-    case 'auth':   html += renderAuth();   break;
-    case 'home':   html += renderHome();   break;
-    case 'create': html += renderCreate(); break;
-    case 'join':   html += renderJoin();   break;
-    case 'tour':   html += renderTour();   break;
-    default:       html += '<div class="loading-screen">…</div>';
-  }
+    switch (state.view) {
+      case 'auth':                html += renderAuth();             break;
+      case 'communities':         html += renderCommunities();      break;
+    case 'create-community':    html += renderCreateCommunity();  break;
+      case 'community-home':      html += renderCommunityHome();    break;
+    case 'planning':            html += renderPlanning();          break;
+      case 'create':              html += renderCreate();           break;
+      case 'join':                html += renderJoin();             break;
+      case 'tour':                html += renderTour();             break;
+      default: html += '<div class="loading-screen">…</div>';
+    }
 
-  app.innerHTML = html;
-  attachEvents();
+    app.innerHTML = html;
+    attachEvents();
+  } catch (e) {
+    console.error('[render] error:', e);
+    app.innerHTML = `<div style="padding:40px;color:#e04444;font-family:monospace">
+      <strong>Render-Fehler:</strong><br>${e.message}<br><br>
+      <button onclick="location.reload()" style="padding:8px 16px;cursor:pointer">Seite neu laden</button>
+    </div>`;
+  }
 }
 
 /* ----------------------------------------------------------
@@ -199,7 +235,7 @@ async function init() {
             await navigateTo('join');
           }
         } else {
-          await navigateTo('home');
+          await navigateTo('communities');
         }
         return;
       }
@@ -213,6 +249,15 @@ async function init() {
   state.view     = 'auth';
   render();
 }
+
+// Global poll edit handler — registered immediately so onclick works at any time
+window._openPollEdit = function(pollId) {
+  const poll = state.communityPolls.find(p => p.id === pollId);
+  if (!poll) { console.warn('[_openPollEdit] Poll not found:', pollId, 'Available:', state.communityPolls.map(p=>p.id)); return; }
+  document.getElementById('poll-edit-overlay')?.remove();
+  document.body.insertAdjacentHTML('beforeend', renderPollEditModal(poll));
+  _attachPollEditModal(poll);
+};
 
 // Start the application
 init();
