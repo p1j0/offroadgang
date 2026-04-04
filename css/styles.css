@@ -1054,15 +1054,20 @@ select option       { background: var(--surface2); }
 .toggle-switch input:checked + .toggle-slider::before     { transform: translateX(20px); }
 
 /* Map fullscreen — CSS-based, works on iOS Safari + all browsers */
-#map-container.map-fullscreen-active {
+#map-container.map-fullscreen-active,
+#plan-map-container.map-fullscreen-active {
   position: fixed !important;
-  inset: 0 !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
   width: 100vw !important;
   height: 100vh !important;
   z-index: 9000;
   border-radius: 0 !important;
 }
-#map-container.map-fullscreen-active #map {
+#map-container.map-fullscreen-active #map,
+#plan-map-container.map-fullscreen-active #plan-map {
   height: 100vh !important;
 }
 #map-container.map-fullscreen-active .map-info {
