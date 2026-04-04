@@ -487,10 +487,17 @@ function attachMapEvents() {
     const isFs = container.classList.contains('map-fullscreen-active');
     if (!isFs) {
       if (document.fullscreenEnabled && container.requestFullscreen) {
-        container.requestFullscreen().catch(() => _cssFullscreen(container, true));
+        // After promise resolves, verify fullscreen actually activated.
+        // On iOS 16.4+, requestFullscreen() may resolve but silently do nothing.
+        container.requestFullscreen()
+          .then(() => {
+            // Two rAFs = ~33ms — enough to check if fullscreenElement was set
+            requestAnimationFrame(() => requestAnimationFrame(() => {
+              if (!document.fullscreenElement) _cssFullscreen(container, true);
+            }));
+          })
+          .catch(() => _cssFullscreen(container, true));
       } else {
-        // Safari desktop + iOS: skip webkitRequestFullscreen (silently fails on
-        // real iOS for <div> elements since iOS 16) — always use CSS fullscreen
         _cssFullscreen(container, true);
       }
     } else {
@@ -1047,10 +1054,17 @@ function attachPlanningContentEvents() {
     const isFs = container.classList.contains('map-fullscreen-active');
     if (!isFs) {
       if (document.fullscreenEnabled && container.requestFullscreen) {
-        container.requestFullscreen().catch(() => _cssFullscreen(container, true));
+        // After promise resolves, verify fullscreen actually activated.
+        // On iOS 16.4+, requestFullscreen() may resolve but silently do nothing.
+        container.requestFullscreen()
+          .then(() => {
+            // Two rAFs = ~33ms — enough to check if fullscreenElement was set
+            requestAnimationFrame(() => requestAnimationFrame(() => {
+              if (!document.fullscreenElement) _cssFullscreen(container, true);
+            }));
+          })
+          .catch(() => _cssFullscreen(container, true));
       } else {
-        // Safari desktop + iOS: skip webkitRequestFullscreen (silently fails on
-        // real iOS for <div> elements since iOS 16) — always use CSS fullscreen
         _cssFullscreen(container, true);
       }
     } else {
