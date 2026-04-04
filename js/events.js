@@ -488,9 +488,9 @@ function attachMapEvents() {
     if (!isFs) {
       if (document.fullscreenEnabled && container.requestFullscreen) {
         container.requestFullscreen().catch(() => _cssFullscreen(container, true));
-      } else if (container.webkitRequestFullscreen) {
-        container.webkitRequestFullscreen();
       } else {
+        // Safari desktop + iOS: skip webkitRequestFullscreen (silently fails on
+        // real iOS for <div> elements since iOS 16) — always use CSS fullscreen
         _cssFullscreen(container, true);
       }
     } else {
@@ -1048,9 +1048,9 @@ function attachPlanningContentEvents() {
     if (!isFs) {
       if (document.fullscreenEnabled && container.requestFullscreen) {
         container.requestFullscreen().catch(() => _cssFullscreen(container, true));
-      } else if (container.webkitRequestFullscreen) {
-        container.webkitRequestFullscreen();
       } else {
+        // Safari desktop + iOS: skip webkitRequestFullscreen (silently fails on
+        // real iOS for <div> elements since iOS 16) — always use CSS fullscreen
         _cssFullscreen(container, true);
       }
     } else {
