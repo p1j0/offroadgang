@@ -49,6 +49,35 @@ function unsubscribeFromChat() {
   }
 }
 
+let communityChannel = null;
+
+function subscribeToCommunityChat(communityId) {
+  unsubscribeFromCommunityChat();
+  communityChannel = sb
+    .channel('community-chat:' + communityId)
+    .on('postgres_changes', {
+      event:  'INSERT',
+      schema: 'public',
+      table:  'community_messages',
+      filter: 'community_id=eq.' + communityId,
+    }, (payload) => {
+      const msg = payload.new;
+      if (msg.user_id === state.currentUser?.id) return;
+      state.communityMessages.push(msg);
+      if (state.view === 'planning' && state.planningTab === 'chat') {
+        _appendPlanChatMessage(msg);
+      }
+    })
+    .subscribe();
+}
+
+function unsubscribeFromCommunityChat() {
+  if (communityChannel) {
+    sb.removeChannel(communityChannel);
+    communityChannel = null;
+  }
+}
+
 let _heartbeatTimer = null;
 
 /**
@@ -109,6 +138,9 @@ async function navigateTo(view, params = {}) {
     // Tear down realtime when leaving a tour
     if (view !== 'tour') unsubscribeFromChat();
 
+    // Unsubscribe from community chat when leaving planning page
+    if (view !== 'planning') unsubscribeFromCommunityChat();
+
     // Destroy plan map when leaving planning page
     if (view !== 'planning' && typeof _planMapInstance !== 'undefined' && _planMapInstance) {
       try { _planMapInstance.stop(); _planMapInstance.remove(); } catch(e) {}
@@ -133,6 +165,7 @@ async function navigateTo(view, params = {}) {
           markTabSeen(state.currentCommunityId, 'plan-chat');
           markTabSeen(state.currentCommunityId, 'plan-polls');
           state.planningBadges = { chat: 0, polls: 0 };
+          subscribeToCommunityChat(state.currentCommunityId);
         }
       }
       if (view === 'tour' && state.currentTourId) {
