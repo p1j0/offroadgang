@@ -203,6 +203,10 @@ function garminSymToEmoji(sym) {
 
 let trackLayers     = [];
 let waypointMarkers = [];
+let mapInstance     = null;
+let gpxLayer        = null;
+let startMarker     = null;
+let endMarker       = null;
 
 /* ----------------------------------------------------------
    GPX parsing
@@ -322,6 +326,7 @@ function initMap(tour) {
   if (!container) return;
 
   if (mapInstance) {
+    try { mapInstance.stop(); } catch(e) {}
     mapInstance.remove();
     mapInstance      = null;
     trackLayers      = [];
@@ -344,7 +349,11 @@ function initMap(tour) {
 }
 
 function destroyMap() {
-  if (mapInstance) { mapInstance.remove(); mapInstance = null; }
+  if (mapInstance) {
+    try { mapInstance.stop(); } catch(e) {}
+    mapInstance.remove();
+    mapInstance = null;
+  }
   trackLayers     = [];
   waypointMarkers = [];
   gpxLayer        = null;
