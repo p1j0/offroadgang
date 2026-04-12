@@ -30,26 +30,33 @@ async function doRegister() {
 
   setBtn('auth-btn', true);
 
-  const email = usernameToEmail(username);
-  const { data, error } = await sb.auth.signUp({ email, password: pw });
+  try {
+    const email = usernameToEmail(username);
+    const { data, error } = await sb.auth.signUp({ email, password: pw });
 
-  if (error || !data.user) {
-    state.authErr = error?.message?.includes('already')
-      ? 'Benutzername bereits vergeben.'
-      : (error?.message || 'Registrierung fehlgeschlagen.');
-    render(); return;
+    if (error || !data.user) {
+      state.authErr = error?.message?.includes('already')
+        ? 'Benutzername bereits vergeben.'
+        : (error?.message || 'Registrierung fehlgeschlagen.');
+      render(); return;
+    }
+
+    const { error: profErr } = await sb.from('profiles').insert({ id: data.user.id, username });
+    if (profErr) {
+      state.authErr = 'Benutzername bereits vergeben.';
+      await sb.auth.signOut();
+      render(); return;
+    }
+
+    state.currentUser = { id: data.user.id, username };
+    state.profileCache[data.user.id] = username;
+    startHeartbeat();
+    await navigateTo('communities');
+  } catch (e) {
+    console.error('[doRegister]', e);
+    state.authErr = 'Registrierung fehlgeschlagen: ' + (e.message || e);
+    render();
   }
-
-  const { error: profErr } = await sb.from('profiles').insert({ id: data.user.id, username });
-  if (profErr) {
-    state.authErr = 'Benutzername bereits vergeben.';
-    await sb.auth.signOut();
-    render(); return;
-  }
-
-  state.currentUser = { id: data.user.id, username };
-  state.profileCache[data.user.id] = username;
-  await navigateTo('home');
 }
 
 /**
@@ -66,34 +73,45 @@ async function doLogin() {
 
   setBtn('auth-btn', true);
 
-  const email = usernameToEmail(username);
-  const { data, error } = await sb.auth.signInWithPassword({ email, password: pw });
+  try {
+    const email = usernameToEmail(username);
+    const { data, error } = await sb.auth.signInWithPassword({ email, password: pw });
 
-  if (error) {
-    state.authErr = 'Benutzername oder Passwort falsch.';
-    render(); return;
+    if (error) {
+      state.authErr = 'Benutzername oder Passwort falsch.';
+      render(); return;
+    }
+
+    const { data: profile } = await sb.from('profiles').select('username').eq('id', data.user.id).single();
+    state.currentUser = { id: data.user.id, username: profile?.username || username };
+    state.profileCache[data.user.id] = state.currentUser.username;
+    startHeartbeat();
+    await navigateTo('communities');
+  } catch (e) {
+    console.error('[doLogin]', e);
+    state.authErr = 'Login fehlgeschlagen: ' + (e.message || e);
+    render();
   }
-
-  const { data: profile } = await sb.from('profiles').select('username').eq('id', data.user.id).single();
-  state.currentUser = { id: data.user.id, username: profile?.username || username };
-  state.profileCache[data.user.id] = state.currentUser.username;
-  await navigateTo('home');
 }
 
 /**
  * Sign out and return to the auth screen.
  */
 async function doLogout() {
-  await sb.auth.signOut();
+  stopHeartbeat();
+  try { await sb.auth.signOut(); } catch (e) { console.error('[doLogout]', e); }
 
-  // Reset state
-  state.currentUser  = null;
-  state.tours        = [];
-  state.myTourIds    = new Set();
-  state.profileCache = {};
-  state.currentTour  = null;
+  state.currentUser         = null;
+  state.tours               = [];
+  state.myTourIds           = new Set();
+  state.profileCache        = {};
+  state.currentTour         = null;
+  state.communities         = [];
+  state.myCommunityIds      = new Set();
+  state.currentCommunityId  = null;
+  state.currentCommunity    = null;
+  state.communityMembers    = [];
 
-  // Destroy map if active
   if (mapInstance) { mapInstance.remove(); mapInstance = null; }
 
   navigateTo('auth');

@@ -96,6 +96,7 @@ function renderNav() {
   <div class="nav-logo" id="nav-logo">MOTO<span>ROUTE</span></div>
   <div class="nav-user">
     🏍️ <strong>${esc(state.currentUser?.username || '')}</strong>
+    <button class="btn-ghost btn-sm" id="go-profile" title="Profil & Benachrichtigungen">⚙️</button>
     <button class="btn-logout" id="logout-btn">Abmelden</button>
   </div>
 </nav>`;
@@ -154,10 +155,21 @@ function renderHome() {
 
 function renderTourCard(tour, locked) {
   const date     = new Date(tour.date + 'T12:00:00');
-  const isAdmin  = tour.admin_id === state.currentUser.id;
+  const isAdmin  = tour.admin_id === state.currentUser.id || (tour.co_admin_ids||[]).includes(state.currentUser.id);
   const isMine   = state.myTourIds.has(tour.id);
   const dateStr  = date.toLocaleDateString('de-DE', { day: '2-digit', month: 'short', year: 'numeric' });
-  const adminName = state.profileCache[tour.admin_id] || '…';
+  const adminName   = state.profileCache[tour.admin_id] || '…';
+  // +1 for the admin who is not in tour_members
+  const memberCount = (state.memberCounts[tour.id] || 0) + 1;
+
+  // Unread badges (only for tours the user is a member of)
+  const newMsgs    = isMine ? (state.homeBadges[tour.id]?.chat     || 0) : 0;
+  const newChanges = isMine ? (state.homeBadges[tour.id]?.changelog || 0) : 0;
+  const badgesHtml = (newMsgs > 0 || newChanges > 0) ? `
+    <div class="tour-card-badges">
+      ${newMsgs    > 0 ? `<span class="tour-card-badge">💬 ${newMsgs    > 99 ? '99+' : newMsgs}</span>`    : ''}
+      ${newChanges > 0 ? `<span class="tour-card-badge">📋 ${newChanges > 99 ? '99+' : newChanges}</span>` : ''}
+    </div>` : '';
 
   return `
 <div class="card tour-card" data-tour-id="${tour.id}">
@@ -177,12 +189,18 @@ function renderTourCard(tour, locked) {
     </div>
   </div>
   <div class="tour-card-footer">
-    <span style="font-size:12px;color:var(--muted)">von ${esc(adminName)}</span>
-    <div style="display:flex;gap:6px;align-items:center">
-      <button class="btn-copy-link" data-copy-id="${tour.id}" title="Einladungslink kopieren">🔗</button>
-      ${isMine
-        ? `<button class="btn btn-primary btn-sm" data-open-id="${tour.id}">Öffnen →</button>`
-        : `<button class="btn btn-ghost btn-sm"   data-join-id="${tour.id}">Beitreten</button>`}
+    <div style="display:flex;flex-direction:column;gap:3px">
+      <span style="font-size:12px;color:var(--muted)">von ${esc(adminName)}</span>
+      <span style="font-size:12px;color:var(--muted)">👥 ${memberCount} Mitfahrer</span>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
+      ${badgesHtml}
+      <div style="display:flex;gap:6px;align-items:center">
+        <button class="btn-copy-link" data-copy-id="${tour.id}" title="Einladungslink kopieren">🔗</button>
+        ${isMine
+          ? `<button class="btn btn-primary btn-sm" data-open-id="${tour.id}">Öffnen →</button>`
+          : `<button class="btn btn-ghost btn-sm"   data-join-id="${tour.id}">Beitreten</button>`}
+      </div>
     </div>
   </div>
 </div>`;
@@ -199,6 +217,7 @@ const TOUR_PALETTE = [
 ];
 
 function renderCalWidget() {
+  if (!state.calMonth) state.calMonth = new Date();
   const y = state.calMonth.getFullYear();
   const m = state.calMonth.getMonth();
 
@@ -232,12 +251,15 @@ function renderCalWidget() {
     else        visibleOther.push({ name: tour.name, color });
 
     const cursor = new Date(Math.max(start, monthStart));
+    cursor.setHours(12, 0, 0, 0); // normalise to noon — avoids DST skip
     const limit  = new Date(Math.min(end,   monthEnd));
+    limit.setHours(12, 0, 0, 0);
     while (cursor <= limit) {
       const dn = cursor.getDate();
       if (!dayMap[dn]) dayMap[dn] = [];
       dayMap[dn].push({ name: tour.name, color, isMine });
       cursor.setDate(cursor.getDate() + 1);
+      cursor.setHours(12, 0, 0, 0);
     }
   });
 
@@ -304,6 +326,56 @@ function renderCalWidget() {
 }
 
 /* ----------------------------------------------------------
+   Changelog tab
+   ---------------------------------------------------------- */
+
+function renderChangelogTab() {
+  const entries = state.tourChangelog;
+
+  if (!entries.length) {
+    return `<div class="tab-scroll"><div style="padding:40px;text-align:center;color:var(--muted)">
+      <div style="font-size:40px;margin-bottom:12px">📝</div>
+      <div style="font-family:var(--font-display);font-size:22px;letter-spacing:1px;color:var(--text);margin-bottom:6px">Noch keine Einträge</div>
+      <div style="font-size:13px">Änderungen an der Tour werden hier automatisch protokolliert.</div>
+    </div></div>`;
+  }
+
+  const rows = entries.map(e => {
+    const dt  = new Date(e.created_at);
+    const date = dt.toLocaleDateString('de-DE', { day:'2-digit', month:'2-digit', year:'2-digit' });
+    const time = dt.toLocaleTimeString('de-DE', { hour:'2-digit', minute:'2-digit' });
+
+    const hasOld = e.old_value && e.old_value !== '';
+    const hasNew = e.new_value && e.new_value !== '';
+
+    let changeHtml = '';
+    if (hasOld && hasNew) {
+      changeHtml = `<span class="cl-old">${esc(e.old_value)}</span>
+                    <span class="cl-arrow">→</span>
+                    <span class="cl-new">${esc(e.new_value)}</span>`;
+    } else if (hasNew) {
+      changeHtml = `<span class="cl-new">+ ${esc(e.new_value)}</span>`;
+    } else if (hasOld) {
+      changeHtml = `<span class="cl-old">− ${esc(e.old_value)}</span>`;
+    }
+
+    return `<div class="cl-row">
+      <div class="cl-meta">
+        <span class="cl-user">${esc(e.username)}</span>
+        <span class="cl-time">${date}, ${time}</span>
+      </div>
+      <div class="cl-field">${esc(e.field)}</div>
+      <div class="cl-change">${changeHtml}</div>
+    </div>`;
+  }).join('');
+
+  return `<div class="tab-scroll"><div style="padding:24px;max-width:760px">
+    <h2 style="font-family:var(--font-display);font-size:28px;letter-spacing:1px;margin-bottom:20px">Change Log</h2>
+    <div class="cl-list">${rows}</div>
+  </div></div>`;
+}
+
+/* ----------------------------------------------------------
    Create tour form
    ---------------------------------------------------------- */
 
@@ -313,7 +385,7 @@ function renderCreate() {
 <div class="page-form">
   <button class="btn btn-ghost btn-sm" style="margin-bottom:24px" id="back-home">← Zurück</button>
   <div class="page-title">Tour Erstellen</div>
-  <div class="page-sub">Lege eine neue Motorrad-Tour an. Du bist automatisch Admin und legst das Beitrittspasswort fest.</div>
+  <div class="page-sub">Lege eine neue Tour für „${esc(state.currentCommunity?.name || '')}" an. Du bist automatisch Admin.</div>
 
   <div class="form-group">
     <label>Tour-Name *</label>
@@ -338,10 +410,6 @@ function renderCreate() {
       <label>Ziel / Region</label>
       <input type="text" id="f-dest" placeholder="z.B. Titisee, BW" maxlength="80" />
     </div>
-  </div>
-  <div class="form-group">
-    <label>Beitritts-Passwort *</label>
-    <input type="password" id="f-pw" placeholder="Passwort für neue Mitglieder" maxlength="40" />
   </div>
 
   <button class="btn btn-primary" id="create-submit"
@@ -399,12 +467,13 @@ function renderTour() {
   const tour = state.currentTour;
   if (!tour) return '<div style="padding:40px;color:var(--muted)">Tour nicht gefunden.</div>';
 
-  const isAdmin = tour.admin_id === state.currentUser.id;
+  const isAdmin = isCurrentUserAdmin();
   const tabs    = [
     { id: 'map',          label: '🗺️ Karte' },
     { id: 'chat',         label: '💬 Chat' },
     { id: 'participants', label: '👥 Teilnehmer' },
     { id: 'info',         label: '📋 Info & Kalender' },
+    { id: 'changelog',    label: '📝 Change Log' },
   ];
 
   return `
@@ -424,10 +493,24 @@ function renderTour() {
   </div>
 
   <div class="tour-tabs">
-    ${tabs.map(t => `
-      <button class="tab-btn ${state.currentTab === t.id ? 'active' : ''}" data-tab="${t.id}">
+    ${tabs.map(t => {
+      const badge   = state.tabBadges[t.id];
+      const isActive = state.currentTab === t.id;
+      const tooltipLines = badge
+        ? badge.slice(0, 5).map(b => {
+            const time = b.time.toLocaleTimeString('de-DE', { hour:'2-digit', minute:'2-digit' });
+            const date = b.time.toLocaleDateString('de-DE', { day:'2-digit', month:'2-digit' });
+            return `${date} ${time}  ${b.text}`;
+          }).join('&#10;')
+        : '';
+      return `
+      <button class="tab-btn ${isActive ? 'active' : ''}" data-tab="${t.id}">
         ${t.label}
-      </button>`).join('')}
+        ${badge && !isActive
+          ? `<span class="tab-badge" title="${tooltipLines}">${badge.length > 9 ? '9+' : badge.length}</span>`
+          : ''}
+      </button>`;
+    }).join('')}
   </div>
 
   <div class="tab-content" id="tab-content">
@@ -442,6 +525,7 @@ function renderTab(tour) {
     case 'chat':         return renderChatTab();
     case 'participants': return renderParticipantsTab();
     case 'info':         return renderInfoTab(tour);
+    case 'changelog':    return renderChangelogTab();
     default: return '';
   }
 }
@@ -452,7 +536,7 @@ function renderTab(tour) {
 
 function renderMapTab(tour) {
   const gpxData = normalizeGPXRoute(tour.gpx_route);
-  const isAdmin = tour.admin_id === state.currentUser.id;
+  const isAdmin = isCurrentUserAdmin();
   const hasTracks = gpxData?.tracks?.length > 0;
   const hasWaypoints = gpxData?.waypoints?.length > 0;
   const hasAny = hasTracks || hasWaypoints;
@@ -463,10 +547,11 @@ function renderMapTab(tour) {
     if (hasTracks) {
       const tracksHtml = gpxData.tracks.map((t, i) => {
         const color = t.color || TRACK_COLORS[i % TRACK_COLORS.length];
+        const dist = calculateTrackDistance(gpxData, i);
         return `<div class="map-sidebar-item" data-track-idx="${i}" title="${esc(t.name)}">
           <span class="map-sidebar-dot" style="background:${color}"></span>
           <span class="map-sidebar-label">${esc(t.name)}</span>
-          <span class="map-sidebar-count">${t.points.length} Pkt.</span>
+          <span class="map-sidebar-count">${dist || '—'}</span>
         </div>`;
       }).join('');
       sidebarHtml += `<div class="map-sidebar-section">
@@ -479,11 +564,14 @@ function renderMapTab(tour) {
       </div>`;
     }
     if (hasWaypoints) {
-      const wpsHtml = gpxData.waypoints.map((w, i) => `
-        <div class="map-sidebar-item" data-wp-idx="${i}" title="${esc(w.name)}">
-          <span style="font-size:15px;flex-shrink:0">📍</span>
+      const wpsHtml = gpxData.waypoints.map((w, i) => {
+        const emoji = garminSymToEmoji(w.sym);
+        return `
+        <div class="map-sidebar-item" data-wp-idx="${i}" title="${esc(w.name)}${w.sym ? ' (' + esc(w.sym) + ')' : ''}">
+          <span style="font-size:15px;flex-shrink:0">${emoji}</span>
           <span class="map-sidebar-label">${esc(w.name)}</span>
-        </div>`).join('');
+        </div>`;
+      }).join('');
       sidebarHtml += `<div class="map-sidebar-section">
         <div class="map-sidebar-title" style="display:flex;align-items:center;justify-content:space-between">
           <span>Wegpunkte (${gpxData.waypoints.length})</span>
@@ -492,6 +580,8 @@ function renderMapTab(tour) {
         ${wpsHtml}
       </div>`;
     }
+
+
   } else {
     sidebarHtml = `<div class="map-sidebar-empty">
       ${isAdmin ? '📁 GPX hochladen um Tracks zu sehen' : 'Kein GPX vorhanden'}
@@ -503,13 +593,24 @@ function renderMapTab(tour) {
   <div id="map-container">
     <div id="map"></div>
     <div class="map-controls">
+      <button class="map-btn" id="map-fullscreen">
+        <span class="map-btn-icon" id="map-fs-icon">⛶</span>
+        <span class="map-btn-label" id="map-fs-label">Vollbild</span>
+      </button>
       ${isAdmin ? `
       <label class="map-btn" for="gpx-up" style="cursor:pointer">
-        📁 GPX hochladen
+        <span class="map-btn-icon">📁</span>
+        <span class="map-btn-label">GPX hochladen</span>
         <input type="file" id="gpx-up" accept=".gpx" style="display:none" />
       </label>` : ''}
-      ${hasAny ? `<button class="map-btn" id="gpx-dl">⬇️ GPX herunterladen</button>` : ''}
-      ${hasAny && isAdmin ? `<button class="map-btn map-btn-danger" id="gpx-del">🗑️ Route löschen</button>` : ''}
+      ${hasAny ? `<button class="map-btn" id="gpx-dl">
+        <span class="map-btn-icon">⬇️</span>
+        <span class="map-btn-label">GPX herunterladen</span>
+      </button>` : ''}
+      ${hasAny && isAdmin ? `<button class="map-btn map-btn-danger" id="gpx-del">
+        <span class="map-btn-icon">🗑️</span>
+        <span class="map-btn-label">Route löschen</span>
+      </button>` : ''}
     </div>
     <div class="map-info">
       ${hasAny
@@ -571,6 +672,11 @@ function renderChatTab() {
    ---------------------------------------------------------- */
 
 function renderParticipantsTab() {
+  const viewerIsAdmin = isCurrentUserAdmin();
+  const tour          = state.currentTour;
+  const coAdmins      = tour?.co_admin_ids || [];
+  const creatorId     = tour?.admin_id;
+
   return `
 <div class="tab-scroll">
   <div class="participants-layout">
@@ -579,17 +685,35 @@ function renderParticipantsTab() {
         Teilnehmer (${state.tourMembers.length})
       </h2>
     </div>
-    ${state.tourMembers.map(m => `
+    ${state.tourMembers.map(m => {
+      const isCreator  = m.user_id === creatorId;
+      const isCoAdmin  = coAdmins.includes(m.user_id);
+      const isMe       = m.user_id === state.currentUser.id;
+      const roleLabel  = isCreator ? 'Admin & Ersteller' : isCoAdmin ? 'Co-Admin' : 'Mitfahrer';
+      const roleColor  = (isCreator || isCoAdmin) ? 'var(--accent)' : 'var(--muted)';
+
+      // Admin can promote members (not creator, not themselves, not already co-admin)
+      const canPromote = viewerIsAdmin && !isCreator && !isCoAdmin && !isMe;
+      // Creator can demote co-admins (not themselves)
+      const canDemote  = tour?.admin_id === state.currentUser.id && isCoAdmin && !isMe;
+      // Admin can remove any member (not creator, not themselves)
+      const canKick    = viewerIsAdmin && !isCreator && !isMe;
+
+      return `
     <div class="participant-item">
-      <div class="participant-avatar">${(m.username || '?')[0].toUpperCase()}</div>
-      <div>
+      <div class="participant-avatar" style="${(isCreator||isCoAdmin)?'background:var(--accent)':''}">${(m.username||'?')[0].toUpperCase()}</div>
+      <div style="flex:1;min-width:0">
         <div style="font-weight:500">${esc(m.username)}</div>
-        <div style="font-size:12px;color:var(--muted)">${m.isAdmin ? 'Admin & Ersteller' : 'Mitfahrer'}</div>
+        <div style="font-size:12px;color:${roleColor}">${roleLabel}</div>
       </div>
-      ${m.user_id === state.currentUser.id
-        ? '<span class="tag tag-accent" style="margin-left:auto">Du</span>'
-        : ''}
-    </div>`).join('')}
+      <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+        ${isMe ? '<span class="tag tag-accent">Du</span>' : ''}
+        ${canPromote ? `<button class="btn btn-ghost btn-sm" data-promote="${m.user_id}" title="Zum Co-Admin machen">⬆️ Co-Admin</button>` : ''}
+        ${canDemote  ? `<button class="btn btn-ghost btn-sm" data-demote="${m.user_id}"  title="Co-Admin entfernen" style="color:var(--danger)">Co-Admin ✕</button>` : ''}
+        ${canKick    ? `<button class="btn btn-ghost btn-sm" data-kick="${m.user_id}" title="Aus Tour entfernen" style="color:var(--danger)">🚫</button>` : ''}
+      </div>
+    </div>`;
+    }).join('')}
   </div>
 </div>`;
 }
@@ -598,8 +722,34 @@ function renderParticipantsTab() {
    Info & calendar tab
    ---------------------------------------------------------- */
 
+function renderDistanceSelector(tour) {
+  const gpxData = normalizeGPXRoute(tour.gpx_route);
+  if (!gpxData?.tracks?.length) {
+    return '<p style="font-size:12px;color:var(--muted);margin-bottom:4px">Noch keine GPX-Route hochgeladen.</p>';
+  }
+  const totalDist = calculateTotalDistance(gpxData);
+  const trackOpts = gpxData.tracks.map((t, i) => {
+    const d = calculateTrackDistance(gpxData, i);
+    return '<option value="track:' + i + '">Track: ' + esc(t.name) + (d ? ' (' + d + ')' : '') + '</option>';
+  }).join('');
+  const opts =
+    '<option value="total">' + (totalDist ? 'Gesamtdistanz (' + totalDist + ')' : 'Gesamtdistanz') + '</option>' +
+    trackOpts +
+    '<option value="manual">Manuell eingeben</option>';
+  return [
+    '<div class="form-group" style="margin-bottom:8px">',
+    '  <label>Quelle</label>',
+    '  <select id="dist-source">' + opts + '</select>',
+    '</div>',
+    '<div id="dist-manual-wrap" style="display:none" class="form-group">',
+    '  <label>Manuelle Eingabe</label>',
+    '  <input type="text" id="dist-manual" placeholder="z.B. 350 km" />',
+    '</div>',
+  ].join('');
+}
+
 function renderInfoTab(tour) {
-  const isAdmin = tour.admin_id === state.currentUser.id;
+  const isAdmin = isCurrentUserAdmin();
 
   return `
 <div class="tab-scroll">
@@ -644,6 +794,16 @@ function renderInfoTab(tour) {
           <label>Tour-Name</label>
           <input type="text" id="edit-name" value="${esc(tour.name)}" maxlength="60" />
         </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Startdatum</label>
+            <input type="date" id="edit-date" value="${esc(tour.date || '')}" />
+          </div>
+          <div class="form-group">
+            <label>Enddatum</label>
+            <input type="date" id="edit-edate" value="${esc(tour.end_date || '')}" />
+          </div>
+        </div>
         <div class="form-group">
           <label>Ziel / Region</label>
           <input type="text" id="edit-dest" value="${esc(tour.destination || '')}" />
@@ -652,6 +812,11 @@ function renderInfoTab(tour) {
           <label>Beschreibung</label>
           <textarea id="edit-desc">${esc(tour.description || '')}</textarea>
         </div>
+        <div class="divider" style="margin:16px 0 14px"></div>
+        <h4 style="font-size:13px;font-weight:600;margin-bottom:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em">
+          📏 Distanz berechnen
+        </h4>
+        ${renderDistanceSelector(tour)}
         <button class="btn btn-primary btn-sm" id="edit-save">Änderungen speichern</button>
         <div class="divider"></div>
         <h3 style="font-size:15px;font-weight:600;margin-bottom:12px;color:var(--danger)">⚠️ Gefahrenzone</h3>
@@ -709,12 +874,50 @@ function renderInfoTab(tour) {
    ---------------------------------------------------------- */
 
 function renderTourCal(tour) {
-  const y = state.tourCalMonth.getFullYear();
-  const m = state.tourCalMonth.getMonth();
+  const tourStart = new Date(tour.date + 'T12:00:00');
+  const tourEnd   = tour.end_date ? new Date(tour.end_date + 'T12:00:00') : tourStart;
+  const today     = new Date();
+  const hasRange  = tour.end_date && tour.end_date !== tour.date;
 
+  // Build list of months to display
+  const months = [];
+  const cur = new Date(tourStart.getFullYear(), tourStart.getMonth(), 1);
+  const endMonth = new Date(tourEnd.getFullYear(), tourEnd.getMonth(), 1);
+  while (cur <= endMonth) {
+    months.push({ y: cur.getFullYear(), m: cur.getMonth() });
+    cur.setMonth(cur.getMonth() + 1);
+  }
+
+  const multiMonth = months.length > 1;
+
+  // Single month: full size with nav buttons
+  if (!multiMonth) {
+    const y = state.tourCalMonth.getFullYear();
+    const m = state.tourCalMonth.getMonth();
+    return _renderTourCalMonth(tour, y, m, tourStart, tourEnd, today, hasRange, true, false);
+  }
+
+  // Multi-month: 2-column grid, scaled down so total = same size as single month
+  const blocks = months.map(({y, m}) =>
+    _renderTourCalMonth(tour, y, m, tourStart, tourEnd, today, hasRange, false, true)
+  ).join('');
+
+  return `<div class="calendar-widget" style="background:var(--surface2);padding:12px">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      ${blocks}
+    </div>
+    <div class="cal-legend-list" style="margin-top:10px">
+      <div class="cal-legend-item">
+        <span class="cal-legend-swatch" style="background:var(--accent)"></span>
+        <span class="cal-legend-name">Tourdauer</span>
+      </div>
+    </div>
+  </div>`;
+}
+
+function _renderTourCalMonth(tour, y, m, tourStart, tourEnd, today, hasRange, showNav, small) {
   const days     = daysInMonth(y, m);
   const firstDay = (new Date(y, m, 1).getDay() + 6) % 7;
-  const today    = new Date();
 
   const planSet = new Set();
   state.tourPlanDates.forEach(pd => {
@@ -722,37 +925,36 @@ function renderTourCal(tour) {
     if (d.getFullYear() === y && d.getMonth() === m) planSet.add(d.getDate());
   });
 
-  // Full tour date range
-  const tourStart   = new Date(tour.date + 'T12:00:00');
-  const tourEnd     = tour.end_date ? new Date(tour.end_date + 'T12:00:00') : tourStart;
-  const monthStart  = new Date(y, m, 1);
-  const monthEnd    = new Date(y, m, days);
+  const monthStart = new Date(y, m, 1);
+  const monthEnd   = new Date(y, m, days);
 
-  // Which days in this month are inside the tour range?
   const tourDays = new Set();
   if (tourStart <= monthEnd && tourEnd >= monthStart) {
     const cursor = new Date(Math.max(tourStart, monthStart));
+    cursor.setHours(12, 0, 0, 0);
     const limit  = new Date(Math.min(tourEnd, monthEnd));
+    limit.setHours(12, 0, 0, 0);
     while (cursor <= limit) {
       tourDays.add(cursor.getDate());
       cursor.setDate(cursor.getDate() + 1);
+      cursor.setHours(12, 0, 0, 0);
     }
   }
 
   const total     = Math.ceil((firstDay + days) / 7) * 7;
-  const monthName = state.tourCalMonth.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' });
+  const monthName = new Date(y, m, 1).toLocaleDateString('de-DE', { month: 'long', year: 'numeric' });
 
   let cells = '';
   for (let i = 0; i < total; i++) {
     const dn  = i - firstDay + 1;
     const inM = dn >= 1 && dn <= days;
 
-    const isToday    = inM && today.getDate() === dn && today.getMonth() === m && today.getFullYear() === y;
-    const hasPlan    = inM && planSet.has(dn);
-    const inTour     = inM && tourDays.has(dn);
-    const isStart    = inTour && new Date(y, m, dn).toDateString() === tourStart.toDateString();
-    const isEnd      = inTour && new Date(y, m, dn).toDateString() === tourEnd.toDateString();
-    const isSingle   = isStart && isEnd;
+    const isToday  = inM && today.getDate() === dn && today.getMonth() === m && today.getFullYear() === y;
+    const hasPlan  = inM && planSet.has(dn);
+    const inTour   = inM && tourDays.has(dn);
+    const isStart  = inTour && new Date(y, m, dn).toDateString() === tourStart.toDateString();
+    const isEnd    = inTour && new Date(y, m, dn).toDateString() === tourEnd.toDateString();
+    const isSingle = isStart && isEnd;
 
     const cls = ['cal-day', !inM && 'other-month', isToday && 'today', hasPlan && 'has-tour']
       .filter(Boolean).join(' ');
@@ -773,9 +975,8 @@ function renderTourCal(tour) {
     cells += `<div class="${cls}" style="${style}">${inM ? dn : ''}</div>`;
   }
 
-  const hasRange = tour.end_date && tour.end_date !== tour.date;
-
-  return `
+  if (showNav) {
+    return `
 <div class="calendar-widget" style="background:var(--surface2)">
   <div class="cal-nav">
     <button class="cal-nav-btn" id="tcal-prev">‹</button>
@@ -794,6 +995,863 @@ function renderTourCal(tour) {
     <div class="cal-legend-item">
       <span class="cal-legend-swatch" style="background:rgba(240,120,0,0.35)"></span>
       <span class="cal-legend-name">Planungstermin</span>
+    </div>
+  </div>
+</div>`;
+  }
+
+  // Small mode: compact month block for multi-month grid
+  return `
+<div>
+  <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
+              color:var(--accent);text-align:center;margin-bottom:4px">${monthName}</div>
+  <div class="cal-grid cal-grid-sm">
+    ${['Mo','Di','Mi','Do','Fr','Sa','So'].map(d => `<div class="cal-dow cal-dow-sm">${d}</div>`).join('')}
+    ${cells}
+  </div>
+</div>`;
+}
+
+
+/* ----------------------------------------------------------
+   Profile page
+   ---------------------------------------------------------- */
+
+async function renderProfile() {
+  let profile = { notification_email: '', notify_chat: true, notify_changes: true };
+  try { profile = await loadProfile(); } catch(e) {}
+
+  return `
+<div class="page-form">
+  <button class="btn btn-ghost btn-sm" style="margin-bottom:24px" id="back-home">← Zurück</button>
+  <div class="page-title">Profil</div>
+  <div class="page-sub">Verwalte deine Benachrichtigungseinstellungen.</div>
+
+  <div class="info-block" style="margin-bottom:24px">
+    <div class="info-label">Benutzername</div>
+    <div style="font-size:16px;font-weight:500">${esc(state.currentUser?.username || '')}</div>
+  </div>
+
+  <div class="divider"></div>
+  <h3 style="font-size:15px;font-weight:600;margin-bottom:6px">🔔 E-Mail-Benachrichtigungen</h3>
+  <p style="color:var(--muted);font-size:13px;margin-bottom:20px">
+    Erhalte eine E-Mail, wenn du offline bist und Aktivitäten in deinen Touren stattfinden.
+  </p>
+
+  <div class="form-group">
+    <label>Benachrichtigungs-E-Mail</label>
+    <input type="email" id="p-email" value="${esc(profile.notification_email || '')}"
+           placeholder="deine@email.de" />
+    <div style="font-size:11px;color:var(--muted);margin-top:5px">
+      Diese E-Mail-Adresse wird ausschliesslich für Benachrichtigungen verwendet.
+    </div>
+  </div>
+
+  <div class="profile-toggle-row">
+    <div>
+      <div style="font-weight:500;font-size:14px">💬 Chat-Nachrichten</div>
+      <div style="color:var(--muted);font-size:12px">Neue Nachrichten in deinen Touren</div>
+    </div>
+    <label class="toggle-switch">
+      <input type="checkbox" id="p-notify-chat" ${profile.notify_chat !== false ? 'checked' : ''} />
+      <span class="toggle-slider"></span>
+    </label>
+  </div>
+
+  <div class="profile-toggle-row">
+    <div>
+      <div style="font-weight:500;font-size:14px">📋 Tour-Änderungen</div>
+      <div style="color:var(--muted);font-size:12px">Änderungen an Route, Terminen, Info usw.</div>
+    </div>
+    <label class="toggle-switch">
+      <input type="checkbox" id="p-notify-changes" ${profile.notify_changes !== false ? 'checked' : ''} />
+      <span class="toggle-slider"></span>
+    </label>
+  </div>
+
+  <button class="btn btn-primary" id="profile-save"
+    style="width:100%;justify-content:center;padding:13px;font-size:15px;margin-top:24px">
+    Einstellungen speichern
+  </button>
+</div>`;
+}
+
+/* ----------------------------------------------------------
+   Communities landing page
+   ---------------------------------------------------------- */
+
+function renderCommunities() {
+  const list = state.communities.map(c => {
+    const isMember  = state.myCommunityIds.has(c.id);
+    const isAdmin   = c.admin_id === state.currentUser.id ||
+                      (c.co_admin_ids || []).includes(state.currentUser.id);
+    return `
+<div class="card community-card" data-community-id="${c.id}">
+  <div class="community-card-inner">
+    <div>
+      <div class="community-card-name">${esc(c.name)}</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:4px">
+        ${isAdmin ? '<span class="tag tag-accent" style="font-size:10px">Admin</span>' : ''}
+        ${isMember ? '<span class="tag tag-muted" style="font-size:10px">✓ Mitglied</span>' : '<span class="tag tag-muted" style="font-size:10px">🔒 Passwort nötig</span>'}
+      </div>
+    </div>
+    <button class="btn ${isMember ? 'btn-primary' : 'btn-ghost'} btn-sm" data-enter-community="${c.id}">
+      ${isMember ? 'Öffnen →' : 'Beitreten'}
+    </button>
+  </div>
+</div>`;
+  }).join('');
+
+  const empty = state.communities.length === 0
+    ? '<div style="text-align:center;color:var(--muted);padding:40px">Noch keine Communities vorhanden.</div>'
+    : '';
+
+  return `
+<div class="page-form" style="max-width:560px">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+    <div class="page-title" style="margin:0">🏍️ Communities</div>
+    <button class="btn btn-primary btn-sm" id="create-community-btn">+ Community erstellen</button>
+  </div>
+  <div class="page-sub" style="margin-bottom:28px">Wähle eine Community um loszulegen.</div>
+  ${list}
+  ${empty}
+</div>`;
+}
+
+/* ----------------------------------------------------------
+   Community Home (tour list within a community)
+   ---------------------------------------------------------- */
+
+function renderCommunityHome() {
+  const community = state.currentCommunity;
+  const isAdmin   = community && (
+    community.admin_id === state.currentUser.id ||
+    (community.co_admin_ids || []).includes(state.currentUser.id)
+  );
+
+  const myTours   = state.tours.filter(t => state.myTourIds.has(t.id));
+  const otherTours = state.tours.filter(t => !state.myTourIds.has(t.id));
+
+  const tourCards = tours => tours.map(t => renderTourCard(t, false)).join('');
+
+  const toursHtml = state.tours.length === 0 ? `
+    <div style="text-align:center;padding:60px 20px;color:var(--muted)">
+      <div style="font-size:48px;margin-bottom:16px">🏍️</div>
+      <div style="font-size:18px;font-weight:600;margin-bottom:8px">Noch keine Touren</div>
+      <div style="font-size:14px">Erstelle die erste Tour für diese Community!</div>
+    </div>` : `
+    ${myTours.length > 0 ? `<div class="home-section-title">Meine Touren (${myTours.length})</div>
+    <div class="tour-grid">${tourCards(myTours)}</div>` : ''}
+    ${otherTours.length > 0 ? `<div class="home-section-title" style="margin-top:24px">Weitere Touren (${otherTours.length})</div>
+    <div class="tour-grid">${tourCards(otherTours)}</div>` : ''}`;
+
+  return `
+<div class="home-wrap">
+  <div class="home-header">
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <button class="btn btn-ghost btn-sm" id="back-communities">← Communities</button>
+      <div class="tour-detail-title">${esc(community?.name || '')}</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      ${isAdmin ? '<button class="btn btn-ghost btn-sm" id="community-settings-btn">⚙️ Einstellungen</button>' : ''}
+      <button class="btn btn-ghost" id="planning-btn" style="
+        font-size:15px;font-weight:600;padding:10px 20px;position:relative;
+        border:2px solid var(--accent);border-radius:8px;letter-spacing:.02em
+      ">
+        📋 Touren Planung
+        ${(() => {
+          const b = state.planningBadges;
+          const total = (b.chat || 0) + (b.polls || 0);
+          if (!total) return '';
+          const tip = [
+            b.chat  ? `${b.chat} neue Nachricht${b.chat  > 1 ? 'en' : ''}` : '',
+            b.polls ? `${b.polls} neue Abfrage${b.polls > 1 ? 'n' : ''}`   : '',
+          ].filter(Boolean).join(', ');
+          return `<span class="tab-badge" title="${tip}" style="margin-left:6px">${total > 9 ? '9+' : total}</span>`;
+        })()}
+      </button>
+      <button class="btn btn-primary btn-sm" id="create-tour-btn">+ Tour erstellen</button>
+      <button class="btn-logout" id="leave-community-btn">🚪 Verlassen</button>
+    </div>
+  </div>
+  <div class="home-layout">
+    <div>${toursHtml}</div>
+    <div>${renderCalWidget()}</div>
+  </div>
+</div>`;
+}
+
+/* ----------------------------------------------------------
+   Community Settings page
+   ---------------------------------------------------------- */
+
+function renderCommunitySettings() {
+  const c       = state.currentCommunity;
+  const isAdmin = c.admin_id === state.currentUser.id;
+
+  const memberRows = state.communityMembers.map(m => {
+    const isMe      = m.id === state.currentUser.id;
+    const isCreator = m.id === c.admin_id;
+    return `
+<div class="profile-toggle-row" style="padding:10px 16px">
+  <div>
+    <div style="font-weight:500;font-size:14px">
+      ${esc(m.username)}
+      ${isCreator ? '<span class="tag tag-accent" style="font-size:10px;margin-left:4px">Admin</span>' : ''}
+      ${m.isCoAdmin && !isCreator ? '<span class="tag tag-muted" style="font-size:10px;margin-left:4px">Co-Admin</span>' : ''}
+    </div>
+  </div>
+  <div style="display:flex;gap:6px">
+    ${isAdmin && !isCreator && !isMe ? `
+      ${m.isCoAdmin
+        ? `<button class="btn btn-ghost btn-sm" data-demote-community="${m.id}">Co-Admin entfernen</button>`
+        : `<button class="btn btn-ghost btn-sm" data-promote-community="${m.id}">Co-Admin machen</button>`}
+      <button class="btn btn-ghost btn-sm" style="color:var(--danger)" data-kick-community="${m.id}">Entfernen</button>
+    ` : ''}
+  </div>
+</div>`;
+  }).join('');
+
+  return `
+<div class="page-form">
+  <button class="btn btn-ghost btn-sm" style="margin-bottom:24px" id="back-community-home">← Zurück</button>
+  <div class="page-title">Community Einstellungen</div>
+  <div class="page-sub" style="margin-bottom:24px">${esc(c.name)}</div>
+
+  <div class="form-group">
+    <label>Community Name</label>
+    <input type="text" id="cs-name" value="${esc(c.name)}" />
+  </div>
+  <div class="form-group">
+    <label>Passwort</label>
+    <input type="text" id="cs-password" value="${esc(c.password)}" />
+    <div style="font-size:11px;color:var(--muted);margin-top:4px">
+      Alle neuen Mitglieder brauchen dieses Passwort zum Beitreten.
+    </div>
+  </div>
+  <button class="btn btn-primary btn-sm" id="cs-save" style="margin-bottom:32px">Speichern</button>
+
+  <div class="divider"></div>
+  <h3 style="font-size:15px;font-weight:600;margin-bottom:16px">👥 Mitglieder (${state.communityMembers.length})</h3>
+  <div style="display:flex;flex-direction:column;gap:6px">
+    ${memberRows}
+  </div>
+</div>`;
+}
+
+/* ----------------------------------------------------------
+   Create Community form
+   ---------------------------------------------------------- */
+
+function renderCreateCommunity() {
+  return `
+<div class="page-form" style="max-width:480px">
+  <button class="btn btn-ghost btn-sm" style="margin-bottom:24px" id="back-communities">← Zurück</button>
+  <div class="page-title">Community erstellen</div>
+  <div class="page-sub">Gründe eine neue Community. Du wirst automatisch Admin.</div>
+
+  <div class="form-group">
+    <label>Name *</label>
+    <input type="text" id="cc-name" placeholder="z.B. Alpen Rider" maxlength="60" />
+  </div>
+  <div class="form-group">
+    <label>Passwort *</label>
+    <input type="text" id="cc-password" placeholder="Passwort für neue Mitglieder" maxlength="40" />
+    <div style="font-size:11px;color:var(--muted);margin-top:4px">
+      Neue Mitglieder brauchen dieses Passwort zum Beitreten.
+    </div>
+  </div>
+  <button class="btn btn-primary" id="cc-submit"
+    style="width:100%;justify-content:center;padding:13px;font-size:15px;margin-top:8px">
+    Community anlegen →
+  </button>
+</div>`;
+}
+
+/* ==============================================================
+   PLANNING PAGE
+   ============================================================== */
+
+function renderPlanning() {
+  const tabs = [
+    { id: 'polls', label: '📋 Abfragen' },
+    { id: 'map',   label: '🗺️ Karte'    },
+    { id: 'chat',  label: '💬 Chat'     },
+    { id: 'log',   label: '📝 Log'      },
+  ];
+
+  const tabBar = tabs.map(t => `
+    <button class="tab-btn plan-tab-btn ${state.planningTab === t.id ? 'active' : ''}" data-plan-tab="${t.id}">
+      ${t.label}
+    </button>`).join('');
+
+  let tabContent = '';
+  switch (state.planningTab) {
+    case 'polls': tabContent = renderPlanPolls();   break;
+    case 'map':   tabContent = renderPlanMap();     break;
+    case 'chat':  tabContent = renderPlanChat();    break;
+    case 'log':   tabContent = renderPlanLog();     break;
+  }
+
+  return `
+<div class="tour-detail">
+  <div class="tour-detail-header">
+    <button class="btn btn-ghost btn-sm" id="back-community-home">← ${esc(state.currentCommunity?.name || 'Community')}</button>
+    <div class="tour-detail-title">📋 Touren Planung</div>
+  </div>
+  <div class="tour-tabs">${tabBar}</div>
+  <div class="tab-content" id="plan-tab-content">
+    ${tabContent}
+  </div>
+</div>`;
+}
+
+/* ── Polls tab ─────────────────────────────────────────────── */
+
+function renderPlanPolls() {
+  const isAdmin = state.currentCommunity &&
+    (state.currentCommunity.admin_id === state.currentUser.id ||
+     (state.currentCommunity.co_admin_ids || []).includes(state.currentUser.id));
+
+  const currentYear = new Date().getFullYear();
+
+  const createForm = isAdmin ? `
+<div style="margin-bottom:16px">
+  <button class="btn btn-primary btn-sm" id="poll-toggle-form">+ Neue Abfrage</button>
+</div>
+<div class="card" id="poll-create-form" style="margin-bottom:20px;padding:18px 20px;display:none">
+  <div style="font-size:14px;font-weight:600;margin-bottom:12px">Neue Abfrage erstellen</div>
+
+  <div class="form-row" style="margin-bottom:10px">
+    <div class="form-group" style="margin-bottom:0">
+      <label style="font-size:12px">Typ</label>
+      <select id="poll-type">
+        <option value="general">Allgemeine Abfrage</option>
+        <option value="yearly">Jahresplanung</option>
+      </select>
+    </div>
+    <div class="form-group" id="poll-year-wrap" style="margin-bottom:0;display:none">
+      <label style="font-size:12px">Jahr</label>
+      <select id="poll-year">
+        <option value="${currentYear}">${currentYear}</option>
+        <option value="${currentYear + 1}">${currentYear + 1}</option>
+        <option value="${currentYear + 2}">${currentYear + 2}</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="form-group" style="margin-bottom:10px">
+    <input type="text" id="poll-question" placeholder="Frage / Titel eingeben…" maxlength="200" />
+  </div>
+
+  <div id="poll-options-list" style="margin-bottom:10px">
+    <div class="poll-option-row">
+      <input type="text" class="poll-option-input" placeholder="Option 1" />
+      <span class="poll-option-dates" style="display:none">
+        <input type="date" class="poll-date-start" style="width:130px" />
+        <span style="color:var(--muted);font-size:12px">–</span>
+        <input type="date" class="poll-date-end" style="width:130px" />
+      </span>
+    </div>
+    <div class="poll-option-row" style="margin-top:6px">
+      <input type="text" class="poll-option-input" placeholder="Option 2" />
+      <span class="poll-option-dates" style="display:none">
+        <input type="date" class="poll-date-start" style="width:130px" />
+        <span style="color:var(--muted);font-size:12px">–</span>
+        <input type="date" class="poll-date-end" style="width:130px" />
+      </span>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+    <button class="btn btn-ghost btn-sm" id="poll-add-option">+ Option hinzufügen</button>
+    <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+      <input type="checkbox" id="poll-multi" />
+      Mehrfachauswahl erlauben
+    </label>
+  </div>
+  <button class="btn btn-primary btn-sm" id="poll-submit">Abfrage erstellen</button>
+</div>` : '';
+
+  // Yearly polls pinned to top, sorted by year desc
+  const yearlyPolls  = state.communityPolls.filter(p => p.poll_type === 'yearly')
+    .sort((a, b) => (b.poll_year || 0) - (a.poll_year || 0));
+  const generalPolls = state.communityPolls.filter(p => p.poll_type !== 'yearly');
+
+  const yearlyHtml = yearlyPolls.length ? `
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;
+                color:var(--accent);margin-bottom:10px">📅 Jahresplanung</div>
+    ${yearlyPolls.map(p => renderPollCard(p, isAdmin)).join('')}
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;
+                color:var(--muted);margin:16px 0 10px">💬 Allgemeine Abfragen</div>` : '';
+
+  const generalHtml = generalPolls.length === 0 && yearlyPolls.length === 0
+    ? '<div style="text-align:center;color:var(--muted);padding:40px">Noch keine Abfragen vorhanden.</div>'
+    : generalPolls.map(p => renderPollCard(p, isAdmin)).join('');
+
+  const pollsHtml = yearlyHtml + generalHtml;
+
+  return `<div class="plan-polls-scroll"><div class="plan-polls-layout">
+    <div class="plan-polls-main">${createForm}${pollsHtml}</div>
+    <div class="plan-polls-sidebar">${renderPlanYearCal()}</div>
+  </div></div>`;
+}
+
+function renderPollCard(poll, isAdmin) {
+  const myVote    = poll.votes.find(v => v.user_id === state.currentUser.id);
+  const myOptIds  = myVote?.option_ids || [];
+  const totalVotes = poll.votes.length;
+
+  const optionsHtml = poll.options.map(opt => {
+    const count  = poll.votes.filter(v => (v.option_ids || []).includes(opt.id)).length;
+    const pct    = totalVotes ? Math.round(count / totalVotes * 100) : 0;
+    const voted  = myOptIds.includes(opt.id);
+    const isYearly = poll.poll_type === 'yearly';
+
+    // Build date label for yearly options
+    let dateLabel = '';
+    if (isYearly && opt.date_start && opt.date_end) {
+      const ds = new Date(opt.date_start + 'T12:00:00');
+      const de = new Date(opt.date_end   + 'T12:00:00');
+      const kw = getISOWeek(ds);
+      const fmt = d => d.toLocaleDateString('de-DE', { day:'2-digit', month:'2-digit', year:'2-digit' });
+      dateLabel = `<div style="font-size:11px;color:var(--muted);margin-top:2px">
+        KW${kw} · ${fmt(ds)} – ${fmt(de)}
+      </div>`;
+    }
+
+    // Who voted for this option
+    const voters = poll.votes
+      .filter(v => (v.option_ids || []).includes(opt.id))
+      .map(v => v.username);
+    const votersHtml = voters.length
+      ? `<div style="font-size:10px;color:var(--muted);margin-top:3px;padding-left:26px">
+           ${voters.map(u => `<span style="display:inline-block;background:var(--border);border-radius:10px;padding:0 6px;margin:1px 2px;line-height:1.8">${esc(u)}</span>`).join('')}
+         </div>`
+      : '';
+
+    return `
+<div class="poll-option ${voted ? 'poll-option-voted' : ''}" data-poll-id="${poll.id}" data-opt-id="${opt.id}"
+     style="cursor:${poll.closed ? 'default' : 'pointer'}">
+  <div class="poll-option-bar" style="width:${myVote || poll.closed ? pct : 0}%"></div>
+  <div class="poll-option-inner">
+    <div style="display:flex;align-items:center;gap:8px;flex:1">
+      <span class="poll-option-check ${voted ? 'poll-option-check-on' : ''}">${voted ? '✓' : ''}</span>
+      <div>
+        <div>${esc(opt.text)}</div>
+        ${dateLabel}
+      </div>
+    </div>
+    ${myVote || poll.closed ? `<span style="font-size:12px;color:var(--muted);white-space:nowrap">${count} (${pct}%)</span>` : ''}
+  </div>
+  ${votersHtml}
+</div>`;
+  }).join('');
+
+  const dt       = new Date(poll.created_at);
+  const dateStr  = dt.toLocaleDateString('de-DE', { day:'2-digit', month:'2-digit' });
+  const canAdmin = isAdmin || poll.user_id === state.currentUser.id;
+
+  return `
+<div class="card" style="margin-bottom:14px;padding:18px 20px" id="poll-${poll.id}">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:14px">
+    <div>
+      <div style="font-size:15px;font-weight:600">${esc(poll.question)}</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:2px">
+        ${esc(poll.username)} · ${dateStr}
+        ${poll.multi ? ' · Mehrfachauswahl' : ''}
+        ${poll.closed ? ' · <span style="color:var(--accent)">Geschlossen</span>' : ''}
+      </div>
+    </div>
+    ${canAdmin ? `
+    <div style="display:flex;gap:4px;flex-shrink:0">
+      ${!poll.closed ? `<button class="btn btn-ghost btn-sm" onclick="window._openPollEdit('${poll.id}')" title="Bearbeiten">✏️</button>` : ''}
+      ${!poll.closed ? `<button class="btn btn-ghost btn-sm" data-close-poll="${poll.id}">🔒</button>` : ''}
+      <button class="btn btn-ghost btn-sm" style="color:var(--danger)" data-delete-poll="${poll.id}">🗑️</button>
+    </div>` : ''}
+  </div>
+  <div class="poll-options">${optionsHtml}</div>
+  <div style="font-size:11px;color:var(--muted);margin-top:10px">${totalVotes} Stimme${totalVotes !== 1 ? 'n' : ''}</div>
+  ${!poll.closed && myVote ? `<button class="btn btn-ghost btn-sm" style="margin-top:8px;font-size:12px" data-reset-vote="${poll.id}">Auswahl zurücksetzen</button>` : ''}
+</div>`;
+}
+
+/* ── Plan Map tab ──────────────────────────────────────────── */
+
+function renderPlanMap() {
+  const tours = state.communityToursGpx || [];
+
+  // Use same color index as the calendar: position in state.tours
+  const getTourColor = (tourId, fallbackIdx) => {
+    const idxInAll = (state.tours || []).findIndex(t => t.id === tourId);
+    const i = idxInAll >= 0 ? idxInAll : fallbackIdx;
+    return TOUR_PALETTE[i % TOUR_PALETTE.length];
+  };
+
+  const toggles = tours.length === 0
+    ? '<div style="color:var(--muted);font-size:13px;padding:8px 0">Keine Routen vorhanden.</div>'
+    : tours.map((t, i) => {
+        const visible = state.planMapVisible[t.id] !== false;
+        const color   = getTourColor(t.id, i);
+
+        let kwLabel = '';
+        if (t.date) {
+          const d  = new Date(t.date + 'T12:00:00');
+          const kw = getISOWeek(d);
+          kwLabel = '<span style="display:inline-flex;align-items:center;justify-content:center;min-width:36px;padding:1px 5px;border-radius:4px;font-size:10px;font-weight:700;flex-shrink:0;background:' + color + '22;color:' + color + ';border:1px solid ' + color + '44">KW' + kw + '</span>';
+        }
+
+        return '<div class="map-sidebar-item" style="gap:6px;align-items:center">'
+          + '<input type="checkbox" class="plan-track-toggle" data-tour-id="' + t.id + '"'
+          + (visible ? ' checked' : '')
+          + ' style="accent-color:' + color + ';width:15px;height:15px;cursor:pointer;flex-shrink:0" />'
+          + kwLabel
+          + '<span class="map-sidebar-dot" style="background:' + color + ';flex-shrink:0"></span>'
+          + '<span class="map-sidebar-label" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;color:' + color + '">' + esc(t.name) + '</span>'
+          + '</div>';
+      }).join('');
+
+  return `
+<div class="map-layout">
+  <div id="plan-map-container" style="height:100%;position:relative">
+    <div id="plan-map" style="height:100%"></div>
+    <div class="map-controls">
+      <button class="map-btn" id="plan-map-fullscreen">
+        <span class="map-btn-icon" id="plan-fs-icon">⛶</span>
+        <span class="map-btn-label" id="plan-fs-label">Vollbild</span>
+      </button>
+    </div>
+  </div>
+  <div class="map-sidebar" style="width:360px;min-width:360px">
+    <div class="map-sidebar-section">
+      <div class="map-sidebar-title">Touren anzeigen</div>
+      ${toggles}
+    </div>
+  </div>
+</div>`;
+}
+
+/* ── Plan Chat tab ─────────────────────────────────────────── */
+
+function renderPlanChat() {
+  const msgs = state.communityMessages;
+  const msgsHtml = msgs.length === 0
+    ? `<div style="flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;color:var(--muted);font-size:14px;text-align:center">
+         <div style="font-size:36px">💬</div>
+         <p>Noch keine Nachrichten in der Community.</p>
+       </div>`
+    : msgs.map(m => {
+        const isMe = m.user_id === state.currentUser.id;
+        const dt = new Date(m.created_at);
+        const time = dt.toLocaleTimeString('de-DE', { hour:'2-digit', minute:'2-digit' });
+        const date = dt.toLocaleDateString('de-DE', { day:'2-digit', month:'2-digit', year:'2-digit' });
+        return `
+<div class="chat-msg ${isMe ? 'mine' : ''}">
+  <div class="chat-bubble">${esc(m.text)}</div>
+  <div class="chat-meta">${esc(m.username)} · ${date}, ${time}</div>
+</div>`;
+      }).join('');
+
+  return `
+<div class="chat-layout">
+  <div class="chat-messages" id="plan-chat-msgs">${msgsHtml}</div>
+  <div class="chat-input-bar">
+    <input type="text" id="plan-chat-input" placeholder="Nachricht…" maxlength="1000" />
+    <button class="btn btn-primary" id="plan-chat-send">Senden</button>
+  </div>
+</div>`;
+}
+
+/* ── Plan Log tab ──────────────────────────────────────────── */
+
+function renderPlanLog() {
+  const log = state.communityChangelog;
+
+  if (!log.length) {
+    return `<div class="plan-polls-scroll"><div style="padding:40px;text-align:center;color:var(--muted)">
+      <div style="font-size:40px;margin-bottom:12px">📝</div>
+      <div style="font-family:var(--font-display);font-size:22px;letter-spacing:1px;color:var(--text);margin-bottom:6px">Noch keine Einträge</div>
+      <div style="font-size:13px">Änderungen werden hier automatisch protokolliert.</div>
+    </div></div>`;
+  }
+
+  const iconFor = field => {
+    if (field.includes('Abfrage') || field.includes('Abstimmung') || field.includes('Jahresplanung')) return '📋';
+    if (field.includes('Route')) return '🗺️';
+    if (field.includes('Admin')) return '👑';
+    return '📝';
+  };
+
+  const rows = log.map(e => {
+    const dt   = new Date(e.created_at);
+    const date = dt.toLocaleDateString('de-DE', { day:'2-digit', month:'2-digit', year:'2-digit' });
+    const time = dt.toLocaleTimeString('de-DE', { hour:'2-digit', minute:'2-digit' });
+
+    const hasOld = e.old_value && e.old_value !== '';
+    const hasNew = e.new_value && e.new_value !== '';
+
+    let changeHtml = '';
+    if (hasOld && hasNew) {
+      changeHtml = `<span class="cl-old">${esc(e.old_value)}</span>
+                    <span class="cl-arrow">→</span>
+                    <span class="cl-new">${esc(e.new_value)}</span>`;
+    } else if (hasNew) {
+      changeHtml = `<span class="cl-new">+ ${esc(e.new_value)}</span>`;
+    } else if (hasOld) {
+      changeHtml = `<span class="cl-old">− ${esc(e.old_value)}</span>`;
+    }
+
+    return `<div class="cl-row">
+      <div class="cl-meta">
+        <span style="font-size:15px;line-height:1">${iconFor(e.field)}</span>
+        <span class="cl-user">${esc(e.username)}</span>
+        <span class="cl-time">${date}, ${time}</span>
+      </div>
+      <div class="cl-field">${esc(e.field)}</div>
+      <div class="cl-change">${changeHtml}</div>
+    </div>`;
+  }).join('');
+
+  return `<div class="plan-polls-scroll"><div style="padding:24px;max-width:760px">
+    <h2 style="font-family:var(--font-display);font-size:28px;letter-spacing:1px;margin-bottom:20px">Planung Log</h2>
+    <div class="cl-list">${rows}</div>
+  </div></div>`;
+}
+
+/* ----------------------------------------------------------
+   Planning Year Calendar
+   ---------------------------------------------------------- */
+
+function renderPlanYearCal() {
+  if (!state.planCalYear) state.planCalYear = new Date().getFullYear();
+  const y     = state.planCalYear;
+  const today = new Date();
+
+  // Build tour date ranges from all community tours
+  const tours = state.tours || [];
+  const tourRanges = tours.map((t, i) => ({
+    name:  t.name,
+    color: TOUR_PALETTE[i % TOUR_PALETTE.length],
+    start: new Date(t.date + 'T12:00:00'),
+    end:   t.end_date ? new Date(t.end_date + 'T12:00:00') : new Date(t.date + 'T12:00:00'),
+    isTour: true,
+  }));
+
+  // Build ranges from yearly poll options (distinct teal color)
+  const PLAN_COLOR = '#00bcd4';
+  const yearlyPolls = (state.communityPolls || []).filter(p => p.poll_type === 'yearly' && p.poll_year === y);
+  const planRanges = [];
+  yearlyPolls.forEach(poll => {
+    (poll.options || []).forEach(opt => {
+      if (opt.date_start && opt.date_end) {
+        planRanges.push({
+          name:   opt.text || poll.question,
+          color:  PLAN_COLOR,
+          start:  new Date(opt.date_start + 'T12:00:00'),
+          end:    new Date(opt.date_end   + 'T12:00:00'),
+          isPlan: true,
+        });
+      }
+    });
+  });
+
+  const allRanges = [...tourRanges, ...planRanges];
+
+  const MONTH_NAMES = ['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
+  const DAY_NAMES   = ['Mo','Di','Mi','Do','Fr','Sa','So'];
+
+  let monthsHtml = '';
+
+  for (let m = 0; m < 12; m++) {
+    const days      = daysInMonth(y, m);
+    const firstDay  = (new Date(y, m, 1).getDay() + 6) % 7; // 0=Mon
+    const monthStart = new Date(y, m, 1);
+    const monthEnd   = new Date(y, m, days);
+
+    // Build dayMap for this month
+    const dayMap = {};
+    allRanges.forEach(tr => {
+      if (tr.start > monthEnd || tr.end < monthStart) return;
+      const cur = new Date(Math.max(tr.start, monthStart));
+      cur.setHours(12, 0, 0, 0);
+      const lim = new Date(Math.min(tr.end, monthEnd));
+      lim.setHours(12, 0, 0, 0);
+      while (cur <= lim) {
+        const dn = cur.getDate();
+        if (!dayMap[dn]) dayMap[dn] = [];
+        dayMap[dn].push(tr);
+        cur.setDate(cur.getDate() + 1);
+        cur.setHours(12, 0, 0, 0);
+      }
+    });
+
+    // Week header
+    const weekHeader = `<div class="ycal-kw-cell"></div>` +
+      DAY_NAMES.map(d => `<div class="ycal-head">${d}</div>`).join('');
+
+    // Two-row-per-week approach: numbers row + events row with grid-column spanning
+    const total = Math.ceil((firstDay + days) / 7) * 7;
+    let rowsHtml = '';
+
+    for (let i = 0; i < total; i += 7) {
+      // ISO week number
+      const rowDay  = i - firstDay + 1;
+      const rowDate = rowDay >= 1 && rowDay <= days
+        ? new Date(y, m, rowDay)
+        : rowDay < 1 ? new Date(y, m, 1) : new Date(y, m, days);
+      const mon = new Date(rowDate);
+      mon.setDate(mon.getDate() - ((mon.getDay() + 6) % 7));
+      const kw = getISOWeek(mon);
+
+      // Numbers row
+      let numCells = `<div class="ycal-kw-cell" title="KW ${kw}">
+        <span style="font-size:9px;color:var(--muted)">KW${kw}</span>
+      </div>`;
+
+      for (let j = 0; j < 7; j++) {
+        const dn      = i + j - firstDay + 1;
+        const inM     = dn >= 1 && dn <= days;
+        const isToday = inM && today.getDate() === dn && today.getMonth() === m && today.getFullYear() === y;
+        const toursHere = inM ? (dayMap[dn] || []) : [];
+        const bg = toursHere.filter(t=>t.isTour)[0]?.color
+          ? `background:${toursHere.filter(t=>t.isTour)[0].color}22;`
+          : toursHere.filter(t=>t.isPlan)[0]?.color
+            ? `background:${toursHere.filter(t=>t.isPlan)[0].color}15;`
+            : '';
+        const title = toursHere.map(t => t.name).join(', ');
+        numCells += `<div class="ycal-day${isToday ? ' ycal-today' : ''}${!inM ? ' ycal-out' : ''}"
+          style="${bg}" title="${esc(title)}">${inM ? dn : ''}</div>`;
+      }
+
+      // Events row: find all events that START in this week row
+      // Collect unique events visible in this week
+      const weekEvents = { tour: [], plan: [] };
+      for (let j = 0; j < 7; j++) {
+        const dn = i + j - firstDay + 1;
+        if (dn < 1 || dn > days) continue;
+        (dayMap[dn] || []).forEach(item => {
+          const arr = item.isTour ? weekEvents.tour : weekEvents.plan;
+          if (!arr.find(e => e.name === item.name)) {
+            // Find start column (1-based, 1=Mon) in this week
+            let startCol = j + 1; // already 0-based j
+            // Go back to find actual start in this week
+            for (let k = j - 1; k >= 0; k--) {
+              const kdn = i + k - firstDay + 1;
+              if (kdn >= 1 && (dayMap[kdn] || []).find(x => x.name === item.name)) {
+                startCol = k + 1;
+              } else break;
+            }
+            // Find end column
+            let endCol = j + 1;
+            for (let k = j + 1; k < 7; k++) {
+              const kdn = i + k - firstDay + 1;
+              if (kdn >= 1 && kdn <= days && (dayMap[kdn] || []).find(x => x.name === item.name)) {
+                endCol = k + 1;
+              } else break;
+            }
+            arr.push({ name: item.name, color: item.color, startCol, endCol });
+          }
+        });
+      }
+
+      let eventCells = '';
+      const allWeekEvents = [...weekEvents.tour, ...weekEvents.plan];
+      if (allWeekEvents.length > 0) {
+        eventCells = '<div></div>'; // KW spacer
+        // Build a 7-slot grid, place events
+        // Use grid-column: startCol+1 / endCol+2 (offset by 1 for KW col)
+        allWeekEvents.forEach(ev => {
+          const textColor = ev.color === '#00bcd4' ? '#003' : '#000';
+          eventCells += `<div class="ycal-event-bar" title="${esc(ev.name)}"
+            style="grid-column:${ev.startCol + 1} / ${ev.endCol + 2};background:${ev.color};color:${textColor}">
+            ${esc(ev.name)}
+          </div>`;
+        });
+      }
+
+      const eventsRow = allWeekEvents.length > 0
+        ? `<div class="ycal-events-row">${eventCells}</div>`
+        : '';
+
+      rowsHtml += `<div class="ycal-num-row">${numCells}</div>${eventsRow}`;
+    }
+
+    monthsHtml += `
+<div class="ycal-month">
+  <div class="ycal-month-name">${MONTH_NAMES[m]}</div>
+  <div class="ycal-grid-header">${weekHeader}</div>
+  <div class="ycal-rows">${rowsHtml}</div>
+</div>`;
+  }
+
+  // Tour legend
+  const tourLegend = tourRanges.map(t => `
+<div class="cal-legend-item" style="margin-bottom:4px">
+  <span class="cal-legend-swatch" style="background:${t.color}"></span>
+  <span class="cal-legend-name">${esc(t.name)}</span>
+</div>`).join('');
+
+  const planLegend = planRanges.length ? `
+<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
+            color:#00bcd4;margin:8px 0 4px">Jahresplanung ${y}</div>` +
+  planRanges.map(p => `
+<div class="cal-legend-item" style="margin-bottom:4px">
+  <span class="cal-legend-swatch" style="background:#00bcd4"></span>
+  <span class="cal-legend-name">${esc(p.name)}</span>
+</div>`).join('') : '';
+
+  const legend = (tourLegend + planLegend) ||
+    `<span style="color:var(--muted);font-size:11px">Keine Touren</span>`;
+
+  return `
+<div class="ycal-wrap">
+  <div class="ycal-header">
+    <button class="cal-nav-btn" id="ycal-prev">‹</button>
+    <div class="cal-title">${y}</div>
+    <button class="cal-nav-btn" id="ycal-next">›</button>
+  </div>
+  <div class="ycal-months">${monthsHtml}</div>
+</div>`;
+}
+
+/* ----------------------------------------------------------
+   Poll edit modal
+   ---------------------------------------------------------- */
+
+function renderPollEditModal(poll) {
+  const isYearly = poll.poll_type === 'yearly';
+  const optRows  = poll.options.map((opt, i) => `
+<div class="poll-option-row" data-opt-id="${opt.id}">
+  <input type="text" class="poll-edit-opt-text" value="${esc(opt.text)}" placeholder="Option ${i+1}" />
+  ${isYearly ? `<span class="poll-option-dates" style="display:inline-flex">
+    <input type="date" class="poll-edit-date-start" value="${opt.date_start || ''}" style="width:130px" />
+    <span style="color:var(--muted);font-size:12px">–</span>
+    <input type="date" class="poll-edit-date-end" value="${opt.date_end || ''}" style="width:130px" />
+  </span>` : ''}
+  <button class="btn btn-ghost btn-sm poll-edit-remove-opt" style="color:var(--danger);flex-shrink:0">✕</button>
+</div>`).join('');
+
+  return `
+<div class="modal-overlay" id="poll-edit-overlay">
+  <div class="card" style="width:560px;max-width:95vw;max-height:85vh;overflow-y:auto;padding:24px;position:relative">
+    <div style="font-size:15px;font-weight:600;margin-bottom:16px">Abfrage bearbeiten</div>
+
+    <div class="form-group">
+      <label>Frage</label>
+      <input type="text" id="poll-edit-question" value="${esc(poll.question)}" maxlength="200" />
+    </div>
+
+    <div style="font-size:13px;font-weight:600;margin-bottom:8px;margin-top:4px">Optionen</div>
+    <div id="poll-edit-options">${optRows}</div>
+    <button class="btn btn-ghost btn-sm" id="poll-edit-add-opt" style="margin-bottom:16px;margin-top:6px">+ Option hinzufügen</button>
+
+    <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;margin-bottom:16px">
+      <input type="checkbox" id="poll-edit-multi" ${poll.multi ? 'checked' : ''} />
+      Mehrfachauswahl erlauben
+    </label>
+
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-primary" id="poll-edit-save" data-poll-id="${poll.id}">Speichern</button>
+      <button class="btn btn-ghost" id="poll-edit-cancel">Abbrechen</button>
     </div>
   </div>
 </div>`;

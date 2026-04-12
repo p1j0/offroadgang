@@ -5,34 +5,182 @@
    ============================================================ */
 
 /* ----------------------------------------------------------
+   Realtime chat subscription
+   ---------------------------------------------------------- */
+
+let realtimeChannel = null;
+
+/**
+ * Subscribe to new messages for the given tour via Supabase Realtime.
+ * Automatically appends incoming messages to the chat DOM.
+ * @param {string} tourId
+ */
+function subscribeToChat(tourId) {
+  unsubscribeFromChat(); // always clean up first
+
+  realtimeChannel = sb
+    .channel(`chat:${tourId}`)
+    .on(
+      'postgres_changes',
+      {
+        event:  'INSERT',
+        schema: 'public',
+        table:  'messages',
+        filter: `tour_id=eq.${tourId}`,
+      },
+      (payload) => {
+        const msg = payload.new;
+        // Avoid duplicates: skip messages sent by this user
+        // (already added optimistically — but we removed that, so always append)
+        state.tourMessages.push(msg);
+        _appendChatMessage(msg);
+      }
+    )
+    .subscribe();
+}
+
+/**
+ * Remove the active Realtime subscription, if any.
+ */
+function unsubscribeFromChat() {
+  if (realtimeChannel) {
+    sb.removeChannel(realtimeChannel);
+    realtimeChannel = null;
+  }
+}
+
+let communityChannel = null;
+
+function subscribeToCommunityChat(communityId) {
+  unsubscribeFromCommunityChat();
+  communityChannel = sb
+    .channel('community-chat:' + communityId)
+    .on('postgres_changes', {
+      event:  'INSERT',
+      schema: 'public',
+      table:  'community_messages',
+      filter: 'community_id=eq.' + communityId,
+    }, (payload) => {
+      const msg = payload.new;
+      if (msg.user_id === state.currentUser?.id) return;
+      state.communityMessages.push(msg);
+      if (state.view === 'planning' && state.planningTab === 'chat') {
+        _appendPlanChatMessage(msg);
+      }
+    })
+    .subscribe();
+}
+
+function unsubscribeFromCommunityChat() {
+  if (communityChannel) {
+    sb.removeChannel(communityChannel);
+    communityChannel = null;
+  }
+}
+
+let _heartbeatTimer = null;
+
+/**
+ * Start sending a "last_seen_at" heartbeat to Supabase every 2 minutes.
+ * Called after successful login.
+ */
+function startHeartbeat() {
+  stopHeartbeat();
+  const ping = () => {
+    if (state.currentUser) {
+      sb.from('profiles')
+        .update({ last_seen_at: new Date().toISOString() })
+        .eq('id', state.currentUser.id)
+        .then(() => {});
+    }
+  };
+  ping(); // immediately on login
+  _heartbeatTimer = setInterval(ping, 2 * 60 * 1000); // every 2 minutes
+
+  // Also ping on visibility change (tab becomes active again)
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) ping();
+  });
+}
+
+/**
+ * Stop the heartbeat (on logout).
+ */
+function stopHeartbeat() {
+  if (_heartbeatTimer) { clearInterval(_heartbeatTimer); _heartbeatTimer = null; }
+}
+
+/**
+ * Returns true if the current user is admin or co-admin of the current tour.
+ */
+function isCurrentUserAdmin() {
+  const tour = state.currentTour;
+  if (!tour) return false;
+  if (tour.admin_id === state.currentUser?.id) return true;
+  return (tour.co_admin_ids || []).includes(state.currentUser?.id);
+}
+
+/* ----------------------------------------------------------
    Router
    ---------------------------------------------------------- */
 
-/**
- * Navigate to a new view.
- * Optionally merges extra state params (e.g. currentTourId, currentTab).
- * Destroys the Leaflet map if we're leaving the tour page.
- *
- * @param {string} view   – target view name
- * @param {object} [params] – extra state fields to merge
- */
+let _navigating = false;
+
 async function navigateTo(view, params = {}) {
-  // Tear down map when leaving the tour detail page
-  if (mapInstance && view !== 'tour') destroyMap();
+  // Guard against concurrent calls (double-click, stacked event listeners, etc.)
+  if (_navigating) return;
+  _navigating = true;
 
-  // Merge any extra params into global state
-  Object.assign(state, params);
-
-  // Load data required for the target view
   try {
-    if (view === 'home' && state.currentUser) await loadHomeData();
-    if (view === 'tour' && state.currentTourId) await loadTourData(state.currentTourId);
-  } catch (e) {
-    console.error('[navigateTo] data fetch error:', e);
-  }
+    // Tear down map when leaving the tour detail page
+    if (mapInstance && view !== 'tour') destroyMap();
 
-  state.view = view;
-  render();
+    // Tear down realtime when leaving a tour
+    if (view !== 'tour') unsubscribeFromChat();
+
+    // Unsubscribe from community chat when leaving planning page
+    if (view !== 'planning') unsubscribeFromCommunityChat();
+
+    // Destroy plan map when leaving planning page
+    if (view !== 'planning' && typeof _planMapInstance !== 'undefined' && _planMapInstance) {
+      try { _planMapInstance.stop(); _planMapInstance.remove(); } catch(e) {}
+      _planMapInstance = null;
+      _planMapLayers   = [];
+    }
+
+    // Merge any extra params into global state
+    Object.assign(state, params);
+
+    // Load data required for the target view
+    try {
+      if (view === 'communities' && state.currentUser) await loadCommunities();
+      if ((view === 'community-home' || view === 'community-settings' || view === 'planning') && state.currentCommunityId) {
+        await loadCommunityData(state.currentCommunityId);
+        if (view === 'community-home') {
+          await loadHomeData();
+          await computePlanningBadges();
+        }
+        if (view === 'planning') {
+          await loadPlanningData();
+          markTabSeen(state.currentCommunityId, 'plan-chat');
+          markTabSeen(state.currentCommunityId, 'plan-polls');
+          state.planningBadges = { chat: 0, polls: 0 };
+          subscribeToCommunityChat(state.currentCommunityId);
+        }
+      }
+      if (view === 'tour' && state.currentTourId) {
+        await loadTourData(state.currentTourId);
+        subscribeToChat(state.currentTourId);
+      }
+    } catch (e) {
+      console.error('[navigateTo] data fetch error:', e);
+    }
+
+    state.view = view;
+    render();
+  } finally {
+    _navigating = false;
+  }
 }
 
 /* ----------------------------------------------------------
@@ -47,22 +195,47 @@ function render() {
   const app = document.getElementById('app');
   if (!app) return;
 
-  // Navigation bar is shown on every view except auth / loading
   const showNav = !['auth', 'loading'].includes(state.view);
 
-  let html = showNav ? renderNav() : '';
+  try {
+    let html = showNav ? renderNav() : '';
 
-  switch (state.view) {
-    case 'auth':   html += renderAuth();   break;
-    case 'home':   html += renderHome();   break;
-    case 'create': html += renderCreate(); break;
-    case 'join':   html += renderJoin();   break;
-    case 'tour':   html += renderTour();   break;
-    default:       html += '<div class="loading-screen">…</div>';
+    if (state.view === 'profile') {
+      app.innerHTML = html + '<div class="loading-screen" style="font-size:20px">Lade…</div>';
+      renderProfile().then(profileHtml => {
+        app.innerHTML = html + profileHtml;
+        attachEvents();
+      });
+      return;
+    }
+
+    if (state.view === 'community-settings') {
+      app.innerHTML = html + renderCommunitySettings();
+      attachEvents();
+      return;
+    }
+
+    switch (state.view) {
+      case 'auth':                html += renderAuth();             break;
+      case 'communities':         html += renderCommunities();      break;
+    case 'create-community':    html += renderCreateCommunity();  break;
+      case 'community-home':      html += renderCommunityHome();    break;
+    case 'planning':            html += renderPlanning();          break;
+      case 'create':              html += renderCreate();           break;
+      case 'join':                html += renderJoin();             break;
+      case 'tour':                html += renderTour();             break;
+      default: html += '<div class="loading-screen">…</div>';
+    }
+
+    app.innerHTML = html;
+    attachEvents();
+  } catch (e) {
+    console.error('[render] error:', e);
+    app.innerHTML = `<div style="padding:40px;color:#e04444;font-family:monospace">
+      <strong>Render-Fehler:</strong><br>${e.message}<br><br>
+      <button onclick="location.reload()" style="padding:8px 16px;cursor:pointer">Seite neu laden</button>
+    </div>`;
   }
-
-  app.innerHTML = html;
-  attachEvents();
 }
 
 /* ----------------------------------------------------------
@@ -74,6 +247,20 @@ function render() {
  * Checks for an existing Supabase session and routes accordingly.
  */
 async function init() {
+  // Listen for auth events — handle token refresh failures gracefully
+  sb.auth.onAuthStateChange((event, session) => {
+    if (event === 'TOKEN_REFRESHED') return; // all good
+    if (event === 'SIGNED_OUT' || (!session && event === 'INITIAL_SESSION')) return;
+    // If token refresh failed (session becomes null unexpectedly), redirect to login
+    if (!session && state.currentUser) {
+      console.warn('[auth] Session lost — redirecting to login');
+      state.currentUser = null;
+      stopHeartbeat();
+      toast('Sitzung abgelaufen. Bitte erneut anmelden.', 'error');
+      setTimeout(() => navigateTo('auth'), 1500);
+    }
+  });
+
   // Read invite hash once, then clean the URL so it doesn't interfere
   const joinId = location.hash.startsWith('#join=') ? location.hash.slice(6) : null;
   if (joinId) {
@@ -94,6 +281,7 @@ async function init() {
       if (profile) {
         state.currentUser = { id: session.user.id, username: profile.username };
         state.profileCache[session.user.id] = profile.username;
+        startHeartbeat();
 
         if (joinId) {
           // Load tours so we know if the user is already a member
@@ -104,7 +292,7 @@ async function init() {
             await navigateTo('join');
           }
         } else {
-          await navigateTo('home');
+          await navigateTo('communities');
         }
         return;
       }
@@ -118,6 +306,15 @@ async function init() {
   state.view     = 'auth';
   render();
 }
+
+// Global poll edit handler — registered immediately so onclick works at any time
+window._openPollEdit = function(pollId) {
+  const poll = state.communityPolls.find(p => p.id === pollId);
+  if (!poll) { console.warn('[_openPollEdit] Poll not found:', pollId, 'Available:', state.communityPolls.map(p=>p.id)); return; }
+  document.getElementById('poll-edit-overlay')?.remove();
+  document.body.insertAdjacentHTML('beforeend', renderPollEditModal(poll));
+  _attachPollEditModal(poll);
+};
 
 // Start the application
 init();
