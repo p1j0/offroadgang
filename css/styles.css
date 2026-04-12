@@ -1347,3 +1347,19 @@ select option       { background: var(--surface2); }
   padding: 20px;
   box-sizing: border-box;
 }
+
+/* Compact calendar grid for multi-month tour view */
+.cal-grid-sm {
+  grid-template-columns: repeat(7, 1fr);
+  gap: 1px;
+}
+.cal-grid-sm .cal-day {
+  font-size: 9px;
+  min-height: 18px;
+  padding: 2px 0;
+}
+.cal-grid-sm .cal-day.other-month { opacity: 0.25; }
+.cal-dow-sm {
+  font-size: 8px !important;
+  padding: 1px 0 !important;
+}

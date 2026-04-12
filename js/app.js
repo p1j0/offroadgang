@@ -247,6 +247,20 @@ function render() {
  * Checks for an existing Supabase session and routes accordingly.
  */
 async function init() {
+  // Listen for auth events — handle token refresh failures gracefully
+  sb.auth.onAuthStateChange((event, session) => {
+    if (event === 'TOKEN_REFRESHED') return; // all good
+    if (event === 'SIGNED_OUT' || (!session && event === 'INITIAL_SESSION')) return;
+    // If token refresh failed (session becomes null unexpectedly), redirect to login
+    if (!session && state.currentUser) {
+      console.warn('[auth] Session lost — redirecting to login');
+      state.currentUser = null;
+      stopHeartbeat();
+      toast('Sitzung abgelaufen. Bitte erneut anmelden.', 'error');
+      setTimeout(() => navigateTo('auth'), 1500);
+    }
+  });
+
   // Read invite hash once, then clean the URL so it doesn't interfere
   const joinId = location.hash.startsWith('#join=') ? location.hash.slice(6) : null;
   if (joinId) {
