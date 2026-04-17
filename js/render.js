@@ -93,7 +93,7 @@ function renderAuth() {
 function renderNav() {
   return `
 <nav class="nav">
-  <div class="nav-logo" id="nav-logo">MOTO<span>ROUTE</span></div>
+  <div class="nav-logo" id="nav-logo"><img src="img/logo.png" alt="MotoRoute" style="height:36px;vertical-align:middle;margin-right:8px" />MOTO<span>ROUTE</span></div>
   <div class="nav-user">
     🏍️ <strong>${esc(state.currentUser?.username || '')}</strong>
     <button class="btn-ghost btn-sm" id="go-profile" title="Profil & Benachrichtigungen">⚙️</button>
@@ -471,6 +471,7 @@ function renderTour() {
   const tabs    = [
     { id: 'map',          label: '🗺️ Karte' },
     { id: 'chat',         label: '💬 Chat' },
+    { id: 'media',        label: '📸 Media' },
     { id: 'participants', label: '👥 Teilnehmer' },
     { id: 'info',         label: '📋 Info & Kalender' },
     { id: 'changelog',    label: '📝 Change Log' },
@@ -523,6 +524,7 @@ function renderTab(tour) {
   switch (state.currentTab) {
     case 'map':          return renderMapTab(tour);
     case 'chat':         return renderChatTab();
+    case 'media':        return renderMediaTab();
     case 'participants': return renderParticipantsTab();
     case 'info':         return renderInfoTab(tour);
     case 'changelog':    return renderChangelogTab();
@@ -1109,7 +1111,7 @@ function renderCommunities() {
   return `
 <div class="page-form" style="max-width:560px">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-    <div class="page-title" style="margin:0">🏍️ Communities</div>
+    <div class="page-title" style="margin:0"><img src="img/logo.png" alt="" style="height:72px;vertical-align:middle;margin-right:12px" />Communities</div>
     <button class="btn btn-primary btn-sm" id="create-community-btn">+ Community erstellen</button>
   </div>
   <div class="page-sub" style="margin-bottom:28px">Wähle eine Community um loszulegen.</div>
@@ -1154,6 +1156,19 @@ function renderCommunityHome() {
     </div>
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
       ${isAdmin ? '<button class="btn btn-ghost btn-sm" id="community-settings-btn">⚙️ Einstellungen</button>' : ''}
+      <button class="btn btn-ghost" id="community-media-btn" style="
+        font-size:15px;font-weight:600;padding:10px 20px;position:relative;
+        border:2px solid var(--accent);border-radius:8px;letter-spacing:.02em
+      ">
+        📸 Media
+        ${(() => {
+          const cm = state.mediaBadges?.community || 0;
+          const tm = state.mediaBadges?.tours || 0;
+          const total = cm + tm;
+          if (!total) return '';
+          return `<span class="tab-badge" title="${total} neue Medien" style="margin-left:6px">${total > 9 ? '9+' : total}</span>`;
+        })()}
+      </button>
       <button class="btn btn-ghost" id="planning-btn" style="
         font-size:15px;font-weight:600;padding:10px 20px;position:relative;
         border:2px solid var(--accent);border-radius:8px;letter-spacing:.02em
@@ -1855,4 +1870,298 @@ function renderPollEditModal(poll) {
     </div>
   </div>
 </div>`;
+}
+
+/* ----------------------------------------------------------
+   Media Tab (Cloudinary + YouTube)
+   ---------------------------------------------------------- */
+
+function renderMediaTab() {
+  const media = [...state.tourMedia].sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || (a.sort_order || 0) - (b.sort_order || 0) || new Date(b.created_at) - new Date(a.created_at));
+  const images = media.filter(m => m.media_type === 'image');
+  const videos = media.filter(m => m.media_type === 'video');
+  const ytVideos = media.filter(m => m.media_type === 'youtube');
+
+  const uploadSection = `
+<div class="media-upload-bar">
+  <label class="btn btn-primary btn-sm" for="media-file-input" style="cursor:pointer">
+    📷 Bild / Video hochladen
+  </label>
+  <input type="file" id="media-file-input" accept="image/*,video/mp4,video/quicktime,video/webm"
+    style="display:none" multiple />
+  <button class="btn btn-ghost btn-sm" id="media-yt-btn">▶️ YouTube Link hinzufügen</button>
+  <div id="media-yt-form" style="display:none;margin-left:8px;display:none;align-items:center;gap:8px">
+    <input type="text" id="media-yt-url" placeholder="YouTube URL einfügen…" style="width:280px;padding:7px 12px;font-size:13px" />
+    <input type="text" id="media-yt-caption" placeholder="Beschreibung (optional)" style="width:180px;padding:7px 12px;font-size:13px" />
+    <button class="btn btn-primary btn-sm" id="media-yt-add">Hinzufügen</button>
+  </div>
+</div>
+<div id="media-upload-progress" style="display:none;padding:8px 20px">
+  <div style="display:flex;align-items:center;gap:12px">
+    <div class="spinner"></div>
+    <span id="media-upload-text">Wird hochgeladen… 0%</span>
+  </div>
+  <div style="height:4px;background:var(--border);border-radius:2px;margin-top:6px">
+    <div id="media-upload-bar" style="height:100%;background:var(--accent);border-radius:2px;width:0%;transition:width 0.2s"></div>
+  </div>
+</div>`;
+
+  const emptyState = media.length === 0
+    ? `<div style="text-align:center;padding:60px 20px;color:var(--muted)">
+         <div style="font-size:48px;margin-bottom:16px">📸</div>
+         <div style="font-size:18px;font-weight:600;margin-bottom:8px;color:var(--text)">Noch keine Medien</div>
+         <div style="font-size:14px">Lade Bilder oder Videos hoch oder füge YouTube-Links hinzu.</div>
+       </div>`
+    : '';
+
+  const galleryItems = media.map(m => {
+    const isMe = m.user_id === state.currentUser.id;
+    const isAdmin = isCurrentUserAdmin();
+    const canDelete = isMe || isAdmin;
+    const dt = new Date(m.created_at);
+    const dateStr = dt.toLocaleDateString('de-DE', { day:'2-digit', month:'2-digit', year:'2-digit' });
+
+    if (m.media_type === 'image') {
+      // Cloudinary thumbnail: 400px wide, auto height, auto quality
+      const thumb = m.url.replace('/upload/', '/upload/c_fill,w_400,h_300,q_auto/');
+      return `
+<div class="media-card" data-media-id="${m.id}" ${isAdmin ? 'draggable="true"' : ''}>
+  <div class="media-thumb" style="cursor:pointer" data-lightbox-url="${m.url}" data-lightbox-type="image">
+    ${m.pinned ? '<div class="media-pinned-badge">📌</div>' : ''}
+    <img src="${thumb}" alt="${esc(m.caption || '')}" loading="lazy" />
+  </div>
+  <div class="media-card-footer">
+    <div class="media-card-info">
+      <span class="media-card-user">${esc(m.username)}</span>
+      <span class="media-card-date">${dateStr}</span>
+    </div>
+    ${m.caption ? `<div class="media-card-caption">${esc(m.caption)}</div>` : ''}
+    ${isAdmin ? `<button class="media-pin-btn${m.pinned ? ' pinned' : ''}" data-pin-media="${m.id}" data-pinned="${m.pinned ? '1' : '0'}" title="${m.pinned ? 'Loslösen' : 'Anpinnen'}">${m.pinned ? '📌' : '📍'}</button>` : ''}
+    ${canDelete ? `<button class="media-delete-btn" data-delete-media="${m.id}" title="Löschen">🗑️</button>` : ''}
+  </div>
+</div>`;
+    }
+
+    if (m.media_type === 'video') {
+      const thumb = m.thumbnail_url || m.url.replace('/upload/', '/upload/c_fill,w_400,h_300,so_1/');
+      return `
+<div class="media-card" data-media-id="${m.id}" ${isAdmin ? 'draggable="true"' : ''}>
+  <div class="media-thumb" style="cursor:pointer;position:relative" data-lightbox-url="${m.url}" data-lightbox-type="video">
+    ${m.pinned ? '<div class="media-pinned-badge">📌</div>' : ''}
+    <img src="${thumb}" alt="${esc(m.caption || '')}" loading="lazy" />
+    <div class="media-play-overlay">▶</div>
+  </div>
+  <div class="media-card-footer">
+    <div class="media-card-info">
+      <span class="media-card-user">${esc(m.username)}</span>
+      <span class="media-card-date">${dateStr}</span>
+    </div>
+    ${m.caption ? `<div class="media-card-caption">${esc(m.caption)}</div>` : ''}
+    ${isAdmin ? `<button class="media-pin-btn${m.pinned ? ' pinned' : ''}" data-pin-media="${m.id}" data-pinned="${m.pinned ? '1' : '0'}" title="${m.pinned ? 'Loslösen' : 'Anpinnen'}">${m.pinned ? '📌' : '📍'}</button>` : ''}
+    ${canDelete ? `<button class="media-delete-btn" data-delete-media="${m.id}" title="Löschen">🗑️</button>` : ''}
+  </div>
+</div>`;
+    }
+
+    if (m.media_type === 'youtube') {
+      const ytId = parseYouTubeUrl(m.url);
+      const thumb = m.thumbnail_url || `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`;
+      return `
+<div class="media-card" data-media-id="${m.id}" ${isAdmin ? 'draggable="true"' : ''}>
+  <div class="media-thumb" style="cursor:pointer;position:relative" data-lightbox-url="${m.url}" data-lightbox-type="youtube" data-yt-id="${ytId}">
+    ${m.pinned ? '<div class="media-pinned-badge">📌</div>' : ''}
+    <img src="${thumb}" alt="${esc(m.caption || '')}" loading="lazy" />
+    <div class="media-play-overlay">▶</div>
+  </div>
+  <div class="media-card-footer">
+    <div class="media-card-info">
+      <span class="media-card-user">${esc(m.username)}</span>
+      <span class="media-card-date">${dateStr}</span>
+    </div>
+    ${m.caption ? `<div class="media-card-caption">${esc(m.caption)}</div>` : ''}
+    ${canDelete ? `<button class="media-delete-btn" data-delete-media="${m.id}" title="Löschen">🗑️</button>` : ''}
+    ${isAdmin ? `<button class="media-pin-btn${m.pinned ? ' pinned' : ''}" data-pin-media="${m.id}" data-pinned="${m.pinned ? '1' : '0'}" title="${m.pinned ? 'Loslösen' : 'Anpinnen'}">${m.pinned ? '📌' : '📍'}</button>` : ''}
+  </div>
+</div>`;
+    }
+
+    return '';
+  }).join('');
+
+  const gallery = media.length > 0
+    ? `<div class="media-gallery">${galleryItems}</div>`
+    : '';
+
+  return `<div class="tab-scroll"><div style="padding:0 0 24px">
+    ${uploadSection}
+    ${emptyState}
+    ${gallery}
+  </div></div>`;
+}
+
+/* Lightbox */
+function renderMediaLightbox(url, type, ytId, mediaId) {
+  let content = '';
+  if (type === 'image') {
+    content = `<img src="${url}" style="max-width:85vw;max-height:85vh;border-radius:8px" />`;
+  } else if (type === 'video') {
+    content = `<video src="${url}" controls autoplay style="max-width:85vw;max-height:85vh;border-radius:8px"></video>`;
+  } else if (type === 'youtube') {
+    content = `<iframe src="https://www.youtube-nocookie.com/embed/${ytId}?autoplay=1&rel=0&modestbranding=1"
+      style="width:min(85vw,960px);height:min(50vw,540px);border:none;border-radius:8px"
+      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+      referrerpolicy="strict-origin-when-cross-origin"
+      allowfullscreen></iframe>`;
+  }
+
+  return `<div class="modal-overlay" id="media-lightbox" data-current-id="${mediaId || ''}">
+    <button class="lightbox-nav-btn lightbox-prev" id="lightbox-prev" title="Vorheriges">‹</button>
+    <button class="lightbox-nav-btn lightbox-next" id="lightbox-next" title="Nächstes">›</button>
+    <button style="position:absolute;top:16px;right:20px;background:none;border:none;color:#fff;
+      font-size:32px;cursor:pointer;z-index:10" id="lightbox-close">✕</button>
+    <div id="lightbox-content" style="display:flex;align-items:center;justify-content:center;width:100%;height:100%">
+      ${content}
+    </div>
+  </div>`;
+}
+
+/* ----------------------------------------------------------
+   Community Media Page
+   ---------------------------------------------------------- */
+
+function renderCommunityMedia() {
+  const tours = state.tours || [];
+  const isAdmin = state.currentCommunity &&
+    (state.currentCommunity.admin_id === state.currentUser.id ||
+     (state.currentCommunity.co_admin_ids || []).includes(state.currentUser.id));
+
+  // Tour list sidebar
+  const tourList = tours.length === 0
+    ? '<div style="color:var(--muted);font-size:13px;padding:12px">Keine Touren vorhanden.</div>'
+    : tours.map(t => {
+        const d = t.date ? new Date(t.date + 'T12:00:00') : null;
+        const kw = d ? `KW${getISOWeek(d)}` : '';
+        const year = d ? d.getFullYear() : '';
+        const selected = state.selectedTourMedia === t.id;
+        const count = state.tourMediaCounts?.[t.id] || 0;
+        const newCount = state.tourMediaNew?.[t.id] || 0;
+        return `<div class="cm-tour-item${selected ? ' cm-tour-selected' : ''}" data-cm-tour="${t.id}">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:6px">
+            <div class="cm-tour-name">${esc(t.name)}</div>
+            <div style="display:flex;align-items:center;gap:4px">
+              ${newCount > 0 ? `<span class="tab-badge" style="font-size:10px;min-width:16px;height:16px;padding:0 4px" title="${newCount} neu">${newCount}</span>` : ''}
+              ${count > 0 ? `<span class="cm-tour-count">${count} 📸</span>` : ''}
+            </div>
+          </div>
+          <div class="cm-tour-meta">${kw} ${year}</div>
+        </div>`;
+      }).join('');
+
+  // Right side: community YouTube library
+  const cmMedia = [...state.communityMedia].sort((a, b) =>
+    (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || (a.sort_order || 0) - (b.sort_order || 0)
+  );
+
+  const ytUpload = isAdmin ? `
+<div class="media-upload-bar" style="border-bottom:1px solid var(--border)">
+  <button class="btn btn-ghost btn-sm" id="cm-yt-btn">▶️ YouTube Link hinzufügen</button>
+  <div id="cm-yt-form" style="display:none;align-items:center;gap:8px;margin-left:8px">
+    <input type="text" id="cm-yt-url" placeholder="YouTube URL…" style="width:260px;padding:7px 12px;font-size:13px" />
+    <input type="text" id="cm-yt-caption" placeholder="Beschreibung (optional)" style="width:160px;padding:7px 12px;font-size:13px" />
+    <button class="btn btn-primary btn-sm" id="cm-yt-add">Hinzufügen</button>
+  </div>
+</div>` : '';
+
+  const cmGallery = cmMedia.length === 0
+    ? `<div style="text-align:center;padding:40px;color:var(--muted)">
+         <div style="font-size:36px;margin-bottom:8px">📸</div>
+         <div>Noch keine Community-Medien. YouTube-Links hinzufügen!</div>
+       </div>`
+    : `<div class="media-gallery">${cmMedia.map(m => _renderCommunityMediaCard(m, isAdmin)).join('')}</div>`;
+
+  return `
+<div class="tour-detail">
+  <div class="tour-detail-header">
+    <button class="btn btn-ghost btn-sm" id="back-community-home-media">← ${esc(state.currentCommunity?.name || 'Community')}</button>
+    <div class="tour-detail-title">📸 Media</div>
+  </div>
+  <div class="cm-layout">
+    <div class="cm-sidebar">
+      <div class="cm-sidebar-header">Touren Media</div>
+      <div class="cm-tour-list">${tourList}</div>
+    </div>
+    <div class="cm-main" id="cm-main-content">
+      <div class="cm-section-header">Community Bibliothek</div>
+      ${ytUpload}
+      ${cmGallery}
+    </div>
+  </div>
+</div>`;
+}
+
+function _renderCommunityMediaCard(m, isAdmin) {
+  const ytId = parseYouTubeUrl(m.url);
+  const thumb = m.thumbnail_url || (ytId ? `https://img.youtube.com/vi/${ytId}/hqdefault.jpg` : '');
+  const dt = new Date(m.created_at);
+  const dateStr = dt.toLocaleDateString('de-DE', { day:'2-digit', month:'2-digit', year:'2-digit' });
+  const isMe = m.user_id === state.currentUser.id;
+  const canDelete = isMe || isAdmin;
+
+  return `
+<div class="media-card" data-media-id="${m.id}" ${isAdmin ? 'draggable="true"' : ''}>
+  <div class="media-thumb" style="cursor:pointer;position:relative" data-cm-lightbox-url="${m.url}" data-cm-lightbox-type="youtube" data-cm-yt-id="${ytId || ''}">
+    ${m.pinned ? '<div class="media-pinned-badge">📌</div>' : ''}
+    <img src="${thumb}" alt="${esc(m.caption || '')}" loading="lazy" />
+    <div class="media-play-overlay">▶</div>
+  </div>
+  <div class="media-card-footer">
+    <div class="media-card-info">
+      <span class="media-card-user">${esc(m.username)}</span>
+      <span class="media-card-date">${dateStr}</span>
+    </div>
+    ${m.caption ? `<div class="media-card-caption">${esc(m.caption)}</div>` : ''}
+    ${isAdmin ? `<button class="media-pin-btn${m.pinned ? ' pinned' : ''}" data-cm-pin="${m.id}" data-pinned="${m.pinned ? '1' : '0'}" title="${m.pinned ? 'Loslösen' : 'Anpinnen'}">${m.pinned ? '📌' : '📍'}</button>` : ''}
+    ${canDelete ? `<button class="media-delete-btn" data-cm-delete="${m.id}" title="Löschen">🗑️</button>` : ''}
+  </div>
+</div>`;
+}
+
+function renderTourMediaPreview(media) {
+  if (!media.length) {
+    return '<div style="text-align:center;padding:40px;color:var(--muted)">Keine Medien in dieser Tour.</div>';
+  }
+
+  const gallery = media.map(m => {
+    const dt = new Date(m.created_at);
+    const dateStr = dt.toLocaleDateString('de-DE', { day:'2-digit', month:'2-digit', year:'2-digit' });
+
+    if (m.media_type === 'image') {
+      const thumb = m.url.replace('/upload/', '/upload/c_fill,w_400,h_300,q_auto/');
+      return `<div class="media-card"><div class="media-thumb" style="cursor:pointer" data-cm-lightbox-url="${m.url}" data-cm-lightbox-type="image">
+        ${m.pinned ? '<div class="media-pinned-badge">📌</div>' : ''}
+        <img src="${thumb}" loading="lazy" /></div>
+        <div class="media-card-footer"><div class="media-card-info"><span class="media-card-user">${esc(m.username)}</span><span class="media-card-date">${dateStr}</span></div>
+        ${m.caption ? `<div class="media-card-caption">${esc(m.caption)}</div>` : ''}</div></div>`;
+    }
+    if (m.media_type === 'video') {
+      const thumb = m.thumbnail_url || m.url.replace('/upload/', '/upload/c_fill,w_400,h_300,so_1/');
+      return `<div class="media-card"><div class="media-thumb" style="cursor:pointer;position:relative" data-cm-lightbox-url="${m.url}" data-cm-lightbox-type="video">
+        ${m.pinned ? '<div class="media-pinned-badge">📌</div>' : ''}
+        <img src="${thumb}" loading="lazy" /><div class="media-play-overlay">▶</div></div>
+        <div class="media-card-footer"><div class="media-card-info"><span class="media-card-user">${esc(m.username)}</span><span class="media-card-date">${dateStr}</span></div>
+        ${m.caption ? `<div class="media-card-caption">${esc(m.caption)}</div>` : ''}</div></div>`;
+    }
+    if (m.media_type === 'youtube') {
+      const ytId = parseYouTubeUrl(m.url);
+      const thumb = m.thumbnail_url || `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`;
+      return `<div class="media-card"><div class="media-thumb" style="cursor:pointer;position:relative" data-cm-lightbox-url="${m.url}" data-cm-lightbox-type="youtube" data-cm-yt-id="${ytId}">
+        ${m.pinned ? '<div class="media-pinned-badge">📌</div>' : ''}
+        <img src="${thumb}" loading="lazy" /><div class="media-play-overlay">▶</div></div>
+        <div class="media-card-footer"><div class="media-card-info"><span class="media-card-user">${esc(m.username)}</span><span class="media-card-date">${dateStr}</span></div>
+        ${m.caption ? `<div class="media-card-caption">${esc(m.caption)}</div>` : ''}</div></div>`;
+    }
+    return '';
+  }).join('');
+
+  return `<div class="media-gallery">${gallery}</div>`;
 }
