@@ -45,6 +45,13 @@ const state = {
   tourMessages:  [],
   tourPlanDates: [],
   tourChangelog: [],
+  tourMedia:     [],
+  mediaUploading: false,
+  communityMedia: [],
+  selectedTourMedia: null,
+  mediaBadges:    { community: 0, tours: 0 },
+  tourMediaCounts: {},
+  tourMediaNew:    {},   // tour id selected in community media view
   tabBadges:     {},
   tourCalMonth:  null,
 

@@ -191,6 +191,16 @@ function computeTabBadges(tourId) {
       time: new Date(e.created_at),
     }));
   }
+
+  /* ── Media ── */
+  const seenMedia = getLastSeen(tourId, 'media');
+  const newMedia  = state.tourMedia.filter(m => new Date(m.created_at) > seenMedia);
+  if (newMedia.length) {
+    state.tabBadges.media = newMedia.map(m => ({
+      text: `${m.username}: ${m.media_type === 'youtube' ? 'YouTube' : m.media_type}`,
+      time: new Date(m.created_at),
+    }));
+  }
 }
 
 /**
@@ -897,4 +907,215 @@ async function computePlanningBadges() {
     chat:  msgsRes.count  || 0,
     polls: pollsRes.count || 0,
   };
+}
+
+/* ----------------------------------------------------------
+   Tour Media (Cloudinary + YouTube)
+   ---------------------------------------------------------- */
+
+async function loadTourMedia() {
+  const { data } = await sb
+    .from('tour_media')
+    .select('*')
+    .eq('tour_id', state.currentTourId)
+    .order('created_at', { ascending: false });
+  state.tourMedia = data || [];
+}
+
+async function uploadToCloudinary(file, progressCb) {
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('upload_preset', CLOUDINARY_PRESET);
+  fd.append('folder', `motoroute/${state.currentTourId}`);
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', CLOUDINARY_URL);
+    xhr.upload.onprogress = e => {
+      if (e.lengthComputable && progressCb) progressCb(Math.round(e.loaded / e.total * 100));
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) resolve(JSON.parse(xhr.responseText));
+      else reject(new Error('Upload fehlgeschlagen: ' + xhr.status));
+    };
+    xhr.onerror = () => reject(new Error('Netzwerkfehler beim Upload'));
+    xhr.send(fd);
+  });
+}
+
+async function saveTourMedia(entry) {
+  const { data, error } = await sb
+    .from('tour_media')
+    .insert(entry)
+    .select().single();
+  if (error) throw new Error(error.message);
+  state.tourMedia = [data, ...state.tourMedia];
+  // Log to tour changelog
+  const typeLabel = entry.media_type === 'youtube' ? 'YouTube-Video' : entry.media_type === 'video' ? 'Video' : 'Bild';
+  await logChange('Media', '', `${typeLabel} hinzugefügt${entry.caption ? ': ' + entry.caption : ''}`);
+  return data;
+}
+
+async function deleteTourMedia(mediaId) {
+  const m = state.tourMedia.find(m => m.id === mediaId);
+  const { error } = await sb
+    .from('tour_media')
+    .delete()
+    .eq('id', mediaId);
+  if (error) throw new Error(error.message);
+  state.tourMedia = state.tourMedia.filter(m => m.id !== mediaId);
+  if (m) await logChange('Media', m.media_type === 'youtube' ? 'YouTube-Video' : m.media_type, 'Gelöscht');
+}
+
+function parseYouTubeUrl(url) {
+  const patterns = [
+    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/,
+    /youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})/,
+  ];
+  for (const p of patterns) {
+    const m = url.match(p);
+    if (m) return m[1];
+  }
+  return null;
+}
+
+async function togglePinMedia(mediaId, pinned) {
+  const { error } = await sb
+    .from('tour_media')
+    .update({ pinned })
+    .eq('id', mediaId);
+  if (error) throw new Error(error.message);
+  const m = state.tourMedia.find(m => m.id === mediaId);
+  if (m) m.pinned = pinned;
+}
+
+async function reorderTourMedia(orderedIds) {
+  // Update sort_order for each media item
+  const updates = orderedIds.map((id, i) =>
+    sb.from('tour_media').update({ sort_order: i }).eq('id', id)
+  );
+  await Promise.all(updates);
+  // Update local state
+  orderedIds.forEach((id, i) => {
+    const m = state.tourMedia.find(m => m.id === id);
+    if (m) m.sort_order = i;
+  });
+}
+
+/* ----------------------------------------------------------
+   Community Media
+   ---------------------------------------------------------- */
+
+async function loadCommunityMedia() {
+  const cid = state.currentCommunityId;
+  const { data } = await sb
+    .from('community_media')
+    .select('*')
+    .eq('community_id', cid)
+    .order('sort_order', { ascending: true });
+  state.communityMedia = data || [];
+}
+
+async function saveCommunityMedia(entry) {
+  const { data, error } = await sb
+    .from('community_media')
+    .insert(entry)
+    .select().single();
+  if (error) throw new Error(error.message);
+  state.communityMedia.push(data);
+  return data;
+}
+
+async function deleteCommunityMedia(mediaId) {
+  const { error } = await sb
+    .from('community_media')
+    .delete()
+    .eq('id', mediaId);
+  if (error) throw new Error(error.message);
+  state.communityMedia = state.communityMedia.filter(m => m.id !== mediaId);
+}
+
+async function togglePinCommunityMedia(mediaId, pinned) {
+  const { error } = await sb
+    .from('community_media')
+    .update({ pinned })
+    .eq('id', mediaId);
+  if (error) throw new Error(error.message);
+  const m = state.communityMedia.find(m => m.id === mediaId);
+  if (m) m.pinned = pinned;
+}
+
+async function reorderCommunityMedia(orderedIds) {
+  const updates = orderedIds.map((id, i) =>
+    sb.from('community_media').update({ sort_order: i }).eq('id', id)
+  );
+  await Promise.all(updates);
+  orderedIds.forEach((id, i) => {
+    const m = state.communityMedia.find(m => m.id === id);
+    if (m) m.sort_order = i;
+  });
+}
+
+async function loadTourMediaForCommunity(tourId) {
+  const { data } = await sb
+    .from('tour_media')
+    .select('*')
+    .eq('tour_id', tourId)
+    .order('created_at', { ascending: false });
+  return (data || []).sort((a, b) =>
+    (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) ||
+    (a.sort_order || 0) - (b.sort_order || 0) ||
+    new Date(b.created_at) - new Date(a.created_at)
+  );
+}
+
+/* Media badges */
+async function computeMediaBadges() {
+  const cid = state.currentCommunityId;
+  if (!cid) return;
+  const seenCm = getLastSeen(cid, 'community-media');
+  const seenTm = getLastSeen(cid, 'tour-media');
+
+  const [cmRes, tmRes] = await Promise.all([
+    sb.from('community_media')
+      .select('id', { count: 'exact', head: true })
+      .eq('community_id', cid)
+      .gt('created_at', seenCm.toISOString()),
+    sb.from('tour_media')
+      .select('id, tour_id', { count: 'exact', head: true })
+      .in('tour_id', (state.tours || []).map(t => t.id))
+      .gt('created_at', seenTm.toISOString()),
+  ]);
+
+  state.mediaBadges = {
+    community: cmRes.count || 0,
+    tours:     tmRes.count || 0,
+  };
+}
+
+async function computeTourMediaCounts() {
+  const tourIds = (state.tours || []).map(t => t.id);
+  if (!tourIds.length) { state.tourMediaCounts = {}; state.tourMediaNew = {}; return; }
+
+  const seenMedia = getLastSeen(state.currentCommunityId, 'tour-media');
+
+  const [allRes, newRes] = await Promise.all([
+    sb.from('tour_media').select('tour_id').in('tour_id', tourIds),
+    sb.from('tour_media').select('tour_id')
+      .in('tour_id', tourIds)
+      .neq('user_id', state.currentUser.id)
+      .gt('created_at', seenMedia.toISOString()),
+  ]);
+
+  // Total counts
+  state.tourMediaCounts = {};
+  (allRes.data || []).forEach(m => {
+    state.tourMediaCounts[m.tour_id] = (state.tourMediaCounts[m.tour_id] || 0) + 1;
+  });
+
+  // New (unseen) counts
+  state.tourMediaNew = {};
+  (newRes.data || []).forEach(m => {
+    state.tourMediaNew[m.tour_id] = (state.tourMediaNew[m.tour_id] || 0) + 1;
+  });
 }

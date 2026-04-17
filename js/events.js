@@ -26,7 +26,7 @@ function attachEvents() {
   }
 
   /* --- Navigation bar --- */
-  document.getElementById('nav-logo')?.addEventListener('click', () => navigateTo('community-home'));
+  document.getElementById('nav-logo')?.addEventListener('click', () => navigateTo('communities'));
   document.getElementById('go-profile')?.addEventListener('click', () => navigateTo('profile'));
   document.getElementById('logout-btn')?.addEventListener('click', doLogout);
 
@@ -102,6 +102,13 @@ function attachEvents() {
 
   /* --- Planning page button --- */
   document.getElementById('planning-btn')?.addEventListener('click', () => navigateTo('planning'));
+
+  /* --- Community Media button --- */
+  document.getElementById('community-media-btn')?.addEventListener('click', () => navigateTo('community-media'));
+
+  /* --- Community Media page events --- */
+  document.getElementById('back-community-home-media')?.addEventListener('click', () => navigateTo('community-home'));
+  if (state.view === 'community-media') attachCommunityMediaEvents();
 
   /* --- Planning page events (if on planning view) --- */
   if (state.view === 'planning') attachPlanningEvents();
@@ -356,6 +363,9 @@ function afterTabRender() {
   if (state.currentTab === 'info') {
     attachInfoEvents();
   }
+  if (state.currentTab === 'media') {
+    attachMediaEvents();
+  }
   if (state.currentTab === 'participants') {
     attachParticipantEvents();
   }
@@ -370,6 +380,7 @@ function _refreshTabBar() {
   const tabs = [
     { id: 'map',          label: '🗺️ Karte' },
     { id: 'chat',         label: '💬 Chat' },
+    { id: 'media',        label: '📸 Media' },
     { id: 'participants', label: '👥 Teilnehmer' },
     { id: 'info',         label: '📋 Info & Kalender' },
     { id: 'changelog',    label: '📝 Change Log' },
@@ -1300,4 +1311,450 @@ function _bindRemoveOpts() {
       btn.closest('.poll-option-row')?.remove();
     });
   });
+}
+
+/* ----------------------------------------------------------
+   Media tab events
+   ---------------------------------------------------------- */
+
+function attachMediaEvents() {
+  /* File upload */
+  document.getElementById('media-file-input')?.addEventListener('change', async e => {
+    const files = [...e.target.files];
+    if (!files.length) return;
+
+    for (const file of files) {
+      // Validate type
+      if (!ALLOWED_MEDIA_TYPES.includes(file.type)) {
+        toast(`Dateityp nicht erlaubt: ${file.type}`, 'error');
+        continue;
+      }
+      // Validate size
+      if (file.size > MAX_FILE_SIZE) {
+        toast(`Datei zu groß: ${(file.size / 1024 / 1024).toFixed(1)} MB (max ${MAX_FILE_SIZE / 1024 / 1024} MB)`, 'error');
+        continue;
+      }
+
+      const prog = document.getElementById('media-upload-progress');
+      const bar  = document.getElementById('media-upload-bar');
+      const txt  = document.getElementById('media-upload-text');
+      if (prog) prog.style.display = 'block';
+
+      try {
+        const result = await uploadToCloudinary(file, pct => {
+          if (bar) bar.style.width = pct + '%';
+          if (txt) txt.textContent = `Wird hochgeladen… ${pct}%`;
+        });
+
+        const isVideo = file.type.startsWith('video');
+        await saveTourMedia({
+          tour_id:       state.currentTourId,
+          user_id:       state.currentUser.id,
+          username:      state.currentUser.username,
+          media_type:    isVideo ? 'video' : 'image',
+          url:           result.secure_url,
+          thumbnail_url: result.eager?.[0]?.secure_url || '',
+          public_id:     result.public_id,
+          caption:       '',
+          file_size:     result.bytes || 0,
+        });
+
+        toast('✓ Hochgeladen');
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+
+      if (prog) prog.style.display = 'none';
+      if (bar) bar.style.width = '0%';
+    }
+
+    // Reset input so same file can be re-uploaded
+    e.target.value = '';
+
+    // Re-render media tab
+    _refreshMediaTab();
+  });
+
+  /* YouTube link toggle */
+  document.getElementById('media-yt-btn')?.addEventListener('click', () => {
+    const form = document.getElementById('media-yt-form');
+    if (form) {
+      const open = form.style.display === 'none' || !form.style.display;
+      form.style.display = open ? 'flex' : 'none';
+      if (open) document.getElementById('media-yt-url')?.focus();
+    }
+  });
+
+  /* YouTube link add */
+  document.getElementById('media-yt-add')?.addEventListener('click', async () => {
+    const url     = (document.getElementById('media-yt-url')?.value || '').trim();
+    const caption = (document.getElementById('media-yt-caption')?.value || '').trim();
+    const ytId    = parseYouTubeUrl(url);
+
+    if (!ytId) {
+      toast('Ungültige YouTube-URL', 'error');
+      return;
+    }
+
+    try {
+      await saveTourMedia({
+        tour_id:       state.currentTourId,
+        user_id:       state.currentUser.id,
+        username:      state.currentUser.username,
+        media_type:    'youtube',
+        url:           url,
+        thumbnail_url: `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`,
+        public_id:     '',
+        caption,
+        file_size:     0,
+      });
+      toast('✓ YouTube-Video hinzugefügt');
+      _refreshMediaTab();
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+  });
+
+  /* Pin/unpin media */
+  document.querySelectorAll('[data-pin-media]').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      const isPinned = btn.dataset.pinned === '1';
+      try {
+        await togglePinMedia(btn.dataset.pinMedia, !isPinned);
+        toast(isPinned ? 'Losgelöst' : '📌 Angepinnt');
+        _refreshMediaTab();
+      } catch (err) { toast(err.message, 'error'); }
+    });
+  });
+
+  /* Drag & drop reorder (admin only) */
+  if (isCurrentUserAdmin()) {
+    let dragSrcId = null;
+    document.querySelectorAll('.media-card[draggable="true"]').forEach(card => {
+      card.addEventListener('dragstart', e => {
+        dragSrcId = card.dataset.mediaId;
+        card.style.opacity = '0.4';
+        e.dataTransfer.effectAllowed = 'move';
+      });
+      card.addEventListener('dragend', () => {
+        card.style.opacity = '1';
+        document.querySelectorAll('.media-card').forEach(c => c.classList.remove('media-drag-over'));
+      });
+      card.addEventListener('dragover', e => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        card.classList.add('media-drag-over');
+      });
+      card.addEventListener('dragleave', () => {
+        card.classList.remove('media-drag-over');
+      });
+      card.addEventListener('drop', async e => {
+        e.preventDefault();
+        card.classList.remove('media-drag-over');
+        const targetId = card.dataset.mediaId;
+        if (!dragSrcId || dragSrcId === targetId) return;
+
+        // Reorder in local array
+        const gallery = document.querySelector('.media-gallery');
+        if (!gallery) return;
+        const cards = [...gallery.querySelectorAll('.media-card')];
+        const orderedIds = cards.map(c => c.dataset.mediaId);
+        const fromIdx = orderedIds.indexOf(dragSrcId);
+        const toIdx   = orderedIds.indexOf(targetId);
+        if (fromIdx < 0 || toIdx < 0) return;
+
+        orderedIds.splice(fromIdx, 1);
+        orderedIds.splice(toIdx, 0, dragSrcId);
+
+        try {
+          await reorderTourMedia(orderedIds);
+          _refreshMediaTab();
+        } catch (err) { toast(err.message, 'error'); }
+      });
+    });
+  }
+
+  /* Delete media */
+  document.querySelectorAll('[data-delete-media]').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      if (!confirm('Medium wirklich löschen?')) return;
+      try {
+        await deleteTourMedia(btn.dataset.deleteMedia);
+        toast('Gelöscht');
+        _refreshMediaTab();
+      } catch (err) { toast(err.message, 'error'); }
+    });
+  });
+
+  /* Lightbox open */
+  document.querySelectorAll('[data-lightbox-url]').forEach(el => {
+    el.addEventListener('click', () => {
+      const url     = el.dataset.lightboxUrl;
+      const type    = el.dataset.lightboxType;
+      const ytId    = el.dataset.ytId || '';
+      const mediaId = el.closest('.media-card')?.dataset.mediaId || '';
+      _openLightbox(url, type, ytId, mediaId);
+    });
+  });
+}
+
+function _openLightbox(url, type, ytId, mediaId) {
+  document.getElementById('media-lightbox')?.remove();
+  document.body.insertAdjacentHTML('beforeend', renderMediaLightbox(url, type, ytId, mediaId));
+
+  const overlay = document.getElementById('media-lightbox');
+
+  // Close
+  document.getElementById('lightbox-close')?.addEventListener('click', () => overlay?.remove());
+  overlay?.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+
+  // Prev / Next
+  document.getElementById('lightbox-prev')?.addEventListener('click', e => { e.stopPropagation(); _lightboxNav(-1); });
+  document.getElementById('lightbox-next')?.addEventListener('click', e => { e.stopPropagation(); _lightboxNav(1); });
+
+  // Keyboard
+  const keyHandler = e => {
+    if (e.key === 'ArrowLeft')  { e.preventDefault(); _lightboxNav(-1); }
+    if (e.key === 'ArrowRight') { e.preventDefault(); _lightboxNav(1); }
+    if (e.key === 'Escape')     { overlay?.remove(); document.removeEventListener('keydown', keyHandler); }
+  };
+  document.addEventListener('keydown', keyHandler);
+}
+
+function _lightboxNav(dir) {
+  const overlay = document.getElementById('media-lightbox');
+  if (!overlay) return;
+  const currentId = overlay.dataset.currentId;
+
+  // Get sorted media list (same sort as gallery)
+  const media = [...state.tourMedia].sort((a, b) =>
+    (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) ||
+    (a.sort_order || 0) - (b.sort_order || 0) ||
+    new Date(b.created_at) - new Date(a.created_at)
+  );
+
+  const idx = media.findIndex(m => m.id === currentId);
+  if (idx < 0) return;
+  const nextIdx = (idx + dir + media.length) % media.length;
+  const m = media[nextIdx];
+
+  const type = m.media_type;
+  const ytId = type === 'youtube' ? parseYouTubeUrl(m.url) : '';
+
+  // Re-render content
+  overlay.dataset.currentId = m.id;
+  const contentEl = document.getElementById('lightbox-content');
+  if (!contentEl) return;
+
+  if (type === 'image') {
+    contentEl.innerHTML = `<img src="${m.url}" style="max-width:85vw;max-height:85vh;border-radius:8px" />`;
+  } else if (type === 'video') {
+    contentEl.innerHTML = `<video src="${m.url}" controls autoplay style="max-width:85vw;max-height:85vh;border-radius:8px"></video>`;
+  } else if (type === 'youtube') {
+    contentEl.innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${ytId}?autoplay=1&rel=0&modestbranding=1"
+      style="width:min(85vw,960px);height:min(50vw,540px);border:none;border-radius:8px"
+      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+      referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>`;
+  }
+}
+
+function _refreshMediaTab() {
+  const tc = document.getElementById('tab-content');
+  if (tc && state.currentTab === 'media') {
+    tc.innerHTML = renderMediaTab();
+    attachMediaEvents();
+  }
+}
+
+/* ----------------------------------------------------------
+   Community Media page events
+   ---------------------------------------------------------- */
+
+function attachCommunityMediaEvents() {
+  const isAdmin = state.currentCommunity &&
+    (state.currentCommunity.admin_id === state.currentUser.id ||
+     (state.currentCommunity.co_admin_ids || []).includes(state.currentUser.id));
+
+  /* Tour list click — load tour media preview */
+  document.querySelectorAll('[data-cm-tour]').forEach(el => {
+    el.addEventListener('click', async () => {
+      const tourId = el.dataset.cmTour;
+      state.selectedTourMedia = tourId;
+
+      // Highlight selected tour and clear its new-badge
+      document.querySelectorAll('.cm-tour-item').forEach(i => i.classList.remove('cm-tour-selected'));
+      el.classList.add('cm-tour-selected');
+      const badge = el.querySelector('.tab-badge');
+      if (badge) badge.remove();
+      // Clear from state so it doesn't reappear on re-render
+      if (state.tourMediaNew) delete state.tourMediaNew[tourId];
+
+      // Load and show tour media
+      const main = document.getElementById('cm-main-content');
+      if (!main) return;
+      main.innerHTML = '<div style="padding:40px;text-align:center"><div class="spinner"></div></div>';
+      const media = await loadTourMediaForCommunity(tourId);
+      const tour = state.tours.find(t => t.id === tourId);
+      main.innerHTML = `
+        <div class="cm-section-header">
+          <span>${esc(tour?.name || 'Tour')}</span>
+          <button class="btn btn-ghost btn-sm" id="cm-back-library">← Zurück zur Bibliothek</button>
+        </div>
+        ${renderTourMediaPreview(media)}`;
+
+      // Back to library button
+      document.getElementById('cm-back-library')?.addEventListener('click', () => {
+        state.selectedTourMedia = null;
+        document.querySelectorAll('.cm-tour-item').forEach(i => i.classList.remove('cm-tour-selected'));
+        _refreshCommunityMediaMain();
+      });
+
+      // Lightbox for tour media preview
+      _attachCmLightbox(media);
+    });
+  });
+
+  /* YouTube link toggle */
+  document.getElementById('cm-yt-btn')?.addEventListener('click', () => {
+    const form = document.getElementById('cm-yt-form');
+    if (form) {
+      const open = form.style.display === 'none' || !form.style.display;
+      form.style.display = open ? 'flex' : 'none';
+      if (open) document.getElementById('cm-yt-url')?.focus();
+    }
+  });
+
+  /* YouTube link add */
+  document.getElementById('cm-yt-add')?.addEventListener('click', async () => {
+    const url     = (document.getElementById('cm-yt-url')?.value || '').trim();
+    const caption = (document.getElementById('cm-yt-caption')?.value || '').trim();
+    const ytId    = parseYouTubeUrl(url);
+    if (!ytId) { toast('Ungültige YouTube-URL', 'error'); return; }
+
+    try {
+      await saveCommunityMedia({
+        community_id:  state.currentCommunityId,
+        user_id:       state.currentUser.id,
+        username:      state.currentUser.username,
+        media_type:    'youtube',
+        url,
+        thumbnail_url: `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`,
+        caption,
+      });
+      toast('✓ YouTube-Video hinzugefügt');
+      _refreshCommunityMediaMain();
+    } catch (err) { toast(err.message, 'error'); }
+  });
+
+  /* Delete community media */
+  document.querySelectorAll('[data-cm-delete]').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      if (!confirm('Medium löschen?')) return;
+      try {
+        await deleteCommunityMedia(btn.dataset.cmDelete);
+        toast('Gelöscht');
+        _refreshCommunityMediaMain();
+      } catch (err) { toast(err.message, 'error'); }
+    });
+  });
+
+  /* Pin community media */
+  document.querySelectorAll('[data-cm-pin]').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      const isPinned = btn.dataset.pinned === '1';
+      try {
+        await togglePinCommunityMedia(btn.dataset.cmPin, !isPinned);
+        toast(isPinned ? 'Losgelöst' : '📌 Angepinnt');
+        _refreshCommunityMediaMain();
+      } catch (err) { toast(err.message, 'error'); }
+    });
+  });
+
+  /* Drag & drop reorder */
+  if (isAdmin) {
+    let dragSrcId = null;
+    document.querySelectorAll('#cm-main-content .media-card[draggable="true"]').forEach(card => {
+      card.addEventListener('dragstart', e => {
+        dragSrcId = card.dataset.mediaId;
+        card.style.opacity = '0.4';
+        e.dataTransfer.effectAllowed = 'move';
+      });
+      card.addEventListener('dragend', () => {
+        card.style.opacity = '1';
+        document.querySelectorAll('.media-card').forEach(c => c.classList.remove('media-drag-over'));
+      });
+      card.addEventListener('dragover', e => { e.preventDefault(); card.classList.add('media-drag-over'); });
+      card.addEventListener('dragleave', () => card.classList.remove('media-drag-over'));
+      card.addEventListener('drop', async e => {
+        e.preventDefault();
+        card.classList.remove('media-drag-over');
+        const targetId = card.dataset.mediaId;
+        if (!dragSrcId || dragSrcId === targetId) return;
+        const gallery = document.querySelector('#cm-main-content .media-gallery');
+        if (!gallery) return;
+        const ids = [...gallery.querySelectorAll('.media-card')].map(c => c.dataset.mediaId);
+        const from = ids.indexOf(dragSrcId);
+        const to   = ids.indexOf(targetId);
+        if (from < 0 || to < 0) return;
+        ids.splice(from, 1);
+        ids.splice(to, 0, dragSrcId);
+        try { await reorderCommunityMedia(ids); _refreshCommunityMediaMain(); }
+        catch (err) { toast(err.message, 'error'); }
+      });
+    });
+  }
+
+  /* Lightbox for community library */
+  _attachCmLightbox(state.communityMedia);
+}
+
+function _attachCmLightbox(mediaList) {
+  document.querySelectorAll('[data-cm-lightbox-url]').forEach(el => {
+    el.addEventListener('click', () => {
+      const url  = el.dataset.cmLightboxUrl;
+      const type = el.dataset.cmLightboxType;
+      const ytId = el.dataset.cmYtId || '';
+      const mediaId = el.closest('.media-card')?.dataset.mediaId || '';
+      document.getElementById('media-lightbox')?.remove();
+      document.body.insertAdjacentHTML('beforeend', renderMediaLightbox(url, type, ytId, mediaId));
+      const overlay = document.getElementById('media-lightbox');
+      document.getElementById('lightbox-close')?.addEventListener('click', () => overlay?.remove());
+      overlay?.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+      // No prev/next nav for community media view (mixed sources)
+    });
+  });
+}
+
+function _refreshCommunityMediaMain() {
+  const main = document.getElementById('cm-main-content');
+  if (!main) return;
+
+  const isAdmin = state.currentCommunity &&
+    (state.currentCommunity.admin_id === state.currentUser.id ||
+     (state.currentCommunity.co_admin_ids || []).includes(state.currentUser.id));
+
+  const cmMedia = [...state.communityMedia].sort((a, b) =>
+    (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || (a.sort_order || 0) - (b.sort_order || 0)
+  );
+
+  const ytUpload = isAdmin ? `
+<div class="media-upload-bar" style="border-bottom:1px solid var(--border)">
+  <button class="btn btn-ghost btn-sm" id="cm-yt-btn">▶️ YouTube Link hinzufügen</button>
+  <div id="cm-yt-form" style="display:none;align-items:center;gap:8px;margin-left:8px">
+    <input type="text" id="cm-yt-url" placeholder="YouTube URL…" style="width:260px;padding:7px 12px;font-size:13px" />
+    <input type="text" id="cm-yt-caption" placeholder="Beschreibung (optional)" style="width:160px;padding:7px 12px;font-size:13px" />
+    <button class="btn btn-primary btn-sm" id="cm-yt-add">Hinzufügen</button>
+  </div>
+</div>` : '';
+
+  const cmGallery = cmMedia.length === 0
+    ? '<div style="text-align:center;padding:40px;color:var(--muted)"><div style="font-size:36px;margin-bottom:8px">📸</div><div>Noch keine Community-Medien.</div></div>'
+    : `<div class="media-gallery">${cmMedia.map(m => _renderCommunityMediaCard(m, isAdmin)).join('')}</div>`;
+
+  main.innerHTML = `<div class="cm-section-header">Community Bibliothek</div>${ytUpload}${cmGallery}`;
+  attachCommunityMediaEvents();
 }

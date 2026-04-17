@@ -154,11 +154,21 @@ async function navigateTo(view, params = {}) {
     // Load data required for the target view
     try {
       if (view === 'communities' && state.currentUser) await loadCommunities();
-      if ((view === 'community-home' || view === 'community-settings' || view === 'planning') && state.currentCommunityId) {
+      if ((view === 'community-home' || view === 'community-settings' || view === 'planning' || view === 'community-media') && state.currentCommunityId) {
         await loadCommunityData(state.currentCommunityId);
         if (view === 'community-home') {
           await loadHomeData();
           await computePlanningBadges();
+          await computeMediaBadges();
+        }
+        if (view === 'community-media') {
+          await loadHomeData(); // needed for tours list
+          await loadCommunityMedia();
+          await computeTourMediaCounts();
+          state.selectedTourMedia = null;
+          markTabSeen(state.currentCommunityId, 'community-media');
+          markTabSeen(state.currentCommunityId, 'tour-media');
+          state.mediaBadges = { community: 0, tours: 0 };
         }
         if (view === 'planning') {
           await loadPlanningData();
@@ -170,6 +180,7 @@ async function navigateTo(view, params = {}) {
       }
       if (view === 'tour' && state.currentTourId) {
         await loadTourData(state.currentTourId);
+        await loadTourMedia();
         subscribeToChat(state.currentTourId);
       }
     } catch (e) {
@@ -221,6 +232,7 @@ function render() {
     case 'create-community':    html += renderCreateCommunity();  break;
       case 'community-home':      html += renderCommunityHome();    break;
     case 'planning':            html += renderPlanning();          break;
+    case 'community-media':     html += renderCommunityMedia();    break;
       case 'create':              html += renderCreate();           break;
       case 'join':                html += renderJoin();             break;
       case 'tour':                html += renderTour();             break;
