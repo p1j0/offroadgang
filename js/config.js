@@ -9,3 +9,11 @@ const { createClient } = window.supabase;
 
 /** Global Supabase client – used by api.js and auth.js */
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON);
+
+/* Cloudinary config */
+const CLOUDINARY_CLOUD  = 'dcsuzsyf0';
+const CLOUDINARY_PRESET = 'motoroute_uploads';
+const CLOUDINARY_URL    = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/auto/upload`;
+
+const ALLOWED_MEDIA_TYPES = ['image/jpeg','image/png','image/webp','image/gif','video/mp4','video/quicktime','video/webm'];
+const MAX_FILE_SIZE       = 10 * 1024 * 1024; // 10 MB
