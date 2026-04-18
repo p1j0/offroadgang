@@ -321,7 +321,7 @@ async function updateTourInfo(updates) {
   if (state.currentTour) Object.assign(state.currentTour, updates);
   // Push an Tour-Mitglieder
   const changedFields = Object.keys(updates).map(k => FIELD_LABELS[k] || k).join(', ');
-  getTourMemberIds().then(ids =>
+  getTourMemberIdsIncludingAdmin().then(ids =>
     sendPushToUsers(ids, '✏️ Tour geändert',
       `${state.currentUser.username} hat die Tour aktualisiert: ${changedFields}`, '/')
   );
@@ -423,7 +423,7 @@ async function sendMessage(text) {
     .single();
   if (error) throw new Error(error.message);
   // Push an Tour-Mitglieder (fire & forget)
-  getTourMemberIds().then(ids =>
+  getTourMemberIdsIncludingAdmin().then(ids =>
     sendPushToUsers(ids, `💬 ${state.currentUser.username}`,
       text.length > 80 ? text.slice(0, 80) + '…' : text, '/')
   );
@@ -981,7 +981,7 @@ async function saveTourMedia(entry) {
   const typeLabel = entry.media_type === 'youtube' ? 'YouTube-Video' : entry.media_type === 'video' ? 'Video' : 'Bild';
   await logChange('Media', '', `${typeLabel} hinzugefügt${entry.caption ? ': ' + entry.caption : ''}`);
   // Push an Tour-Mitglieder
-  getTourMemberIds().then(ids =>
+  getTourMemberIdsIncludingAdmin().then(ids =>
     sendPushToUsers(ids, `📸 Neue Medien`,
       `${state.currentUser.username} hat ${typeLabel} hinzugefügt${entry.caption ? ': ' + entry.caption : ''}`, '/')
   );
@@ -1306,6 +1306,22 @@ async function getTourMemberIds(tourId) {
   return (data || [])
     .map(m => m.user_id)
     .filter(id => id !== state.currentUser?.id);
+}
+
+/**
+ * Holt alle User-IDs einer Tour inkl. Admin (außer dem aktuellen User).
+ */
+async function getTourMemberIdsIncludingAdmin(tourId) {
+  const tid = tourId || state.currentTourId;
+  const { data } = await sb
+    .from('tour_members')
+    .select('user_id')
+    .eq('tour_id', tid);
+  const memberIds = (data || []).map(m => m.user_id);
+  // Admin auch einschließen falls nicht in tour_members
+  const adminId = state.currentTour?.admin_id;
+  const allIds = adminId ? [...new Set([...memberIds, adminId])] : memberIds;
+  return allIds.filter(id => id !== state.currentUser?.id);
 }
 
 /**
