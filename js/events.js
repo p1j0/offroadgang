@@ -76,14 +76,20 @@ function attachEvents() {
     } catch (e) { toast(e.message, 'error'); }
   });
 
-  /* --- Site Admin: pending requests panel --- */
+  /* --- Site Admin panel --- */
   if (state.isSiteAdminUser) {
+    /* Toggle admin panel */
+    document.getElementById('toggle-admin-panel')?.addEventListener('click', () => {
+      const panel = document.getElementById('admin-panel');
+      if (panel) panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+    });
+
     const area = document.getElementById('pending-requests-area');
     if (area) {
       loadCommunityRequests().then(requests => {
         if (!requests.length) { area.innerHTML = ''; return; }
         area.innerHTML = `
-          <div class="info-block" style="margin-bottom:20px;padding:16px;border-color:var(--accent)">
+          <div class="info-block" style="margin-bottom:16px;padding:16px;border-color:var(--accent)">
             <div class="info-label" style="color:var(--accent)">⏳ Ausstehende Anträge (${requests.length})</div>
             ${requests.map(r => `
               <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)">
@@ -120,6 +126,55 @@ function attachEvents() {
         });
       });
     }
+
+    /* --- Site Admin list + user dropdown --- */
+    const adminList = document.getElementById('site-admin-list');
+    const adminSelect = document.getElementById('add-site-admin-select');
+
+    if (adminList && adminSelect) {
+      Promise.all([loadSiteAdmins(), loadAllUsers()]).then(([admins, allUsers]) => {
+        // Render current admin list
+        adminList.innerHTML = admins.map(a => `
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)">
+            <span style="font-size:13px"><strong>${esc(a.username)}</strong>${a.user_id === state.currentUser.id ? ' <span style="color:var(--muted);font-size:11px">(du)</span>' : ''}</span>
+            ${a.user_id !== state.currentUser.id ? `<button class="btn btn-danger btn-sm" style="padding:3px 8px;font-size:11px" data-remove-admin="${a.user_id}">Entfernen</button>` : ''}
+          </div>
+        `).join('');
+
+        // Populate dropdown — exclude existing admins
+        const adminIds = new Set(admins.map(a => a.user_id));
+        const available = allUsers.filter(u => !adminIds.has(u.id));
+        available.forEach(u => {
+          const opt = document.createElement('option');
+          opt.value = u.id;
+          opt.textContent = u.username;
+          adminSelect.appendChild(opt);
+        });
+
+        document.querySelectorAll('[data-remove-admin]').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            if (!confirm('Seitenadmin-Rechte entfernen?')) return;
+            try {
+              await removeSiteAdmin(btn.dataset.removeAdmin);
+              toast('Entfernt');
+              await navigateTo('communities');
+            } catch (e) { toast(e.message, 'error'); }
+          });
+        });
+      });
+    }
+
+    document.getElementById('add-site-admin-btn')?.addEventListener('click', async () => {
+      const select = document.getElementById('add-site-admin-select');
+      const userId = select?.value;
+      if (!userId) { toast('Bitte einen User auswählen', 'error'); return; }
+      const username = select.options[select.selectedIndex]?.textContent;
+      try {
+        await sb.from('site_admins').insert({ user_id: userId });
+        toast(`✓ ${username} ist jetzt Seitenadmin`);
+        await navigateTo('communities');
+      } catch (e) { toast(e.message, 'error'); }
+    });
   }
 
   /* --- Create community form submit (keep for site admin direct create) --- */
