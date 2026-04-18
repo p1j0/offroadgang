@@ -120,3 +120,63 @@ function getISOWeek(d) {
   const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
   return Math.ceil(((date - yearStart) / 86400000 + 1) / 7);
 }
+
+/* ----------------------------------------------------------
+   Emoji Picker
+   ---------------------------------------------------------- */
+
+const EMOJI_CATEGORIES = {
+  '😊 Smileys': ['😀','😃','😄','😁','😆','😅','🤣','😂','🙂','😊','😇','🥰','😍','🤩','😘','😋','😛','😜','🤪','😝','🤑','🤗','🤭','🤫','🤔','🤐','🤨','😐','😑','😶','😏','😒','🙄','😬','😮‍💨','🤥','😌','😔','😪','🤤','😴','😷','🤒','🤕','🤢','🤮','🥵','🥶','🥴','😵','🤯','🤠','🥳','🥸','😎','🤓','🧐'],
+  '👍 Gesten': ['👍','👎','👊','✊','🤛','🤜','👏','🙌','👐','🤲','🤝','🙏','✌️','🤞','🤟','🤘','🤙','👈','👉','👆','👇','☝️','✋','🤚','🖐','🖖','👋','🤏','✍️','💪'],
+  '❤️ Herzen': ['❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❣️','💕','💞','💓','💗','💖','💘','💝','🔥','💯','⭐','🌟','✨','💥','💫'],
+  '🏍️ Motorrad': ['🏍️','🏁','🛤️','🛣️','🗺️','⛽','🔧','🔩','⚙️','🛞','🏔️','⛰️','🌲','🌳','🏕️','🌄','🌅','🌧️','☀️','⛈️','🌈','💨','🧭','📍','🚀','🏆','🎯','🍺','🍻','☕'],
+  '🎉 Feiern': ['🎉','🎊','🎈','🎂','🎁','🥂','🍾','🎵','🎶','🎸','🎺','🥁','🎤','📸','📷','🎬','🎮','🏅','🥇','🥈','🥉','🏆'],
+  '⚡ Symbole': ['✅','❌','⚠️','‼️','❓','❗','💬','👀','📌','📎','🔗','📋','📝','🗓️','⏰','🔔','📣','💡','🎯','🛑','🚫','♻️','🆗','🆕','🔝'],
+};
+
+function buildEmojiPicker(pickerId) {
+  const picker = document.getElementById(pickerId);
+  if (!picker) return;
+
+  let html = '<div class="emoji-categories">';
+  for (const [cat, emojis] of Object.entries(EMOJI_CATEGORIES)) {
+    html += `<div class="emoji-cat-label">${cat}</div>`;
+    html += '<div class="emoji-grid">';
+    emojis.forEach(e => {
+      html += `<span class="emoji-item" data-emoji="${e}">${e}</span>`;
+    });
+    html += '</div>';
+  }
+  html += '</div>';
+  picker.innerHTML = html;
+}
+
+function attachEmojiPicker(toggleId, pickerId, inputId) {
+  const toggle = document.getElementById(toggleId);
+  const picker = document.getElementById(pickerId);
+  const input  = document.getElementById(inputId);
+  if (!toggle || !picker || !input) return;
+
+  buildEmojiPicker(pickerId);
+
+  toggle.addEventListener('click', () => {
+    const open = picker.style.display === 'none';
+    picker.style.display = open ? 'block' : 'none';
+  });
+
+  picker.addEventListener('click', e => {
+    const emoji = e.target.dataset?.emoji;
+    if (!emoji) return;
+    const pos = input.selectionStart || input.value.length;
+    input.value = input.value.slice(0, pos) + emoji + input.value.slice(pos);
+    input.focus();
+    input.setSelectionRange(pos + emoji.length, pos + emoji.length);
+  });
+
+  // Close picker when clicking outside
+  document.addEventListener('click', e => {
+    if (!picker.contains(e.target) && e.target !== toggle) {
+      picker.style.display = 'none';
+    }
+  });
+}
