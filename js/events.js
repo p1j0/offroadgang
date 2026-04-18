@@ -212,6 +212,17 @@ function attachEvents() {
     });
   });
 
+  /* Leave tour (non-admin members) — in header */
+  document.getElementById('leave-tour-btn')?.addEventListener('click', async () => {
+    const name = state.currentTour?.name || 'diese Tour';
+    if (!confirm('Tour "' + name + '" wirklich verlassen?')) return;
+    try {
+      await leaveTour();
+      toast('Du hast die Tour verlassen.');
+      await navigateTo('community-home');
+    } catch (e) { toast(e.message, 'error'); }
+  });
+
   /* Open / join from tour card buttons */
   document.querySelectorAll('[data-open-id]').forEach(el => {
     el.addEventListener('click', e => {
@@ -693,6 +704,9 @@ function attachChatEvents() {
   document.getElementById('chat-in')?.addEventListener('keydown', e => {
     if (e.key === 'Enter') doSend();
   });
+
+  // Emoji picker
+  attachEmojiPicker('emoji-toggle', 'emoji-picker', 'chat-in');
 }
 
 /**
@@ -794,18 +808,6 @@ function attachInfoEvents() {
       toast('Tour gelöscht');
       await navigateTo('community-home');
     } catch (e) { toast(e.message, 'error'); setBtn('delete-tour-btn', false, '🗑️ Tour endgültig löschen'); }
-  });
-
-  /* Leave tour (non-admin members) */
-  document.getElementById('leave-tour-btn')?.addEventListener('click', async () => {
-    const name = state.currentTour?.name || 'diese Tour';
-    if (!confirm(`„${name}" wirklich verlassen?`)) return;
-    setBtn('leave-tour-btn', true, '');
-    try {
-      await leaveTour();
-      toast('Du hast die Tour verlassen.');
-      await navigateTo('community-home');
-    } catch (e) { toast(e.message, 'error'); setBtn('leave-tour-btn', false, '🚪 Tour verlassen'); }
   });
 
   /* Tour calendar navigation */
@@ -1130,6 +1132,9 @@ function attachPlanningContentEvents() {
   document.getElementById('plan-chat-input')?.addEventListener('keydown', e => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); planSend(); }
   });
+
+  // Emoji picker
+  attachEmojiPicker('plan-emoji-toggle', 'plan-emoji-picker', 'plan-chat-input');
 }
 
 

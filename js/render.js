@@ -12,6 +12,7 @@ function renderAuth() {
   return `
 <div class="auth-screen">
   <div class="auth-branding">
+    <img src="img/logo.png" alt="MotoRoute" style="width:200px;margin-bottom:20px" />
     <div class="auth-branding-logo">MOTO<span>ROUTE</span></div>
     <div class="auth-branding-tagline">Motorrad-Touren gemeinsam entdecken und planen.</div>
     <div class="auth-feature">
@@ -490,6 +491,9 @@ function renderTour() {
       <span class="tag tag-muted" id="hdr-dest">📍 ${esc(tour.destination || 'Kein Ziel')}</span>
       <span class="tag tag-muted" id="hdr-dist">📏 ${esc(tour.distance    || '—')}</span>
       <button class="btn btn-ghost btn-sm" data-copy-id="${tour.id}">🔗 Einladen</button>
+      ${tour.admin_id !== state.currentUser.id ? `<button class="map-btn map-btn-danger" id="leave-tour-btn" title="Tour verlassen">
+        <span class="map-btn-icon">🚪</span><span class="map-btn-label">Tour verlassen</span>
+      </button>` : ''}
     </div>
   </div>
 
@@ -663,9 +667,11 @@ function renderChatTab() {
         }).join('')}
   </div>
   <div class="chat-input-bar">
+    <button class="emoji-toggle-btn" id="emoji-toggle" title="Emoji">😊</button>
     <input type="text" id="chat-in" placeholder="Nachricht schreiben…" maxlength="500" />
     <button class="btn btn-primary" id="chat-send">Senden</button>
   </div>
+  <div class="emoji-picker" id="emoji-picker" style="display:none"></div>
 </div>`;
 }
 
@@ -823,10 +829,7 @@ function renderInfoTab(tour) {
         <div class="divider"></div>
         <h3 style="font-size:15px;font-weight:600;margin-bottom:12px;color:var(--danger)">⚠️ Gefahrenzone</h3>
         <button class="btn btn-danger btn-sm" id="delete-tour-btn" style="width:100%;justify-content:center">🗑️ Tour endgültig löschen</button>
-        ` : `
-        <div class="divider"></div>
-        <button class="btn btn-ghost btn-sm" id="leave-tour-btn" style="width:100%;justify-content:center;color:var(--danger);border-color:var(--danger)">🚪 Tour verlassen</button>
-        `}
+        ` : ''}
       </div>
 
       <!-- Right: planning calendar -->
@@ -1111,7 +1114,7 @@ function renderCommunities() {
   return `
 <div class="page-form" style="max-width:560px">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-    <div class="page-title" style="margin:0"><img src="img/logo.png" alt="" style="height:72px;vertical-align:middle;margin-right:12px" />Communities</div>
+    <div class="page-title" style="margin:0"><img src="img/logo.png" alt="" style="height:108px;vertical-align:middle;margin-right:14px" />Communities</div>
     <button class="btn btn-primary btn-sm" id="create-community-btn">+ Community erstellen</button>
   </div>
   <div class="page-sub" style="margin-bottom:28px">Wähle eine Community um loszulegen.</div>
@@ -1151,48 +1154,46 @@ function renderCommunityHome() {
 <div class="home-wrap">
   <div class="home-header">
     <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-      <button class="btn btn-ghost btn-sm" id="back-communities">← Communities</button>
+      <button class="btn btn-ghost btn-sm" id="back-communities"><span class="back-full">← Communities</span><span class="back-icon">←</span></button>
       <div class="tour-detail-title">${esc(community?.name || '')}</div>
+      ${isAdmin ? `<button class="map-btn" id="community-settings-btn" title="Einstellungen">
+        <span class="map-btn-icon">⚙️</span><span class="map-btn-label">Einstellungen</span>
+      </button>` : ''}
+      <button class="map-btn map-btn-danger" id="leave-community-btn" title="Verlassen">
+        <span class="map-btn-icon">🚪</span><span class="map-btn-label">Verlassen</span>
+      </button>
     </div>
-    <div style="display:flex;flex-direction:column;gap:8px;width:100%">
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:nowrap">
-        <button class="btn btn-ghost" id="community-media-btn" style="
-          font-size:15px;font-weight:600;padding:10px 20px;position:relative;
-          border:2px solid var(--accent);border-radius:8px;letter-spacing:.02em;
-          flex:1;justify-content:center
-        ">
-          📸 Media
-          ${(() => {
-            const cm = state.mediaBadges?.community || 0;
-            const tm = state.mediaBadges?.tours || 0;
-            const total = cm + tm;
-            if (!total) return '';
-            return `<span class="tab-badge" title="${total} neue Medien" style="margin-left:6px">${total > 9 ? '9+' : total}</span>`;
-          })()}
-        </button>
-        <button class="btn btn-ghost" id="planning-btn" style="
-          font-size:15px;font-weight:600;padding:10px 20px;position:relative;
-          border:2px solid var(--accent);border-radius:8px;letter-spacing:.02em;
-          flex:1;justify-content:center
-        ">
-          📋 Touren Planung
-          ${(() => {
-            const b = state.planningBadges;
-            const total = (b.chat || 0) + (b.polls || 0);
-            if (!total) return '';
-            const tip = [
-              b.chat  ? `${b.chat} neue Nachricht${b.chat  > 1 ? 'en' : ''}` : '',
-              b.polls ? `${b.polls} neue Abfrage${b.polls > 1 ? 'n' : ''}`   : '',
-            ].filter(Boolean).join(', ');
-            return `<span class="tab-badge" title="${tip}" style="margin-left:6px">${total > 9 ? '9+' : total}</span>`;
-          })()}
-        </button>
-      </div>
-      <div style="display:flex;gap:8px;align-items:center">
-        ${isAdmin ? '<button class="btn btn-ghost btn-sm" id="community-settings-btn" style="flex:1">⚙️ Einstellungen</button>' : ''}
-        <button class="btn btn-primary btn-sm" id="create-tour-btn" style="flex:1">+ Tour erstellen</button>
-        <button class="btn-logout" id="leave-community-btn" style="flex:1;text-align:center">🚪 Verlassen</button>
-      </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <button class="btn btn-ghost" id="community-media-btn" style="
+        font-size:15px;font-weight:600;padding:10px 20px;position:relative;
+        border:2px solid var(--accent);border-radius:8px;letter-spacing:.02em
+      ">
+        📸 Media
+        ${(() => {
+          const cm = state.mediaBadges?.community || 0;
+          const tm = state.mediaBadges?.tours || 0;
+          const total = cm + tm;
+          if (!total) return '';
+          return `<span class="tab-badge" title="${total} neue Medien" style="margin-left:6px">${total > 9 ? '9+' : total}</span>`;
+        })()}
+      </button>
+      <button class="btn btn-ghost" id="planning-btn" style="
+        font-size:15px;font-weight:600;padding:10px 20px;position:relative;
+        border:2px solid var(--accent);border-radius:8px;letter-spacing:.02em
+      ">
+        📋 Touren Planung
+        ${(() => {
+          const b = state.planningBadges;
+          const total = (b.chat || 0) + (b.polls || 0);
+          if (!total) return '';
+          const tip = [
+            b.chat  ? `${b.chat} neue Nachricht${b.chat  > 1 ? 'en' : ''}` : '',
+            b.polls ? `${b.polls} neue Abfrage${b.polls > 1 ? 'n' : ''}`   : '',
+          ].filter(Boolean).join(', ');
+          return `<span class="tab-badge" title="${tip}" style="margin-left:6px">${total > 9 ? '9+' : total}</span>`;
+        })()}
+      </button>
+      <button class="btn btn-primary btn-sm" id="create-tour-btn">+ Tour erstellen</button>
     </div>
   </div>
   <div class="home-layout">
@@ -1576,9 +1577,11 @@ function renderPlanChat() {
 <div class="chat-layout">
   <div class="chat-messages" id="plan-chat-msgs">${msgsHtml}</div>
   <div class="chat-input-bar">
+    <button class="emoji-toggle-btn" id="plan-emoji-toggle" title="Emoji">😊</button>
     <input type="text" id="plan-chat-input" placeholder="Nachricht…" maxlength="1000" />
     <button class="btn btn-primary" id="plan-chat-send">Senden</button>
   </div>
+  <div class="emoji-picker" id="plan-emoji-picker" style="display:none"></div>
 </div>`;
 }
 

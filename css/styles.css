@@ -1672,3 +1672,79 @@ select option       { background: var(--surface2); }
   .home-header { padding: 12px 12px 0; gap: 8px; }
   .tour-detail-title { font-size: 22px !important; }
 }
+
+/* Community header responsive */
+.back-icon { display: none; }
+
+@media (max-width: 600px) {
+  .back-full { display: none; }
+  .back-icon { display: inline; }
+  /* Prevent map-btn hover expand on touch */
+  .home-header .map-btn {
+    max-width: 38px !important;
+  }
+  .home-header .map-btn:hover {
+    max-width: 38px !important;
+    gap: 0 !important;
+  }
+  .home-header .map-btn .map-btn-label {
+    display: none !important;
+  }
+}
+
+/* ============================================================
+   EMOJI PICKER
+   ============================================================ */
+
+.emoji-toggle-btn {
+  background: none;
+  border: none;
+  font-size: 22px;
+  cursor: pointer;
+  padding: 4px;
+  flex-shrink: 0;
+  transition: transform 0.15s;
+  line-height: 1;
+}
+.emoji-toggle-btn:hover { transform: scale(1.2); }
+
+.emoji-picker {
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  padding: 10px 14px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.emoji-cat-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--muted);
+  margin: 8px 0 4px;
+}
+.emoji-cat-label:first-child { margin-top: 0; }
+
+.emoji-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+.emoji-item {
+  font-size: 22px;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.1s;
+  user-select: none;
+}
+.emoji-item:hover {
+  background: var(--surface2);
+  transform: scale(1.15);
+}
