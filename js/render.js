@@ -1117,7 +1117,11 @@ function renderCommunities() {
     <div class="page-title" style="margin:0"><img src="img/logo.png" alt="" style="height:108px;vertical-align:middle;margin-right:14px" />Communities</div>
     <button class="btn btn-primary btn-sm" id="request-community-btn">+ Community beantragen</button>
   </div>
-  <div class="page-sub" style="margin-bottom:28px">Wähle eine Community um loszulegen.</div>
+  <div class="page-sub" style="margin-bottom:28px">
+    Wähle eine Community um loszulegen.
+    ${state.isSiteAdminUser ? `<span class="tag tag-accent" style="margin-left:8px;font-size:11px">🛡️ Seitenadmin</span>
+      <button class="btn btn-ghost btn-sm" id="toggle-admin-panel" style="margin-left:4px;font-size:11px;padding:3px 10px">⚙️ Verwalten</button>` : ''}
+  </div>
 
   <div id="community-request-form" style="display:none;margin-bottom:24px">
     <div class="info-block" style="padding:18px">
@@ -1134,7 +1138,21 @@ function renderCommunities() {
     </div>
   </div>
 
-  ${state.isSiteAdminUser ? '<div id="pending-requests-area"></div>' : ''}
+  ${state.isSiteAdminUser ? `<div id="admin-panel" style="display:none;margin-bottom:20px">
+    <div id="pending-requests-area"></div>
+    <div class="info-block" style="padding:16px">
+      <div class="info-label">🛡️ Seitenadmin-Verwaltung</div>
+      <div style="margin-top:8px">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <select id="add-site-admin-select" style="flex:1;min-width:160px;padding:7px 12px;font-size:13px">
+            <option value="">— User auswählen —</option>
+          </select>
+          <button class="btn btn-primary btn-sm" id="add-site-admin-btn">+ Seitenadmin</button>
+        </div>
+        <div id="site-admin-list" style="margin-top:10px"></div>
+      </div>
+    </div>
+  </div>` : ''}
 
   ${list}
   ${empty}

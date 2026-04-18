@@ -1194,3 +1194,52 @@ async function rejectCommunityRequest(requestId) {
     .update({ status: 'rejected' })
     .eq('id', requestId);
 }
+
+async function loadSiteAdmins() {
+  const { data } = await sb
+    .from('site_admins')
+    .select('user_id');
+  if (!data) return [];
+  // Resolve usernames
+  const ids = data.map(d => d.user_id);
+  const { data: profiles } = await sb
+    .from('profiles')
+    .select('id, username')
+    .in('id', ids);
+  return (profiles || []).map(p => ({ user_id: p.id, username: p.username }));
+}
+
+async function addSiteAdmin(username) {
+  const { data: profile } = await sb
+    .from('profiles')
+    .select('id, username')
+    .eq('username', username)
+    .maybeSingle();
+  if (!profile) throw new Error(`User "${username}" nicht gefunden`);
+
+  const { error } = await sb
+    .from('site_admins')
+    .insert({ user_id: profile.id });
+  if (error) {
+    if (error.code === '23505') throw new Error(`${username} ist bereits Seitenadmin`);
+    throw new Error(error.message);
+  }
+  return profile;
+}
+
+async function removeSiteAdmin(userId) {
+  if (userId === state.currentUser.id) throw new Error('Du kannst dich nicht selbst entfernen');
+  const { error } = await sb
+    .from('site_admins')
+    .delete()
+    .eq('user_id', userId);
+  if (error) throw new Error(error.message);
+}
+
+async function loadAllUsers() {
+  const { data } = await sb
+    .from('profiles')
+    .select('id, username')
+    .order('username', { ascending: true });
+  return data || [];
+}
