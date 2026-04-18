@@ -1713,6 +1713,9 @@ function attachCommunityMediaEvents() {
 }
 
 function _attachCmLightbox(mediaList) {
+  // Store media list for navigation
+  window._cmLightboxMedia = mediaList;
+
   document.querySelectorAll('[data-cm-lightbox-url]').forEach(el => {
     el.addEventListener('click', () => {
       const url  = el.dataset.cmLightboxUrl;
@@ -1721,12 +1724,53 @@ function _attachCmLightbox(mediaList) {
       const mediaId = el.closest('.media-card')?.dataset.mediaId || '';
       document.getElementById('media-lightbox')?.remove();
       document.body.insertAdjacentHTML('beforeend', renderMediaLightbox(url, type, ytId, mediaId));
+
       const overlay = document.getElementById('media-lightbox');
       document.getElementById('lightbox-close')?.addEventListener('click', () => overlay?.remove());
       overlay?.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
-      // No prev/next nav for community media view (mixed sources)
+
+      // Prev/next navigation
+      document.getElementById('lightbox-prev')?.addEventListener('click', e => { e.stopPropagation(); _cmLightboxNav(-1); });
+      document.getElementById('lightbox-next')?.addEventListener('click', e => { e.stopPropagation(); _cmLightboxNav(1); });
+      const keyHandler = e => {
+        if (e.key === 'ArrowLeft')  { e.preventDefault(); _cmLightboxNav(-1); }
+        if (e.key === 'ArrowRight') { e.preventDefault(); _cmLightboxNav(1); }
+        if (e.key === 'Escape')     { overlay?.remove(); document.removeEventListener('keydown', keyHandler); }
+      };
+      document.addEventListener('keydown', keyHandler);
     });
   });
+}
+
+function _cmLightboxNav(dir) {
+  const overlay = document.getElementById('media-lightbox');
+  if (!overlay) return;
+  const currentId = overlay.dataset.currentId;
+  const list = window._cmLightboxMedia || [];
+  if (!list.length) return;
+
+  const idx = list.findIndex(m => m.id === currentId);
+  if (idx < 0) return;
+  const nextIdx = (idx + dir + list.length) % list.length;
+  const m = list[nextIdx];
+
+  const type = m.media_type;
+  const ytId = type === 'youtube' ? parseYouTubeUrl(m.url) : '';
+  overlay.dataset.currentId = m.id;
+
+  const contentEl = document.getElementById('lightbox-content');
+  if (!contentEl) return;
+
+  if (type === 'image') {
+    contentEl.innerHTML = `<img src="${m.url}" style="max-width:85vw;max-height:85vh;border-radius:8px" />`;
+  } else if (type === 'video') {
+    contentEl.innerHTML = `<video src="${m.url}" controls autoplay style="max-width:85vw;max-height:85vh;border-radius:8px"></video>`;
+  } else if (type === 'youtube') {
+    contentEl.innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${ytId}?autoplay=1&rel=0&modestbranding=1"
+      style="width:min(85vw,960px);height:min(50vw,540px);border:none;border-radius:8px"
+      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+      referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>`;
+  }
 }
 
 function _refreshCommunityMediaMain() {
