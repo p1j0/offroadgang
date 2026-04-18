@@ -1113,11 +1113,29 @@ function renderCommunities() {
 
   return `
 <div class="page-form" style="max-width:560px">
-  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;flex-wrap:wrap;gap:8px">
     <div class="page-title" style="margin:0"><img src="img/logo.png" alt="" style="height:108px;vertical-align:middle;margin-right:14px" />Communities</div>
-    <button class="btn btn-primary btn-sm" id="create-community-btn">+ Community erstellen</button>
+    <button class="btn btn-primary btn-sm" id="request-community-btn">+ Community beantragen</button>
   </div>
   <div class="page-sub" style="margin-bottom:28px">Wähle eine Community um loszulegen.</div>
+
+  <div id="community-request-form" style="display:none;margin-bottom:24px">
+    <div class="info-block" style="padding:18px">
+      <div class="info-label" style="margin-bottom:12px">Neue Community beantragen</div>
+      <div class="form-group">
+        <label>Community Name</label>
+        <input type="text" id="req-comm-name" placeholder="Name der Community" maxlength="100" />
+      </div>
+      <div class="form-group">
+        <label>Passwort (für Beitritt)</label>
+        <input type="text" id="req-comm-pw" placeholder="Beitrittspasswort" maxlength="50" />
+      </div>
+      <button class="btn btn-primary btn-sm" id="submit-community-request">Antrag absenden</button>
+    </div>
+  </div>
+
+  ${state.isSiteAdminUser ? '<div id="pending-requests-area"></div>' : ''}
+
   ${list}
   ${empty}
 </div>`;

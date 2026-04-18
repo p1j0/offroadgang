@@ -153,7 +153,10 @@ async function navigateTo(view, params = {}) {
 
     // Load data required for the target view
     try {
-      if (view === 'communities' && state.currentUser) await loadCommunities();
+      if (view === 'communities' && state.currentUser) {
+        await loadCommunities();
+        state.isSiteAdminUser = await isSiteAdmin();
+      }
       if ((view === 'community-home' || view === 'community-settings' || view === 'planning' || view === 'community-media') && state.currentCommunityId) {
         await loadCommunityData(state.currentCommunityId);
         if (view === 'community-home') {

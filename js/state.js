@@ -51,7 +51,8 @@ const state = {
   selectedTourMedia: null,
   mediaBadges:    { community: 0, tours: 0 },
   tourMediaCounts: {},
-  tourMediaNew:    {},   // tour id selected in community media view
+  tourMediaNew:    {},
+  isSiteAdminUser: false,   // tour id selected in community media view
   tabBadges:     {},
   tourCalMonth:  null,
 

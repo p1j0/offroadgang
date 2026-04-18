@@ -1119,3 +1119,78 @@ async function computeTourMediaCounts() {
     state.tourMediaNew[m.tour_id] = (state.tourMediaNew[m.tour_id] || 0) + 1;
   });
 }
+
+/* ----------------------------------------------------------
+   Site Admin & Community Approval
+   ---------------------------------------------------------- */
+
+async function isSiteAdmin() {
+  const { data } = await sb
+    .from('site_admins')
+    .select('user_id')
+    .eq('user_id', state.currentUser.id)
+    .maybeSingle();
+  return !!data;
+}
+
+async function submitCommunityRequest(name, password) {
+  const { error } = await sb
+    .from('community_requests')
+    .insert({
+      name,
+      password,
+      requested_by: state.currentUser.id,
+      username: state.currentUser.username,
+    });
+  if (error) throw new Error(error.message);
+}
+
+async function loadCommunityRequests() {
+  const { data } = await sb
+    .from('community_requests')
+    .select('*')
+    .eq('status', 'pending')
+    .order('created_at', { ascending: true });
+  return data || [];
+}
+
+async function approveCommunityRequest(requestId) {
+  // Get the request
+  const { data: req } = await sb
+    .from('community_requests')
+    .select('*')
+    .eq('id', requestId)
+    .single();
+  if (!req) throw new Error('Request nicht gefunden');
+
+  // Create the community
+  const { data: community, error: cErr } = await sb
+    .from('communities')
+    .insert({
+      name: req.name,
+      password: req.password,
+      admin_id: req.requested_by,
+      approved: true,
+    })
+    .select().single();
+  if (cErr) throw new Error(cErr.message);
+
+  // Add requester as member
+  await sb.from('community_members').insert({
+    community_id: community.id,
+    user_id: req.requested_by,
+  });
+
+  // Update request status
+  await sb.from('community_requests')
+    .update({ status: 'approved' })
+    .eq('id', requestId);
+
+  return community;
+}
+
+async function rejectCommunityRequest(requestId) {
+  await sb.from('community_requests')
+    .update({ status: 'rejected' })
+    .eq('id', requestId);
+}

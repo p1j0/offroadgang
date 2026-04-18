@@ -52,12 +52,71 @@ function attachEvents() {
   document.getElementById('go-create')?.addEventListener('click', () => navigateTo('create'));
   document.getElementById('go-join')?.addEventListener('click',   () => navigateTo('join'));
 
-  /* --- Community: create button on landing --- */
-  document.getElementById('create-community-btn')?.addEventListener('click', () =>
-    navigateTo('create-community')
-  );
+  /* --- Community: request button on landing --- */
+  document.getElementById('request-community-btn')?.addEventListener('click', () => {
+    const form = document.getElementById('community-request-form');
+    if (form) form.style.display = form.style.display === 'none' ? 'block' : 'none';
+  });
 
-  /* --- Create community form submit --- */
+  document.getElementById('submit-community-request')?.addEventListener('click', async () => {
+    const name = document.getElementById('req-comm-name')?.value.trim();
+    const pw   = document.getElementById('req-comm-pw')?.value.trim();
+    if (!name) { toast('Bitte Namen eingeben', 'error'); return; }
+    if (!pw)   { toast('Bitte Passwort eingeben', 'error'); return; }
+    try {
+      await submitCommunityRequest(name, pw);
+      toast('✓ Antrag eingereicht! Der Seitenadmin wird benachrichtigt.');
+      document.getElementById('community-request-form').style.display = 'none';
+    } catch (e) { toast(e.message, 'error'); }
+  });
+
+  /* --- Site Admin: pending requests panel --- */
+  if (state.isSiteAdminUser) {
+    const area = document.getElementById('pending-requests-area');
+    if (area) {
+      loadCommunityRequests().then(requests => {
+        if (!requests.length) { area.innerHTML = ''; return; }
+        area.innerHTML = `
+          <div class="info-block" style="margin-bottom:20px;padding:16px;border-color:var(--accent)">
+            <div class="info-label" style="color:var(--accent)">⏳ Ausstehende Anträge (${requests.length})</div>
+            ${requests.map(r => `
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)">
+                <div>
+                  <strong>${esc(r.name)}</strong>
+                  <div style="font-size:11px;color:var(--muted)">von ${esc(r.username)} · ${new Date(r.created_at).toLocaleDateString('de-DE')}</div>
+                </div>
+                <div style="display:flex;gap:6px">
+                  <button class="btn btn-primary btn-sm" data-approve-req="${r.id}">✓</button>
+                  <button class="btn btn-danger btn-sm" data-reject-req="${r.id}">✕</button>
+                </div>
+              </div>
+            `).join('')}
+          </div>`;
+
+        document.querySelectorAll('[data-approve-req]').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            try {
+              await approveCommunityRequest(btn.dataset.approveReq);
+              toast('✓ Community genehmigt und erstellt');
+              await navigateTo('communities');
+            } catch (e) { toast(e.message, 'error'); }
+          });
+        });
+        document.querySelectorAll('[data-reject-req]').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            if (!confirm('Antrag wirklich ablehnen?')) return;
+            try {
+              await rejectCommunityRequest(btn.dataset.rejectReq);
+              toast('Antrag abgelehnt');
+              btn.closest('div[style]').remove();
+            } catch (e) { toast(e.message, 'error'); }
+          });
+        });
+      });
+    }
+  }
+
+  /* --- Create community form submit (keep for site admin direct create) --- */
   document.getElementById('cc-submit')?.addEventListener('click', async () => {
     const name     = (document.getElementById('cc-name')?.value     || '').trim();
     const password = (document.getElementById('cc-password')?.value || '').trim();
