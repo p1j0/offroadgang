@@ -1078,6 +1078,16 @@ async function renderProfile() {
     style="width:100%;justify-content:center;padding:13px;font-size:15px;margin-top:24px">
     Einstellungen speichern
   </button>
+
+  <div class="divider" style="margin-top:32px"></div>
+  <h3 style="font-size:15px;font-weight:600;margin-bottom:6px">📱 App-Benachrichtigungen (Push)</h3>
+  <p style="color:var(--muted);font-size:13px;margin-bottom:16px">
+    Erhalte Push-Benachrichtigungen direkt auf deinem Gerät – auch ohne E-Mail.
+    <span id="pwa-push-hint" style="display:block;margin-top:4px"></span>
+  </p>
+  <button class="btn btn-ghost" id="pwa-push-btn" style="width:100%;justify-content:center">
+    🔔 Push-Benachrichtigungen aktivieren
+  </button>
 </div>`;
 }
 

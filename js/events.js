@@ -43,6 +43,51 @@ function attachEvents() {
     setBtn('profile-save', false, 'Einstellungen speichern');
   });
 
+  /* --- PWA Push Button --- */
+  const pushBtn  = document.getElementById('pwa-push-btn');
+  const pushHint = document.getElementById('pwa-push-hint');
+  if (pushBtn) {
+    // Status ermitteln und Button anpassen
+    getPushSubscriptionStatus().then(status => {
+      const isIOS      = /iPad|iPhone|iPod/.test(navigator.userAgent);
+      const standalone = window.navigator.standalone;
+
+      if (status === 'unsupported') {
+        if (isIOS && !standalone) {
+          pushBtn.textContent = '📲 App zuerst installieren';
+          pushBtn.classList.add('btn-ghost');
+          if (pushHint) pushHint.textContent = 'Tippe auf Teilen → „Zum Home-Bildschirm", dann öffne die installierte App.';
+        } else {
+          pushBtn.textContent = '❌ Push nicht verfügbar';
+          pushBtn.disabled = true;
+          if (pushHint) pushHint.textContent = 'Dein Browser unterstützt keine Push-Benachrichtigungen.';
+        }
+      } else if (status === 'denied') {
+        pushBtn.textContent = '🚫 Berechtigung verweigert';
+        pushBtn.disabled = true;
+        if (pushHint) pushHint.textContent = 'Bitte erlaube Benachrichtigungen in den Browser-Einstellungen.';
+      } else if (status === 'subscribed') {
+        pushBtn.textContent = '✓ Push aktiviert';
+        pushBtn.classList.add('btn-success');
+        pushBtn.disabled = true;
+        if (pushHint) pushHint.style.display = 'none';
+      }
+    });
+
+    pushBtn.addEventListener('click', async () => {
+      pushBtn.disabled = true;
+      pushBtn.textContent = '…';
+      const ok = await requestPushPermission();
+      if (ok) {
+        pushBtn.textContent = '✓ Push aktiviert';
+        pushBtn.classList.add('btn-success');
+      } else {
+        pushBtn.disabled = false;
+        pushBtn.textContent = '🔔 Push-Benachrichtigungen aktivieren';
+      }
+    });
+  }
+
   /* --- Generic "back" buttons --- */
   document.querySelectorAll('#back-home').forEach(el => {
     el.addEventListener('click', () => {

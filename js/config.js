@@ -10,6 +10,12 @@ const { createClient } = window.supabase;
 /** Global Supabase client – used by api.js and auth.js */
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON);
 
+/**
+ * VAPID Public Key für Web Push Notifications.
+ * Der zugehörige Private Key liegt als Supabase Secret: VAPID_PRIVATE_KEY
+ */
+const VAPID_PUBLIC_KEY = 'BFU6H4JSsYeG8nWKdpGBlp8yDfG0bMp7tVgT64nCV2kn8_yXzhn7TuC-HONtffEcRNtDE3r5P1UafTrnyGBaQAY';
+
 /* Cloudinary config */
 const CLOUDINARY_CLOUD  = 'dcsuzsyf0';
 const CLOUDINARY_PRESET = 'motoroute_uploads';
