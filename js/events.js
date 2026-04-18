@@ -45,7 +45,13 @@ function attachEvents() {
 
   /* --- Generic "back" buttons --- */
   document.querySelectorAll('#back-home').forEach(el => {
-    el.addEventListener('click', () => navigateTo('community-home'));
+    el.addEventListener('click', () => {
+      if (state.currentCommunityId && state.currentCommunity) {
+        navigateTo('community-home');
+      } else {
+        navigateTo('communities');
+      }
+    });
   });
 
   /* --- Home buttons --- */
