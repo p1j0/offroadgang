@@ -93,11 +93,11 @@ function renderAuth() {
 function renderNav() {
   return `
 <nav class="nav">
-  <div class="nav-logo" id="nav-logo"><img src="img/logo.png" alt="MotoRoute" style="height:36px;vertical-align:middle;margin-right:8px" />MOTO<span>ROUTE</span></div>
+  <div class="nav-logo" id="nav-logo"><img src="img/logo.png" alt="MotoRoute" class="nav-logo-img" /><span class="nav-logo-text">MOTO<span>ROUTE</span></span></div>
   <div class="nav-user">
-    🏍️ <strong>${esc(state.currentUser?.username || '')}</strong>
+    <span class="nav-user-icon">🏍️</span> <strong>${esc(state.currentUser?.username || '')}</strong>
     <button class="btn-ghost btn-sm" id="go-profile" title="Profil & Benachrichtigungen">⚙️</button>
-    <button class="btn-logout" id="logout-btn">Abmelden</button>
+    <button class="btn-logout" id="logout-btn"><span class="logout-text">Abmelden</span><span class="logout-icon">⏻</span></button>
   </div>
 </nav>`;
 }
@@ -1154,39 +1154,45 @@ function renderCommunityHome() {
       <button class="btn btn-ghost btn-sm" id="back-communities">← Communities</button>
       <div class="tour-detail-title">${esc(community?.name || '')}</div>
     </div>
-    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-      ${isAdmin ? '<button class="btn btn-ghost btn-sm" id="community-settings-btn">⚙️ Einstellungen</button>' : ''}
-      <button class="btn btn-ghost" id="community-media-btn" style="
-        font-size:15px;font-weight:600;padding:10px 20px;position:relative;
-        border:2px solid var(--accent);border-radius:8px;letter-spacing:.02em
-      ">
-        📸 Media
-        ${(() => {
-          const cm = state.mediaBadges?.community || 0;
-          const tm = state.mediaBadges?.tours || 0;
-          const total = cm + tm;
-          if (!total) return '';
-          return `<span class="tab-badge" title="${total} neue Medien" style="margin-left:6px">${total > 9 ? '9+' : total}</span>`;
-        })()}
-      </button>
-      <button class="btn btn-ghost" id="planning-btn" style="
-        font-size:15px;font-weight:600;padding:10px 20px;position:relative;
-        border:2px solid var(--accent);border-radius:8px;letter-spacing:.02em
-      ">
-        📋 Touren Planung
-        ${(() => {
-          const b = state.planningBadges;
-          const total = (b.chat || 0) + (b.polls || 0);
-          if (!total) return '';
-          const tip = [
-            b.chat  ? `${b.chat} neue Nachricht${b.chat  > 1 ? 'en' : ''}` : '',
-            b.polls ? `${b.polls} neue Abfrage${b.polls > 1 ? 'n' : ''}`   : '',
-          ].filter(Boolean).join(', ');
-          return `<span class="tab-badge" title="${tip}" style="margin-left:6px">${total > 9 ? '9+' : total}</span>`;
-        })()}
-      </button>
-      <button class="btn btn-primary btn-sm" id="create-tour-btn">+ Tour erstellen</button>
-      <button class="btn-logout" id="leave-community-btn">🚪 Verlassen</button>
+    <div style="display:flex;flex-direction:column;gap:8px;width:100%">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:nowrap">
+        <button class="btn btn-ghost" id="community-media-btn" style="
+          font-size:15px;font-weight:600;padding:10px 20px;position:relative;
+          border:2px solid var(--accent);border-radius:8px;letter-spacing:.02em;
+          flex:1;justify-content:center
+        ">
+          📸 Media
+          ${(() => {
+            const cm = state.mediaBadges?.community || 0;
+            const tm = state.mediaBadges?.tours || 0;
+            const total = cm + tm;
+            if (!total) return '';
+            return `<span class="tab-badge" title="${total} neue Medien" style="margin-left:6px">${total > 9 ? '9+' : total}</span>`;
+          })()}
+        </button>
+        <button class="btn btn-ghost" id="planning-btn" style="
+          font-size:15px;font-weight:600;padding:10px 20px;position:relative;
+          border:2px solid var(--accent);border-radius:8px;letter-spacing:.02em;
+          flex:1;justify-content:center
+        ">
+          📋 Touren Planung
+          ${(() => {
+            const b = state.planningBadges;
+            const total = (b.chat || 0) + (b.polls || 0);
+            if (!total) return '';
+            const tip = [
+              b.chat  ? `${b.chat} neue Nachricht${b.chat  > 1 ? 'en' : ''}` : '',
+              b.polls ? `${b.polls} neue Abfrage${b.polls > 1 ? 'n' : ''}`   : '',
+            ].filter(Boolean).join(', ');
+            return `<span class="tab-badge" title="${tip}" style="margin-left:6px">${total > 9 ? '9+' : total}</span>`;
+          })()}
+        </button>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        ${isAdmin ? '<button class="btn btn-ghost btn-sm" id="community-settings-btn" style="flex:1">⚙️ Einstellungen</button>' : ''}
+        <button class="btn btn-primary btn-sm" id="create-tour-btn" style="flex:1">+ Tour erstellen</button>
+        <button class="btn-logout" id="leave-community-btn" style="flex:1;text-align:center">🚪 Verlassen</button>
+      </div>
     </div>
   </div>
   <div class="home-layout">
@@ -2137,7 +2143,7 @@ function renderTourMediaPreview(media) {
 
     if (m.media_type === 'image') {
       const thumb = m.url.replace('/upload/', '/upload/c_fill,w_400,h_300,q_auto/');
-      return `<div class="media-card"><div class="media-thumb" style="cursor:pointer" data-cm-lightbox-url="${m.url}" data-cm-lightbox-type="image">
+      return `<div class="media-card" data-media-id="${m.id}"><div class="media-thumb" style="cursor:pointer" data-cm-lightbox-url="${m.url}" data-cm-lightbox-type="image">
         ${m.pinned ? '<div class="media-pinned-badge">📌</div>' : ''}
         <img src="${thumb}" loading="lazy" /></div>
         <div class="media-card-footer"><div class="media-card-info"><span class="media-card-user">${esc(m.username)}</span><span class="media-card-date">${dateStr}</span></div>
@@ -2145,7 +2151,7 @@ function renderTourMediaPreview(media) {
     }
     if (m.media_type === 'video') {
       const thumb = m.thumbnail_url || m.url.replace('/upload/', '/upload/c_fill,w_400,h_300,so_1/');
-      return `<div class="media-card"><div class="media-thumb" style="cursor:pointer;position:relative" data-cm-lightbox-url="${m.url}" data-cm-lightbox-type="video">
+      return `<div class="media-card" data-media-id="${m.id}"><div class="media-thumb" style="cursor:pointer;position:relative" data-cm-lightbox-url="${m.url}" data-cm-lightbox-type="video">
         ${m.pinned ? '<div class="media-pinned-badge">📌</div>' : ''}
         <img src="${thumb}" loading="lazy" /><div class="media-play-overlay">▶</div></div>
         <div class="media-card-footer"><div class="media-card-info"><span class="media-card-user">${esc(m.username)}</span><span class="media-card-date">${dateStr}</span></div>
@@ -2154,7 +2160,7 @@ function renderTourMediaPreview(media) {
     if (m.media_type === 'youtube') {
       const ytId = parseYouTubeUrl(m.url);
       const thumb = m.thumbnail_url || `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`;
-      return `<div class="media-card"><div class="media-thumb" style="cursor:pointer;position:relative" data-cm-lightbox-url="${m.url}" data-cm-lightbox-type="youtube" data-cm-yt-id="${ytId}">
+      return `<div class="media-card" data-media-id="${m.id}"><div class="media-thumb" style="cursor:pointer;position:relative" data-cm-lightbox-url="${m.url}" data-cm-lightbox-type="youtube" data-cm-yt-id="${ytId}">
         ${m.pinned ? '<div class="media-pinned-badge">📌</div>' : ''}
         <img src="${thumb}" loading="lazy" /><div class="media-play-overlay">▶</div></div>
         <div class="media-card-footer"><div class="media-card-info"><span class="media-card-user">${esc(m.username)}</span><span class="media-card-date">${dateStr}</span></div>

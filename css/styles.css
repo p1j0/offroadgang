@@ -1631,3 +1631,44 @@ select option       { background: var(--surface2); }
   flex-shrink: 0;
   white-space: nowrap;
 }
+
+/* ============================================================
+   RESPONSIVE NAVBAR & COMMUNITY HOME BUTTONS
+   ============================================================ */
+
+.nav-logo-img {
+  height: 36px;
+  vertical-align: middle;
+  margin-right: 8px;
+}
+.nav-logo-text {
+  vertical-align: middle;
+}
+.nav-user-icon {
+  vertical-align: middle;
+}
+.logout-icon { display: none; font-size: 16px; }
+.logout-text { display: inline; }
+
+/* Mobile: hide logo image and show power icon instead of "Abmelden" */
+@media (max-width: 600px) {
+  .nav-logo-img  { display: none; }
+  .nav-logo      { font-size: 24px !important; }
+  .nav-user-icon { display: none; }
+  .logout-text   { display: none; }
+  .logout-icon   { display: inline; }
+  .nav { padding: 0 12px; }
+}
+
+/* Community home buttons: Media + Planung on same row */
+.community-action-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+@media (max-width: 600px) {
+  .home-header { padding: 12px 12px 0; gap: 8px; }
+  .tour-detail-title { font-size: 22px !important; }
+}
