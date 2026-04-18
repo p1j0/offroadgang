@@ -261,6 +261,11 @@ async function createTour(data) {
     .select()
     .single();
   if (error) throw new Error(error.message);
+  // Push an alle Community-Mitglieder
+  getCommunityMemberIds().then(ids =>
+    sendPushToUsers(ids, '🏍️ Neue Tour',
+      `${state.currentUser.username} hat eine neue Tour erstellt: ${data.name}`, '/')
+  );
   return t;
 }
 
@@ -314,6 +319,12 @@ async function updateTourInfo(updates) {
   await Promise.allSettled(logPromises);
 
   if (state.currentTour) Object.assign(state.currentTour, updates);
+  // Push an Tour-Mitglieder
+  const changedFields = Object.keys(updates).map(k => FIELD_LABELS[k] || k).join(', ');
+  getTourMemberIdsIncludingAdmin().then(ids =>
+    sendPushToUsers(ids, '✏️ Tour geändert',
+      `${state.currentUser.username} hat die Tour aktualisiert: ${changedFields}`, '/')
+  );
 }
 
 /**
@@ -411,6 +422,11 @@ async function sendMessage(text) {
     .select()
     .single();
   if (error) throw new Error(error.message);
+  // Push an Tour-Mitglieder (fire & forget)
+  getTourMemberIdsIncludingAdmin().then(ids =>
+    sendPushToUsers(ids, `💬 ${state.currentUser.username}`,
+      text.length > 80 ? text.slice(0, 80) + '…' : text, '/')
+  );
   return data;
 }
 
@@ -800,6 +816,12 @@ async function createPoll(question, options, multi, pollType = 'general', pollYe
     '',
     question + ' (' + options.map(o => o.text).join(', ') + ')'
   );
+  // Push an Community-Mitglieder
+  getCommunityMemberIds().then(ids =>
+    sendPushToUsers(ids,
+      pollType === 'yearly' ? `📅 Jahresplanung ${pollYear}` : '📊 Neue Abfrage',
+      question, '/')
+  );
 }
 
 async function votePoll(pollId, optionIds) {
@@ -866,6 +888,11 @@ async function sendCommunityMessage(text) {
     .select().single();
   if (error) throw new Error(error.message);
   state.communityMessages.push(data);
+  // Push an Community-Mitglieder (fire & forget)
+  getCommunityMemberIds().then(ids =>
+    sendPushToUsers(ids, `💬 ${state.currentUser.username}`,
+      text.length > 80 ? text.slice(0, 80) + '…' : text, '/')
+  );
   return data;
 }
 
@@ -953,6 +980,11 @@ async function saveTourMedia(entry) {
   // Log to tour changelog
   const typeLabel = entry.media_type === 'youtube' ? 'YouTube-Video' : entry.media_type === 'video' ? 'Video' : 'Bild';
   await logChange('Media', '', `${typeLabel} hinzugefügt${entry.caption ? ': ' + entry.caption : ''}`);
+  // Push an Tour-Mitglieder
+  getTourMemberIdsIncludingAdmin().then(ids =>
+    sendPushToUsers(ids, `📸 Neue Medien`,
+      `${state.currentUser.username} hat ${typeLabel} hinzugefügt${entry.caption ? ': ' + entry.caption : ''}`, '/')
+  );
   return data;
 }
 
@@ -1242,4 +1274,72 @@ async function loadAllUsers() {
     .select('id, username')
     .order('username', { ascending: true });
   return data || [];
+}
+
+/* ----------------------------------------------------------
+   Push Notifications
+   ---------------------------------------------------------- */
+
+const PUSH_FUNCTION_URL = `${SUPABASE_URL}/functions/v1/send-push`;
+
+/**
+ * Holt alle User-IDs einer Community (außer dem aktuellen User).
+ */
+async function getCommunityMemberIds(communityId) {
+  const { data } = await sb
+    .from('community_members')
+    .select('user_id')
+    .eq('community_id', communityId || state.currentCommunityId);
+  return (data || [])
+    .map(m => m.user_id)
+    .filter(id => id !== state.currentUser?.id);
+}
+
+/**
+ * Holt alle User-IDs einer Tour (außer dem aktuellen User).
+ */
+async function getTourMemberIds(tourId) {
+  const { data } = await sb
+    .from('tour_members')
+    .select('user_id')
+    .eq('tour_id', tourId || state.currentTourId);
+  return (data || [])
+    .map(m => m.user_id)
+    .filter(id => id !== state.currentUser?.id);
+}
+
+/**
+ * Holt alle User-IDs einer Tour inkl. Admin (außer dem aktuellen User).
+ */
+async function getTourMemberIdsIncludingAdmin(tourId) {
+  const tid = tourId || state.currentTourId;
+  const { data } = await sb
+    .from('tour_members')
+    .select('user_id')
+    .eq('tour_id', tid);
+  const memberIds = (data || []).map(m => m.user_id);
+  // Admin auch einschließen falls nicht in tour_members
+  const adminId = state.currentTour?.admin_id;
+  const allIds = adminId ? [...new Set([...memberIds, adminId])] : memberIds;
+  return allIds.filter(id => id !== state.currentUser?.id);
+}
+
+/**
+ * Sendet Push-Benachrichtigungen an eine Liste von User-IDs.
+ * Läuft fire-and-forget – Fehler werden nur geloggt, nicht geworfen.
+ */
+async function sendPushToUsers(userIds, title, body, url = '/') {
+  if (!userIds?.length) return;
+  try {
+    await fetch(PUSH_FUNCTION_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type':  'application/json',
+        'Authorization': `Bearer ${SUPABASE_ANON}`,
+      },
+      body: JSON.stringify({ user_ids: userIds, title, body, url }),
+    });
+  } catch (e) {
+    console.warn('[Push] Fehler:', e.message);
+  }
 }

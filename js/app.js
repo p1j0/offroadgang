@@ -333,3 +333,4 @@ window._openPollEdit = function(pollId) {
 
 // Start the application
 init();
+initPWA();
