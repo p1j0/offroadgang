@@ -171,15 +171,19 @@ async function savePushSubscription(subscription) {
   if (!user) return;
 
   const sub = subscription.toJSON();
+
+  // Alle alten Subscriptions dieses Users löschen — verhindert Duplikate
+  await sb.from('push_subscriptions').delete().eq('user_id', user.id);
+
   const { error } = await sb
     .from('push_subscriptions')
-    .upsert({
-      user_id:  user.id,
-      endpoint: sub.endpoint,
-      p256dh:   sub.keys?.p256dh,
-      auth:     sub.keys?.auth,
+    .insert({
+      user_id:    user.id,
+      endpoint:   sub.endpoint,
+      p256dh:     sub.keys?.p256dh,
+      auth:       sub.keys?.auth,
       updated_at: new Date().toISOString()
-    }, { onConflict: 'user_id,endpoint' });
+    });
 
   if (error) console.error('[PWA] Subscription speichern fehlgeschlagen:', error);
 }
