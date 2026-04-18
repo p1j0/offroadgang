@@ -172,18 +172,18 @@ async function savePushSubscription(subscription) {
 
   const sub = subscription.toJSON();
 
-  // Alle alten Subscriptions dieses Users löschen — verhindert Duplikate
-  await sb.from('push_subscriptions').delete().eq('user_id', user.id);
-
+  // Upsert per Endpoint — jedes Gerät bekommt einen eigenen Eintrag.
+  // Gleicher Endpoint = Update, neuer Endpoint = neuer Eintrag.
+  // Alte ungültige Endpoints werden automatisch via 410-Gone in send-push gelöscht.
   const { error } = await sb
     .from('push_subscriptions')
-    .insert({
+    .upsert({
       user_id:    user.id,
       endpoint:   sub.endpoint,
       p256dh:     sub.keys?.p256dh,
       auth:       sub.keys?.auth,
       updated_at: new Date().toISOString()
-    });
+    }, { onConflict: 'user_id,endpoint' });
 
   if (error) console.error('[PWA] Subscription speichern fehlgeschlagen:', error);
 }
