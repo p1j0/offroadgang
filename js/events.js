@@ -47,6 +47,23 @@ function attachEvents() {
   const pushBtn  = document.getElementById('pwa-push-btn');
   const pushHint = document.getElementById('pwa-push-hint');
   if (pushBtn) {
+
+    function setPushActive() {
+      pushBtn.textContent = '🔕 Push deaktivieren';
+      pushBtn.className = 'btn btn-ghost';
+      pushBtn.disabled = false;
+      pushBtn._mode = 'deactivate';
+      if (pushHint) pushHint.style.display = 'none';
+    }
+
+    function setPushInactive() {
+      pushBtn.textContent = '🔔 Push-Benachrichtigungen aktivieren';
+      pushBtn.className = 'btn btn-ghost';
+      pushBtn.disabled = false;
+      pushBtn._mode = 'activate';
+      if (pushHint) pushHint.style.display = '';
+    }
+
     // Status ermitteln und Button anpassen
     getPushSubscriptionStatus().then(status => {
       const isIOS      = /iPad|iPhone|iPod/.test(navigator.userAgent);
@@ -55,7 +72,6 @@ function attachEvents() {
       if (status === 'unsupported') {
         if (isIOS && !standalone) {
           pushBtn.textContent = '📲 App zuerst installieren';
-          pushBtn.classList.add('btn-ghost');
           if (pushHint) pushHint.textContent = 'Tippe auf Teilen → „Zum Home-Bildschirm", dann öffne die installierte App.';
         } else {
           pushBtn.textContent = '❌ Push nicht verfügbar';
@@ -67,23 +83,42 @@ function attachEvents() {
         pushBtn.disabled = true;
         if (pushHint) pushHint.textContent = 'Bitte erlaube Benachrichtigungen in den Browser-Einstellungen.';
       } else if (status === 'subscribed') {
-        pushBtn.textContent = '✓ Push aktiviert';
-        pushBtn.classList.add('btn-success');
-        pushBtn.disabled = true;
-        if (pushHint) pushHint.style.display = 'none';
+        setPushActive();
+      } else {
+        setPushInactive();
       }
     });
 
     pushBtn.addEventListener('click', async () => {
       pushBtn.disabled = true;
       pushBtn.textContent = '…';
-      const ok = await requestPushPermission();
-      if (ok) {
-        pushBtn.textContent = '✓ Push aktiviert';
-        pushBtn.classList.add('btn-success');
+
+      if (pushBtn._mode === 'deactivate') {
+        // Deaktivieren: SW-Subscription kündigen + aus DB löschen
+        try {
+          const reg = await navigator.serviceWorker.ready;
+          const sub = await reg.pushManager.getSubscription();
+          if (sub) {
+            await sub.unsubscribe();
+            await sb.from('push_subscriptions')
+              .delete()
+              .eq('user_id', state.currentUser.id)
+              .eq('endpoint', sub.endpoint);
+          }
+          toast('🔕 Push-Benachrichtigungen deaktiviert');
+          setPushInactive();
+        } catch (e) {
+          toast('Fehler beim Deaktivieren', 'error');
+          setPushActive();
+        }
       } else {
-        pushBtn.disabled = false;
-        pushBtn.textContent = '🔔 Push-Benachrichtigungen aktivieren';
+        // Aktivieren
+        const ok = await requestPushPermission();
+        if (ok) {
+          setPushActive();
+        } else {
+          setPushInactive();
+        }
       }
     });
   }
