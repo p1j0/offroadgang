@@ -3,7 +3,7 @@
    Handles: offline caching + Web Push Notifications
    ============================================================ */
 
-const CACHE_NAME = 'motoroute-v1';
+const CACHE_NAME = 'motoroute-v2';
 
 // App-Shell: alles was offline verfügbar sein soll
 const PRECACHE = [
@@ -86,6 +86,15 @@ self.addEventListener('fetch', event => {
       });
     })
   );
+});
+
+/* ----------------------------------------------------------
+   Message – SKIP_WAITING für sofortiges Update
+   ---------------------------------------------------------- */
+self.addEventListener('message', event => {
+  if (event.data?.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
 
 /* ----------------------------------------------------------

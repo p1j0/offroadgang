@@ -10,11 +10,61 @@ async function registerServiceWorker() {
   try {
     const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
     console.log('[PWA] Service Worker registriert:', reg.scope);
+
+    // Auf neue Version prüfen
+    reg.addEventListener('updatefound', () => {
+      const newWorker = reg.installing;
+      if (!newWorker) return;
+      newWorker.addEventListener('statechange', () => {
+        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+          // Neuer SW wartet — Update-Banner zeigen
+          showUpdateBanner(newWorker);
+        }
+      });
+    });
+
+    // Falls beim Laden bereits ein wartender SW existiert
+    if (reg.waiting && navigator.serviceWorker.controller) {
+      showUpdateBanner(reg.waiting);
+    }
+
     return reg;
   } catch (err) {
     console.warn('[PWA] Service Worker Fehler:', err);
     return null;
   }
+}
+
+function showUpdateBanner(worker) {
+  if (document.getElementById('pwa-update-banner')) return; // bereits sichtbar
+
+  const banner = document.createElement('div');
+  banner.id = 'pwa-update-banner';
+  banner.innerHTML = `
+    <div class="ios-banner-inner">
+      <div class="ios-banner-text">
+        <strong>🆕 Update verfügbar</strong>
+        <span>Eine neue Version von MotoRoute ist bereit.</span>
+      </div>
+      <button class="btn btn-primary" style="font-size:13px;padding:7px 14px;flex-shrink:0"
+        onclick="applyUpdate()">Jetzt aktualisieren</button>
+    </div>
+  `;
+  document.body.appendChild(banner);
+  setTimeout(() => banner.classList.add('visible'), 100);
+
+  // Worker referenz für applyUpdate() speichern
+  window._pendingWorker = worker;
+}
+
+function applyUpdate() {
+  if (window._pendingWorker) {
+    window._pendingWorker.postMessage({ type: 'SKIP_WAITING' });
+  }
+  // Seite neu laden sobald neuer SW übernimmt
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    window.location.reload();
+  });
 }
 
 /* ----------------------------------------------------------
