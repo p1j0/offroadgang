@@ -1209,7 +1209,7 @@ function renderCommunityHome() {
         <span class="map-btn-icon">🚪</span><span class="map-btn-label">Verlassen</span>
       </button>
     </div>
-    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <div class="community-actions" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <button class="btn btn-ghost" id="community-media-btn" style="
         font-size:15px;font-weight:600;padding:10px 20px;position:relative;
         border:2px solid var(--accent);border-radius:8px;letter-spacing:.02em
@@ -1239,12 +1239,64 @@ function renderCommunityHome() {
           return `<span class="tab-badge" title="${tip}" style="margin-left:6px">${total > 9 ? '9+' : total}</span>`;
         })()}
       </button>
+      <button class="btn btn-tet" id="tet-atlas-btn" style="
+        font-size:15px;font-weight:600;padding:10px 20px;
+        border-radius:8px;letter-spacing:.02em
+      " title="Trans Euro Trail Atlas">
+        🗺️ TET Atlas
+      </button>
       <button class="btn btn-primary btn-sm" id="create-tour-btn">+ Tour erstellen</button>
     </div>
   </div>
   <div class="home-layout">
     <div>${toursHtml}</div>
     <div>${renderCalWidget()}</div>
+  </div>
+</div>
+${renderTetAtlasModal()}`;
+}
+
+/* ----------------------------------------------------------
+   TET Atlas Modal (hidden by default; toggled in events.js)
+   ---------------------------------------------------------- */
+function renderTetAtlasModal() {
+  return `
+<div class="modal-overlay tet-modal-overlay" id="tet-atlas-overlay" style="display:none">
+  <div class="tet-modal-content">
+    <div class="tet-modal-header">
+      <div class="tet-modal-title">
+        <span style="display:inline-block;width:14px;height:14px;background:#009b97;border-radius:3px;vertical-align:middle;margin-right:8px"></span>
+        Trans Euro Trail Atlas
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <a href="https://atlas.transeurotrail.org" target="_blank" rel="noopener" class="btn btn-ghost btn-sm" title="In neuem Tab öffnen">
+          ↗ Extern öffnen
+        </a>
+        <button class="btn btn-ghost btn-sm" id="tet-atlas-close" title="Schliessen" style="font-size:18px;padding:6px 14px">✕</button>
+      </div>
+    </div>
+    <div class="tet-modal-body">
+      <div id="tet-atlas-fallback" style="display:none;padding:32px;text-align:center;color:var(--muted)">
+        <div style="font-size:48px;margin-bottom:16px">⚠️</div>
+        <div style="font-size:16px;font-weight:600;color:var(--text);margin-bottom:8px">
+          Karte konnte nicht eingebettet werden
+        </div>
+        <div style="font-size:14px;margin-bottom:20px;max-width:480px;margin-left:auto;margin-right:auto">
+          Der TET Atlas blockiert das direkte Einbetten aus Sicherheitsgründen.
+          Bitte öffne ihn in einem neuen Tab.
+        </div>
+        <a href="https://atlas.transeurotrail.org" target="_blank" rel="noopener" class="btn btn-primary">
+          🗺️ TET Atlas extern öffnen
+        </a>
+      </div>
+      <iframe id="tet-atlas-iframe"
+              src="about:blank"
+              title="TET Atlas"
+              referrerpolicy="no-referrer-when-downgrade"
+              allowfullscreen
+              loading="lazy"
+              style="border:0;width:100%;height:100%;display:block;background:#fff"></iframe>
+    </div>
   </div>
 </div>`;
 }
