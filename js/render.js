@@ -97,10 +97,12 @@ function renderNav() {
   <div class="nav-logo" id="nav-logo"><img src="img/logo.png" alt="MotoRoute" class="nav-logo-img" /><span class="nav-logo-text">MOTO<span>ROUTE</span></span></div>
   <div class="nav-user">
     <span class="nav-user-icon">🏍️</span> <strong>${esc(state.currentUser?.username || '')}</strong>
+    <button class="btn-ghost btn-sm" id="site-info-btn" title="Über MotoRoute & Changelog">ℹ️</button>
     <button class="btn-ghost btn-sm" id="go-profile" title="Profil & Benachrichtigungen">⚙️</button>
     <button class="btn-logout" id="logout-btn"><span class="logout-text">Abmelden</span><span class="logout-icon">⏻</span></button>
   </div>
-</nav>`;
+</nav>
+${renderSiteInfoModal()}`;
 }
 
 /* ----------------------------------------------------------
@@ -1125,12 +1127,7 @@ function renderCommunities() {
 <div class="page-form" style="max-width:560px">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;flex-wrap:wrap;gap:8px">
     <div class="page-title" style="margin:0"><img src="img/logo.png" alt="" style="height:108px;vertical-align:middle;margin-right:14px" />Communities</div>
-    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-      <button class="btn btn-ghost btn-sm" id="site-info-btn" title="Info & Changelog">
-        ℹ️ Über MotoRoute
-      </button>
-      <button class="btn btn-primary btn-sm" id="request-community-btn">+ Community beantragen</button>
-    </div>
+    <button class="btn btn-primary btn-sm" id="request-community-btn">+ Community beantragen</button>
   </div>
   <div class="page-sub" style="margin-bottom:28px">
     Wähle eine Community um loszulegen.
@@ -1171,8 +1168,7 @@ function renderCommunities() {
 
   ${list}
   ${empty}
-</div>
-${renderSiteInfoModal()}`;
+</div>`;
 }
 
 /* ----------------------------------------------------------
@@ -1197,9 +1193,18 @@ function renderSiteInfoModal() {
       <div class="site-info-view" id="site-info-view-info"></div>
       <div class="site-info-view" id="site-info-view-changelog" style="display:none"></div>
       <div class="site-info-edit-area" id="site-info-edit-area" style="display:none">
-        <textarea id="site-info-textarea" placeholder="Markdown…"></textarea>
+        <div class="site-info-edit-split">
+          <div class="site-info-edit-pane">
+            <div class="site-info-pane-label">Markdown</div>
+            <textarea id="site-info-textarea" placeholder="# Überschrift&#10;&#10;Dein Text…"></textarea>
+          </div>
+          <div class="site-info-edit-pane">
+            <div class="site-info-pane-label">Vorschau</div>
+            <div class="site-info-view site-info-preview" id="site-info-preview"></div>
+          </div>
+        </div>
         <div class="site-info-edit-actions">
-          <span style="font-size:12px;color:var(--muted)">Markdown unterstützt: # Überschrift, **fett**, *kursiv*, - Liste, [Link](url)</span>
+          <span style="font-size:12px;color:var(--muted)">Markdown: # Überschrift, **fett**, *kursiv*, - Liste, [Link](url)</span>
           <div style="display:flex;gap:8px">
             <button class="btn btn-ghost btn-sm" id="site-info-cancel">Abbrechen</button>
             <button class="btn btn-primary btn-sm" id="site-info-save">Speichern</button>

@@ -168,6 +168,7 @@ function attachEvents() {
   document.getElementById('site-info-edit')?.addEventListener('click', enterSiteInfoEditMode);
   document.getElementById('site-info-cancel')?.addEventListener('click', exitSiteInfoEditMode);
   document.getElementById('site-info-save')?.addEventListener('click', saveSiteInfoEdit);
+  document.getElementById('site-info-textarea')?.addEventListener('input', updateSiteInfoPreview);
 
   /* --- Site Admin panel --- */
   if (state.isSiteAdminUser) {
@@ -2136,6 +2137,7 @@ function enterSiteInfoEditMode() {
   const ta = document.getElementById('site-info-textarea');
   if (ta) ta.value = _siteContent?.[_siteCurrentTab]?.content || '';
   _setSiteInfoModeUI('edit');
+  updateSiteInfoPreview();   // initial render of preview pane
 }
 
 function exitSiteInfoEditMode(silent) {
@@ -2215,4 +2217,16 @@ function _renderSiteInfoView(key) {
   } else {
     el.textContent = md;
   }
+}
+
+function updateSiteInfoPreview() {
+  const ta = document.getElementById('site-info-textarea');
+  const el = document.getElementById('site-info-preview');
+  if (!ta || !el) return;
+  const md = ta.value || '_(leer)_';
+  if (typeof marked !== 'undefined') {
+    try { el.innerHTML = marked.parse(md, { breaks: true, gfm: true }); return; }
+    catch { /* fall through */ }
+  }
+  el.textContent = md;
 }
