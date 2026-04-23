@@ -86,6 +86,11 @@ let _heartbeatTimer = null;
  */
 function startHeartbeat() {
   stopHeartbeat();
+
+  // Load site-admin flag once on login so the global ℹ️ button
+  // can show the edit option on any view.
+  isSiteAdmin().then(v => { state.isSiteAdminUser = v; }).catch(() => {});
+
   const ping = () => {
     if (state.currentUser) {
       sb.from('profiles')

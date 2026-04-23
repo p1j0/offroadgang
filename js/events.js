@@ -156,6 +156,20 @@ function attachEvents() {
     } catch (e) { toast(e.message, 'error'); }
   });
 
+  /* --- Site Info / Changelog modal --- */
+  document.getElementById('site-info-btn')?.addEventListener('click', () => openSiteInfoModal());
+  document.getElementById('site-info-close')?.addEventListener('click', closeSiteInfoModal);
+  document.getElementById('site-info-overlay')?.addEventListener('click', (e) => {
+    if (e.target.id === 'site-info-overlay') closeSiteInfoModal();
+  });
+  document.querySelectorAll('.site-info-tab').forEach(tab => {
+    tab.addEventListener('click', () => switchSiteInfoTab(tab.dataset.siTab));
+  });
+  document.getElementById('site-info-edit')?.addEventListener('click', enterSiteInfoEditMode);
+  document.getElementById('site-info-cancel')?.addEventListener('click', exitSiteInfoEditMode);
+  document.getElementById('site-info-save')?.addEventListener('click', saveSiteInfoEdit);
+  document.getElementById('site-info-textarea')?.addEventListener('input', updateSiteInfoPreview);
+
   /* --- Site Admin panel --- */
   if (state.isSiteAdminUser) {
     /* Toggle admin panel */
@@ -2048,4 +2062,171 @@ function _refreshCommunityMediaMain() {
 
   main.innerHTML = `<div class="cm-section-header">Community Bibliothek</div>${ytUpload}${cmGallery}`;
   attachCommunityMediaEvents();
+}
+
+/* ============================================================
+   Site Info / Changelog Modal helpers
+   ============================================================ */
+
+// Cache for current modal session
+let _siteContent = null;     // { info: {key,content,...}, changelog: {...} }
+let _siteCurrentTab = 'info';
+let _siteEditing = false;
+
+async function openSiteInfoModal() {
+  const overlay = document.getElementById('site-info-overlay');
+  if (!overlay) return;
+  overlay.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+
+  // Reset to view mode + info tab
+  _siteEditing = false;
+  _siteCurrentTab = 'info';
+  _setSiteInfoTabUI('info');
+  _setSiteInfoModeUI('view');
+
+  // Load (with placeholder while loading)
+  for (const k of ['info', 'changelog']) {
+    const el = document.getElementById(`site-info-view-${k}`);
+    if (el) el.innerHTML = '<div style="color:var(--muted);padding:20px">Lädt…</div>';
+  }
+  try {
+    _siteContent = await loadSiteContent();
+  } catch (e) {
+    toast('Inhalte konnten nicht geladen werden', 'error');
+    _siteContent = {};
+  }
+  _renderSiteInfoView('info');
+  _renderSiteInfoView('changelog');
+}
+
+function closeSiteInfoModal() {
+  const overlay = document.getElementById('site-info-overlay');
+  if (!overlay) return;
+  // Confirm if unsaved edits
+  if (_siteEditing) {
+    const ta = document.getElementById('site-info-textarea');
+    const original = _siteContent?.[_siteCurrentTab]?.content || '';
+    if (ta && ta.value !== original) {
+      if (!confirm('Ungespeicherte Änderungen verwerfen?')) return;
+    }
+  }
+  overlay.style.display = 'none';
+  document.body.style.overflow = '';
+  _siteEditing = false;
+}
+
+function switchSiteInfoTab(tab) {
+  if (tab !== 'info' && tab !== 'changelog') return;
+  // If editing, confirm before switching
+  if (_siteEditing) {
+    const ta = document.getElementById('site-info-textarea');
+    const original = _siteContent?.[_siteCurrentTab]?.content || '';
+    if (ta && ta.value !== original) {
+      if (!confirm('Ungespeicherte Änderungen verwerfen?')) return;
+    }
+    exitSiteInfoEditMode(true);
+  }
+  _siteCurrentTab = tab;
+  _setSiteInfoTabUI(tab);
+}
+
+function enterSiteInfoEditMode() {
+  if (!state.isSiteAdminUser) return;
+  _siteEditing = true;
+  const ta = document.getElementById('site-info-textarea');
+  if (ta) ta.value = _siteContent?.[_siteCurrentTab]?.content || '';
+  _setSiteInfoModeUI('edit');
+  updateSiteInfoPreview();   // initial render of preview pane
+}
+
+function exitSiteInfoEditMode(silent) {
+  _siteEditing = false;
+  _setSiteInfoModeUI('view');
+  if (!silent) {
+    // re-render to be safe
+    _renderSiteInfoView(_siteCurrentTab);
+  }
+}
+
+async function saveSiteInfoEdit() {
+  if (!state.isSiteAdminUser) return;
+  const ta = document.getElementById('site-info-textarea');
+  if (!ta) return;
+  const newContent = ta.value;
+  const btn = document.getElementById('site-info-save');
+  if (btn) { btn.disabled = true; btn.textContent = 'Speichert…'; }
+  try {
+    await saveSiteContent(_siteCurrentTab, newContent);
+    if (!_siteContent) _siteContent = {};
+    _siteContent[_siteCurrentTab] = {
+      ..._siteContent[_siteCurrentTab],
+      key: _siteCurrentTab,
+      content: newContent,
+      updated_at: new Date().toISOString(),
+    };
+    _renderSiteInfoView(_siteCurrentTab);
+    _siteEditing = false;
+    _setSiteInfoModeUI('view');
+    toast('✓ Gespeichert');
+  } catch (e) {
+    toast(e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Speichern'; }
+  }
+}
+
+/* ---------- internal UI helpers ---------- */
+
+function _setSiteInfoTabUI(tab) {
+  document.querySelectorAll('.site-info-tab').forEach(el => {
+    el.classList.toggle('active', el.dataset.siTab === tab);
+  });
+  for (const k of ['info', 'changelog']) {
+    const v = document.getElementById(`site-info-view-${k}`);
+    if (v) v.style.display = (k === tab && !_siteEditing) ? 'block' : 'none';
+  }
+}
+
+function _setSiteInfoModeUI(mode) {
+  const editArea = document.getElementById('site-info-edit-area');
+  const editBtn  = document.getElementById('site-info-edit');
+  const view = document.getElementById(`site-info-view-${_siteCurrentTab}`);
+  if (mode === 'edit') {
+    if (editArea) editArea.style.display = 'flex';
+    if (view)     view.style.display = 'none';
+    if (editBtn)  editBtn.style.display = 'none';
+  } else {
+    if (editArea) editArea.style.display = 'none';
+    if (view)     view.style.display = 'block';
+    if (editBtn)  editBtn.style.display = '';
+  }
+}
+
+function _renderSiteInfoView(key) {
+  const el = document.getElementById(`site-info-view-${key}`);
+  if (!el) return;
+  const md = _siteContent?.[key]?.content || '_(noch kein Inhalt)_';
+  // Render markdown via marked.js if available, fallback to plain text
+  if (typeof marked !== 'undefined') {
+    try {
+      el.innerHTML = marked.parse(md, { breaks: true, gfm: true });
+    } catch {
+      el.textContent = md;
+    }
+  } else {
+    el.textContent = md;
+  }
+}
+
+function updateSiteInfoPreview() {
+  const ta = document.getElementById('site-info-textarea');
+  const el = document.getElementById('site-info-preview');
+  if (!ta || !el) return;
+  const md = ta.value || '_(leer)_';
+  if (typeof marked !== 'undefined') {
+    try { el.innerHTML = marked.parse(md, { breaks: true, gfm: true }); return; }
+    catch { /* fall through */ }
+  }
+  el.textContent = md;
 }

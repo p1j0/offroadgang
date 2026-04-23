@@ -1343,3 +1343,32 @@ async function sendPushToUsers(userIds, title, body, url = '/') {
     console.warn('[Push] Fehler:', e.message);
   }
 }
+
+/* ============================================================
+   Site Content (Info / Changelog) — editable by site_admins
+   ============================================================ */
+
+async function loadSiteContent() {
+  const { data, error } = await sb
+    .from('site_content')
+    .select('key,content,updated_at,updated_by');
+  if (error) {
+    console.warn('[site_content] load failed:', error.message);
+    return {};
+  }
+  const map = {};
+  for (const row of data || []) map[row.key] = row;
+  return map;
+}
+
+async function saveSiteContent(key, content) {
+  const { error } = await sb
+    .from('site_content')
+    .upsert({
+      key,
+      content,
+      updated_at: new Date().toISOString(),
+      updated_by: state.currentUser.id,
+    });
+  if (error) throw new Error('Speichern fehlgeschlagen: ' + error.message);
+}
