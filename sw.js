@@ -32,12 +32,12 @@ self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then(cache => cache.addAll(PRECACHE))
-      .then(() => self.skipWaiting())
+      .then(() => self.skipWaiting())   // become "waiting" then immediately active
   );
 });
 
 /* ----------------------------------------------------------
-   Activate – alte Caches aufräumen
+   Activate – alte Caches aufräumen + sofort übernehmen
    ---------------------------------------------------------- */
 self.addEventListener('activate', event => {
   event.waitUntil(
@@ -47,7 +47,7 @@ self.addEventListener('activate', event => {
           .filter(k => k !== CACHE_NAME)
           .map(k => caches.delete(k))
       )
-    ).then(() => self.clients.claim())
+    ).then(() => self.clients.claim())   // take control of open pages without reload-required
   );
 });
 
