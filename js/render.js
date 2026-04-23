@@ -1125,7 +1125,12 @@ function renderCommunities() {
 <div class="page-form" style="max-width:560px">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;flex-wrap:wrap;gap:8px">
     <div class="page-title" style="margin:0"><img src="img/logo.png" alt="" style="height:108px;vertical-align:middle;margin-right:14px" />Communities</div>
-    <button class="btn btn-primary btn-sm" id="request-community-btn">+ Community beantragen</button>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <button class="btn btn-ghost btn-sm" id="site-info-btn" title="Info & Changelog">
+        ℹ️ Über MotoRoute
+      </button>
+      <button class="btn btn-primary btn-sm" id="request-community-btn">+ Community beantragen</button>
+    </div>
   </div>
   <div class="page-sub" style="margin-bottom:28px">
     Wähle eine Community um loszulegen.
@@ -1166,6 +1171,43 @@ function renderCommunities() {
 
   ${list}
   ${empty}
+</div>
+${renderSiteInfoModal()}`;
+}
+
+/* ----------------------------------------------------------
+   Site Info Modal (Info / Changelog) — admin-editable
+   ---------------------------------------------------------- */
+function renderSiteInfoModal() {
+  const isAdmin = !!state.isSiteAdminUser;
+  return `
+<div class="modal-overlay site-info-overlay" id="site-info-overlay" style="display:none">
+  <div class="site-info-content">
+    <div class="site-info-header">
+      <div class="site-info-tabs">
+        <button class="site-info-tab active" data-si-tab="info">ℹ️ Info</button>
+        <button class="site-info-tab" data-si-tab="changelog">📝 Changelog</button>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        ${isAdmin ? `<button class="btn btn-ghost btn-sm" id="site-info-edit" title="Bearbeiten">✏️ Bearbeiten</button>` : ''}
+        <button class="btn btn-ghost btn-sm" id="site-info-close" title="Schliessen" style="font-size:18px;padding:6px 14px">✕</button>
+      </div>
+    </div>
+    <div class="site-info-body">
+      <div class="site-info-view" id="site-info-view-info"></div>
+      <div class="site-info-view" id="site-info-view-changelog" style="display:none"></div>
+      <div class="site-info-edit-area" id="site-info-edit-area" style="display:none">
+        <textarea id="site-info-textarea" placeholder="Markdown…"></textarea>
+        <div class="site-info-edit-actions">
+          <span style="font-size:12px;color:var(--muted)">Markdown unterstützt: # Überschrift, **fett**, *kursiv*, - Liste, [Link](url)</span>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-ghost btn-sm" id="site-info-cancel">Abbrechen</button>
+            <button class="btn btn-primary btn-sm" id="site-info-save">Speichern</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>`;
 }
 
