@@ -1348,6 +1348,91 @@ select option       { background: var(--surface2); }
   box-sizing: border-box;
 }
 
+/* ============================================================
+   TET ATLAS BUTTON + MODAL
+   ============================================================ */
+
+.btn-tet {
+  background: #009b97;
+  color: #ffffff;
+  border: 2px solid #009b97;
+  transition: background .15s, border-color .15s, transform .05s;
+}
+.btn-tet:hover {
+  background: #00b3ae;
+  border-color: #00b3ae;
+  color: #ffffff;
+}
+.btn-tet:active { transform: translateY(1px); }
+
+.tet-modal-overlay {
+  padding: 0;
+}
+.tet-modal-content {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  width: 95vw;
+  height: 92vh;
+  max-width: 1600px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  margin: 20px;
+  box-sizing: border-box;
+}
+.tet-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface2);
+  flex-shrink: 0;
+}
+.tet-modal-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+.tet-modal-body {
+  flex: 1 1 auto;
+  min-height: 0;       /* critical so iframe height:100% works inside flex */
+  position: relative;
+  background: #fff;    /* white default for the brief moment before iframe paints */
+}
+.tet-modal-body iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+@media (max-width: 600px) {
+  .tet-modal-content {
+    width: 100vw;
+    height: 100vh;
+    margin: 0;
+    border-radius: 0;
+    border: none;
+  }
+
+  /* Community action buttons: 2-column grid so all 4 are equal width */
+  .community-actions {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr;
+    width: 100%;
+  }
+  .community-actions > button {
+    width: 100%;
+    min-width: 0;          /* allow shrinking inside grid cell */
+    box-sizing: border-box;
+    justify-content: center;
+    text-align: center;
+  }
+}
+
 /* Compact calendar grid for multi-month tour view */
 .cal-grid-sm {
   grid-template-columns: repeat(7, 1fr);

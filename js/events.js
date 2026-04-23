@@ -303,6 +303,48 @@ function attachEvents() {
   /* --- Planning page button --- */
   document.getElementById('planning-btn')?.addEventListener('click', () => navigateTo('planning'));
 
+  /* --- TET Atlas button: open modal with iframe --- */
+  document.getElementById('tet-atlas-btn')?.addEventListener('click', () => {
+    const overlay  = document.getElementById('tet-atlas-overlay');
+    const iframe   = document.getElementById('tet-atlas-iframe');
+    const fallback = document.getElementById('tet-atlas-fallback');
+    if (!overlay || !iframe) return;
+
+    // reset state
+    fallback.style.display = 'none';
+    iframe.style.display   = 'block';
+    overlay.style.display  = 'flex';
+    document.body.style.overflow = 'hidden';
+
+    let loaded = false;
+    iframe.onload = () => { loaded = true; };
+    iframe.src = 'https://atlas.transeurotrail.org';
+
+    // If iframe didn't fire load within 4s, assume it was blocked (X-Frame-Options/CSP)
+    setTimeout(() => {
+      if (!loaded) {
+        iframe.style.display   = 'none';
+        fallback.style.display = 'block';
+      }
+    }, 4000);
+  });
+
+  /* --- TET Atlas modal: close --- */
+  document.getElementById('tet-atlas-close')?.addEventListener('click', () => {
+    const overlay = document.getElementById('tet-atlas-overlay');
+    const iframe  = document.getElementById('tet-atlas-iframe');
+    if (overlay) overlay.style.display = 'none';
+    if (iframe)  iframe.src = 'about:blank'; // stop loading / free memory
+    document.body.style.overflow = '';
+  });
+
+  /* --- TET Atlas modal: close on backdrop click --- */
+  document.getElementById('tet-atlas-overlay')?.addEventListener('click', (e) => {
+    if (e.target.id === 'tet-atlas-overlay') {
+      document.getElementById('tet-atlas-close')?.click();
+    }
+  });
+
   /* --- Community Media button --- */
   document.getElementById('community-media-btn')?.addEventListener('click', () => navigateTo('community-media'));
 
