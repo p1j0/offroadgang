@@ -27,101 +27,20 @@ function attachEvents() {
 
   /* --- Navigation bar --- */
   document.getElementById('nav-logo')?.addEventListener('click', () => navigateTo('communities'));
-  document.getElementById('go-profile')?.addEventListener('click', () => navigateTo('profile'));
+  document.getElementById('go-profile')?.addEventListener('click', () => openProfileModal());
   document.getElementById('logout-btn')?.addEventListener('click', doLogout);
 
-  /* --- Profile save --- */
-  document.getElementById('profile-save')?.addEventListener('click', async () => {
-    const email   = (document.getElementById('p-email')?.value || '').trim();
-    const chat    = document.getElementById('p-notify-chat')?.checked    ?? true;
-    const changes = document.getElementById('p-notify-changes')?.checked ?? true;
-    setBtn('profile-save', true, '');
-    try {
-      await saveProfile({ notification_email: email, notify_chat: chat, notify_changes: changes });
-      toast('✓ Einstellungen gespeichert');
-    } catch(e) { toast(e.message, 'error'); }
-    setBtn('profile-save', false, 'Einstellungen speichern');
+  /* --- Profile modal close --- */
+  document.getElementById('profile-modal-close')?.addEventListener('click', closeProfileModal);
+  document.getElementById('profile-modal')?.addEventListener('click', (e) => {
+    if (e.target.id === 'profile-modal') closeProfileModal();
   });
 
-  /* --- PWA Push Button --- */
-  const pushBtn  = document.getElementById('pwa-push-btn');
-  const pushHint = document.getElementById('pwa-push-hint');
-  if (pushBtn) {
-
-    function setPushActive() {
-      pushBtn.textContent = '🔕 Push deaktivieren';
-      pushBtn.className = 'btn btn-ghost';
-      pushBtn.disabled = false;
-      pushBtn._mode = 'deactivate';
-      if (pushHint) pushHint.style.display = 'none';
-    }
-
-    function setPushInactive() {
-      pushBtn.textContent = '🔔 Push-Benachrichtigungen aktivieren';
-      pushBtn.className = 'btn btn-ghost';
-      pushBtn.disabled = false;
-      pushBtn._mode = 'activate';
-      if (pushHint) pushHint.style.display = '';
-    }
-
-    // Status ermitteln und Button anpassen
-    getPushSubscriptionStatus().then(status => {
-      const isIOS      = /iPad|iPhone|iPod/.test(navigator.userAgent);
-      const standalone = window.navigator.standalone;
-
-      if (status === 'unsupported') {
-        if (isIOS && !standalone) {
-          pushBtn.textContent = '📲 App zuerst installieren';
-          if (pushHint) pushHint.textContent = 'Tippe auf Teilen → „Zum Home-Bildschirm", dann öffne die installierte App.';
-        } else {
-          pushBtn.textContent = '❌ Push nicht verfügbar';
-          pushBtn.disabled = true;
-          if (pushHint) pushHint.textContent = 'Dein Browser unterstützt keine Push-Benachrichtigungen.';
-        }
-      } else if (status === 'denied') {
-        pushBtn.textContent = '🚫 Berechtigung verweigert';
-        pushBtn.disabled = true;
-        if (pushHint) pushHint.textContent = 'Bitte erlaube Benachrichtigungen in den Browser-Einstellungen.';
-      } else if (status === 'subscribed') {
-        setPushActive();
-      } else {
-        setPushInactive();
-      }
-    });
-
-    pushBtn.addEventListener('click', async () => {
-      pushBtn.disabled = true;
-      pushBtn.textContent = '…';
-
-      if (pushBtn._mode === 'deactivate') {
-        // Deaktivieren: SW-Subscription kündigen + aus DB löschen
-        try {
-          const reg = await navigator.serviceWorker.ready;
-          const sub = await reg.pushManager.getSubscription();
-          if (sub) {
-            await sub.unsubscribe();
-            await sb.from('push_subscriptions')
-              .delete()
-              .eq('user_id', state.currentUser.id)
-              .eq('endpoint', sub.endpoint);
-          }
-          toast('🔕 Push-Benachrichtigungen deaktiviert');
-          setPushInactive();
-        } catch (e) {
-          toast('Fehler beim Deaktivieren', 'error');
-          setPushActive();
-        }
-      } else {
-        // Aktivieren
-        const ok = await requestPushPermission();
-        if (ok) {
-          setPushActive();
-        } else {
-          setPushInactive();
-        }
-      }
-    });
-  }
+  /* --- Community settings modal close --- */
+  document.getElementById('community-settings-modal-close')?.addEventListener('click', closeCommunitySettingsModal);
+  document.getElementById('community-settings-modal')?.addEventListener('click', (e) => {
+    if (e.target.id === 'community-settings-modal') closeCommunitySettingsModal();
+  });
 
   /* --- Generic "back" buttons --- */
   document.querySelectorAll('#back-home').forEach(el => {
@@ -399,66 +318,10 @@ function attachEvents() {
     } catch (e) { toast(e.message, 'error'); }
   });
 
-  /* --- Community: settings button --- */
+  /* --- Community: settings button → open modal --- */
   document.getElementById('community-settings-btn')?.addEventListener('click', () =>
-    navigateTo('community-settings')
+    openCommunitySettingsModal()
   );
-
-  /* --- Community settings: back --- */
-  document.getElementById('back-community-home')?.addEventListener('click', () =>
-    navigateTo('community-home')
-  );
-
-  /* --- Community settings: save --- */
-  document.getElementById('cs-save')?.addEventListener('click', async () => {
-    const name     = (document.getElementById('cs-name')?.value     || '').trim();
-    const password = (document.getElementById('cs-password')?.value || '').trim();
-    if (!name)     { toast('Name darf nicht leer sein.', 'error'); return; }
-    if (!password || password.length < 3) { toast('Passwort mind. 3 Zeichen.', 'error'); return; }
-    setBtn('cs-save', true);
-    try {
-      await updateCommunity({ name, password });
-      toast('✓ Einstellungen gespeichert');
-      const h = document.querySelector('.page-sub');
-      if (h) h.textContent = name;
-    } catch (e) { toast(e.message, 'error'); }
-    setBtn('cs-save', false, 'Speichern');
-  });
-
-  /* --- Community settings: promote to co-admin --- */
-  document.querySelectorAll('[data-promote-community]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      try {
-        await promoteCommunityAdmin(btn.dataset.promoteCommunity);
-        toast('✓ Co-Admin gesetzt');
-        await navigateTo('community-settings');
-      } catch (e) { toast(e.message, 'error'); }
-    });
-  });
-
-  /* --- Community settings: demote co-admin --- */
-  document.querySelectorAll('[data-demote-community]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      try {
-        await demoteCommunityAdmin(btn.dataset.demoteCommunity);
-        toast('Co-Admin entfernt');
-        await navigateTo('community-settings');
-      } catch (e) { toast(e.message, 'error'); }
-    });
-  });
-
-  /* --- Community settings: kick member --- */
-  document.querySelectorAll('[data-kick-community]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const username = state.profileCache[btn.dataset.kickCommunity] || btn.dataset.kickCommunity;
-      if (!confirm(`„${username}" aus der Community entfernen?`)) return;
-      try {
-        await removeCommunityMember(btn.dataset.kickCommunity);
-        toast(`${username} entfernt`);
-        await navigateTo('community-settings');
-      } catch (e) { toast(e.message, 'error'); }
-    });
-  });
 
   /* Copy invite link */
   document.querySelectorAll('[data-copy-id]').forEach(el => {
@@ -2079,10 +1942,10 @@ async function openSiteInfoModal() {
   overlay.style.display = 'flex';
   document.body.style.overflow = 'hidden';
 
-  // Reset to view mode + info tab
+  // Reset to view mode + changelog tab (most likely what user is looking for)
   _siteEditing = false;
-  _siteCurrentTab = 'info';
-  _setSiteInfoTabUI('info');
+  _siteCurrentTab = 'changelog';
+  _setSiteInfoTabUI('changelog');
   _setSiteInfoModeUI('view');
 
   // Load (with placeholder while loading)
@@ -2229,4 +2092,258 @@ function updateSiteInfoPreview() {
     catch { /* fall through */ }
   }
   el.textContent = md;
+}
+
+/* ============================================================
+   Profile Modal + Community Settings Modal — helpers
+   ============================================================ */
+
+async function openProfileModal() {
+  const overlay = document.getElementById('profile-modal');
+  const body    = document.getElementById('profile-modal-body');
+  if (!overlay || !body) return;
+  overlay.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+  body.innerHTML = '<div style="color:var(--muted);padding:20px">Lädt…</div>';
+  try {
+    body.innerHTML = await renderProfileBody();
+    attachProfileModalEvents();
+  } catch (e) {
+    body.innerHTML = `<div style="color:var(--danger);padding:20px">Fehler: ${e.message}</div>`;
+  }
+}
+
+function closeProfileModal() {
+  const overlay = document.getElementById('profile-modal');
+  if (overlay) overlay.style.display = 'none';
+  document.body.style.overflow = '';
+}
+
+async function openCommunitySettingsModal() {
+  const overlay = document.getElementById('community-settings-modal');
+  const body    = document.getElementById('community-settings-modal-body');
+  if (!overlay || !body) return;
+  if (!state.currentCommunity) { toast('Keine Community geladen', 'error'); return; }
+  overlay.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+  body.innerHTML = renderCommunitySettingsBody();
+  attachCommunitySettingsModalEvents();
+}
+
+function closeCommunitySettingsModal() {
+  const overlay = document.getElementById('community-settings-modal');
+  if (overlay) overlay.style.display = 'none';
+  document.body.style.overflow = '';
+}
+
+async function reloadCommunitySettingsModal() {
+  // Re-fetch members then re-render modal body in place
+  try { await loadCommunityData(state.currentCommunityId); } catch(e) { /* ignore */ }
+  const body = document.getElementById('community-settings-modal-body');
+  if (body) {
+    body.innerHTML = renderCommunitySettingsBody();
+    attachCommunitySettingsModalEvents();
+  }
+}
+
+/* ----------------------------------------------------------
+   Scoped event binders — called only when the modal body is
+   (re-)rendered, so no stacking on the global attachEvents().
+   ---------------------------------------------------------- */
+
+function attachProfileModalEvents() {
+  /* --- Profile save --- */
+  document.getElementById('profile-save')?.addEventListener('click', async () => {
+    const email   = (document.getElementById('p-email')?.value || '').trim();
+    const chat    = document.getElementById('p-notify-chat')?.checked    ?? true;
+    const changes = document.getElementById('p-notify-changes')?.checked ?? true;
+    setBtn('profile-save', true, '');
+    try {
+      await saveProfile({ notification_email: email, notify_chat: chat, notify_changes: changes });
+      toast('✓ Einstellungen gespeichert');
+    } catch(e) { toast(e.message, 'error'); }
+    setBtn('profile-save', false, 'Einstellungen speichern');
+  });
+
+  /* --- PWA Push Button --- */
+  const pushBtn = document.getElementById('pwa-push-btn');
+  if (!pushBtn) return;
+
+  // Initial state: query browser + subscription
+  refreshPushButtonState();
+
+  // Click: dispatch based on CURRENT state queried fresh (not stale _mode attr).
+  // IMPORTANT for Safari: Notification.requestPermission() must be called
+  // synchronously in the user-gesture event. Any `await` before it kills the
+  // user-activation and Safari silently no-ops the prompt.
+  pushBtn.addEventListener('click', async () => {
+    const btn = document.getElementById('pwa-push-btn');
+    if (!btn || btn.disabled) return;
+
+    // Safari-safe fast path: if permission is 'default' AND push is supported,
+    // call requestPermission() FIRST, synchronously, before any await.
+    const supported   = isPushSupported();
+    const permission  = (typeof Notification !== 'undefined') ? Notification.permission : 'denied';
+
+    if (supported && permission === 'default') {
+      // Fire the prompt immediately — any prior await would invalidate the gesture.
+      Notification.requestPermission().then(async (perm) => {
+        if (perm !== 'granted') {
+          toast('Benachrichtigungen wurden abgelehnt.', 'error');
+          await refreshPushButtonState();
+          return;
+        }
+        // Now we can subscribe (permission granted, no gesture needed)
+        try {
+          const reg = await navigator.serviceWorker.ready;
+          const vapidKey = typeof VAPID_PUBLIC_KEY !== 'undefined' ? VAPID_PUBLIC_KEY : null;
+          const opts = { userVisibleOnly: true };
+          if (vapidKey) opts.applicationServerKey = urlBase64ToUint8Array(vapidKey);
+          const sub = await reg.pushManager.subscribe(opts);
+          await savePushSubscription(sub);
+          toast('🔔 Benachrichtigungen aktiviert!');
+        } catch (err) {
+          console.error('[Push] subscribe error:', err);
+          toast('Fehler beim Aktivieren der Benachrichtigungen.', 'error');
+        }
+        await refreshPushButtonState();
+      });
+      return;
+    }
+
+    // Permission already granted → check if actually subscribed
+    btn.disabled = true;
+    btn.textContent = '…';
+    try {
+      const status = await getPushSubscriptionStatus();
+      if (status === 'subscribed') {
+        // Deactivate
+        const reg = await navigator.serviceWorker.ready;
+        const sub = await reg.pushManager.getSubscription();
+        if (sub) {
+          await sub.unsubscribe();
+          await sb.from('push_subscriptions')
+            .delete()
+            .eq('user_id', state.currentUser.id)
+            .eq('endpoint', sub.endpoint);
+        }
+        toast('🔕 Push-Benachrichtigungen deaktiviert');
+      } else if (permission === 'granted') {
+        // Granted but no subscription (e.g. after unsubscribe) → re-subscribe.
+        // Safe to await here because permission is already granted.
+        const reg = await navigator.serviceWorker.ready;
+        const vapidKey = typeof VAPID_PUBLIC_KEY !== 'undefined' ? VAPID_PUBLIC_KEY : null;
+        const opts = { userVisibleOnly: true };
+        if (vapidKey) opts.applicationServerKey = urlBase64ToUint8Array(vapidKey);
+        const sub = await reg.pushManager.subscribe(opts);
+        await savePushSubscription(sub);
+        toast('🔔 Benachrichtigungen aktiviert!');
+      } else if (permission === 'denied') {
+        toast('Bitte erlaube Benachrichtigungen in den Browser-Einstellungen.', 'error');
+      }
+    } catch (err) {
+      console.error('[Push] action error:', err);
+      toast('Fehler: ' + (err.message || 'unbekannt'), 'error');
+    }
+    await refreshPushButtonState();
+  });
+}
+
+/* Query current push state and update button + hint UI. Always queries fresh,
+   so this works as both initial-state setter and post-action refresher. */
+async function refreshPushButtonState() {
+  const pushBtn  = document.getElementById('pwa-push-btn');
+  const pushHint = document.getElementById('pwa-push-hint');
+  if (!pushBtn) return;
+
+  pushBtn.disabled = false;
+  const setHint = (txt) => { if (pushHint) { pushHint.textContent = txt || ''; pushHint.style.display = txt ? '' : 'none'; } };
+
+  let status;
+  try { status = await getPushSubscriptionStatus(); }
+  catch { status = 'unsupported'; }
+
+  const isIOS      = /iPad|iPhone|iPod/.test(navigator.userAgent);
+  const standalone = window.navigator.standalone;
+
+  if (status === 'unsupported') {
+    if (isIOS && !standalone) {
+      pushBtn.textContent = '📲 App zuerst installieren';
+      pushBtn.disabled = true;
+      setHint('Tippe auf Teilen → „Zum Home-Bildschirm", dann öffne die installierte App.');
+    } else {
+      pushBtn.textContent = '❌ Push nicht verfügbar';
+      pushBtn.disabled = true;
+      setHint('Dein Browser unterstützt keine Push-Benachrichtigungen.');
+    }
+    return;
+  }
+  if (status === 'denied') {
+    pushBtn.textContent = '🚫 Berechtigung verweigert';
+    pushBtn.disabled = true;
+    setHint('Bitte erlaube Benachrichtigungen in den Browser-Einstellungen.');
+    return;
+  }
+  if (status === 'subscribed') {
+    pushBtn.textContent = '🔕 Push deaktivieren';
+    setHint('');
+    return;
+  }
+  // 'default' or no subscription
+  pushBtn.textContent = '🔔 Push-Benachrichtigungen aktivieren';
+  setHint('');
+}
+
+function attachCommunitySettingsModalEvents() {
+  /* --- Save --- */
+  document.getElementById('cs-save')?.addEventListener('click', async () => {
+    const name     = (document.getElementById('cs-name')?.value     || '').trim();
+    const password = (document.getElementById('cs-password')?.value || '').trim();
+    if (!name)     { toast('Name darf nicht leer sein.', 'error'); return; }
+    if (!password || password.length < 3) { toast('Passwort mind. 3 Zeichen.', 'error'); return; }
+    setBtn('cs-save', true);
+    try {
+      await updateCommunity({ name, password });
+      toast('✓ Einstellungen gespeichert');
+      // Refresh the community-home title underneath the modal
+      const titleEl = document.querySelector('.tour-detail-title');
+      if (titleEl) titleEl.textContent = name;
+    } catch (e) { toast(e.message, 'error'); }
+    setBtn('cs-save', false, 'Speichern');
+  });
+
+  /* --- Promote --- */
+  document.querySelectorAll('[data-promote-community]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      try {
+        await promoteCommunityAdmin(btn.dataset.promoteCommunity);
+        toast('✓ Co-Admin gesetzt');
+        await reloadCommunitySettingsModal();
+      } catch (e) { toast(e.message, 'error'); }
+    });
+  });
+
+  /* --- Demote --- */
+  document.querySelectorAll('[data-demote-community]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      try {
+        await demoteCommunityAdmin(btn.dataset.demoteCommunity);
+        toast('Co-Admin entfernt');
+        await reloadCommunitySettingsModal();
+      } catch (e) { toast(e.message, 'error'); }
+    });
+  });
+
+  /* --- Kick --- */
+  document.querySelectorAll('[data-kick-community]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const username = state.profileCache[btn.dataset.kickCommunity] || btn.dataset.kickCommunity;
+      if (!confirm(`„${username}" aus der Community entfernen?`)) return;
+      try {
+        await removeCommunityMember(btn.dataset.kickCommunity);
+        toast(`${username} entfernt`);
+        await reloadCommunitySettingsModal();
+      } catch (e) { toast(e.message, 'error'); }
+    });
+  });
 }

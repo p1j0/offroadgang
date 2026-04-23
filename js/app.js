@@ -162,7 +162,7 @@ async function navigateTo(view, params = {}) {
         await loadCommunities();
         state.isSiteAdminUser = await isSiteAdmin();
       }
-      if ((view === 'community-home' || view === 'community-settings' || view === 'planning' || view === 'community-media') && state.currentCommunityId) {
+      if ((view === 'community-home' || view === 'planning' || view === 'community-media') && state.currentCommunityId) {
         await loadCommunityData(state.currentCommunityId);
         if (view === 'community-home') {
           await loadHomeData();
@@ -218,21 +218,6 @@ function render() {
 
   try {
     let html = showNav ? renderNav() : '';
-
-    if (state.view === 'profile') {
-      app.innerHTML = html + '<div class="loading-screen" style="font-size:20px">Lade…</div>';
-      renderProfile().then(profileHtml => {
-        app.innerHTML = html + profileHtml;
-        attachEvents();
-      });
-      return;
-    }
-
-    if (state.view === 'community-settings') {
-      app.innerHTML = html + renderCommunitySettings();
-      attachEvents();
-      return;
-    }
 
     switch (state.view) {
       case 'auth':                html += renderAuth();             break;

@@ -1735,6 +1735,15 @@ select option       { background: var(--surface2); }
 .logout-icon { display: none; font-size: 16px; }
 .logout-text { display: inline; }
 
+/* Nav icon buttons with optional label (ℹ️ Info, ⚙️ Einstellungen) */
+.nav-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.nav-icon-emoji { display: inline-flex; align-items: center; }
+.nav-icon-label { font-size: 13px; letter-spacing: .02em; }
+
 /* Mobile: hide logo image and show power icon instead of "Abmelden" */
 @media (max-width: 600px) {
   .nav-logo-img  { display: none; }
@@ -1742,6 +1751,7 @@ select option       { background: var(--surface2); }
   .nav-user-icon { display: none; }
   .logout-text   { display: none; }
   .logout-icon   { display: inline; }
+  .nav-icon-label { display: none; }   /* icon-only on mobile */
   .nav { padding: 0 12px; }
 }
 
@@ -1926,24 +1936,30 @@ select option       { background: var(--surface2); }
 }
 
 /* ============================================================
-   SITE INFO MODAL (Info / Changelog)
+   APP MODAL BASE (shared by Site-Info, Profile, Community Settings)
    ============================================================ */
 
-.site-info-overlay { padding: 0; }
-.site-info-content {
+.site-info-overlay,
+.settings-modal-overlay { padding: 0; }
+
+.site-info-content,
+.settings-modal-content {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 10px;
   width: 95vw;
   height: 90vh;
-  max-width: 800px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   margin: 20px;
   box-sizing: border-box;
 }
-.site-info-header {
+.site-info-content     { max-width: 800px; }
+.settings-modal-content { max-width: 640px; }
+
+.site-info-header,
+.settings-modal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1953,6 +1969,26 @@ select option       { background: var(--surface2); }
   background: var(--surface2);
   flex-shrink: 0;
 }
+
+.settings-modal-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.site-info-body,
+.settings-modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 24px;
+  background: var(--surface);
+}
+
+/* ============================================================
+   SITE INFO MODAL (Info / Changelog) — variant-specific
+   ============================================================ */
+
 .site-info-tabs {
   display: flex;
   gap: 4px;
@@ -1974,13 +2010,6 @@ select option       { background: var(--surface2); }
   color: var(--text);
   background: var(--surface);
   border-color: var(--accent);
-}
-.site-info-body {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 24px;
-  background: var(--surface);
 }
 
 /* Markdown rendering inside view */
@@ -2086,7 +2115,8 @@ select option       { background: var(--surface2); }
 }
 
 @media (max-width: 600px) {
-  .site-info-content {
+  .site-info-content,
+  .settings-modal-content {
     width: 100vw;
     height: 100vh;
     margin: 0;
@@ -2094,10 +2124,64 @@ select option       { background: var(--surface2); }
     border: none;
   }
   .site-info-tab { font-size: 13px; padding: 7px 10px; }
-  .site-info-body { padding: 16px; }
+  .site-info-body,
+  .settings-modal-body { padding: 16px; }
   /* Stack editor and preview vertically on mobile */
   .site-info-edit-split {
     grid-template-columns: 1fr;
     grid-template-rows: 1fr 1fr;
   }
+}
+
+/* ============================================================
+   SETTINGS MODAL (Profile, Community Settings)
+   ============================================================ */
+
+.settings-modal-overlay { padding: 0; }
+.settings-modal-content {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  width: 95vw;
+  height: 90vh;
+  max-width: 640px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  margin: 20px;
+  box-sizing: border-box;
+}
+.settings-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface2);
+  flex-shrink: 0;
+}
+.settings-modal-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  font-family: var(--font-body);
+}
+.settings-modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 24px;
+  background: var(--surface);
+}
+
+@media (max-width: 600px) {
+  .settings-modal-content {
+    width: 100vw;
+    height: 100vh;
+    margin: 0;
+    border-radius: 0;
+    border: none;
+  }
+  .settings-modal-body { padding: 16px; }
 }

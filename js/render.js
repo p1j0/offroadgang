@@ -97,12 +97,18 @@ function renderNav() {
   <div class="nav-logo" id="nav-logo"><img src="img/logo.png" alt="MotoRoute" class="nav-logo-img" /><span class="nav-logo-text">MOTO<span>ROUTE</span></span></div>
   <div class="nav-user">
     <span class="nav-user-icon">🏍️</span> <strong>${esc(state.currentUser?.username || '')}</strong>
-    <button class="btn-ghost btn-sm" id="site-info-btn" title="Über MotoRoute & Changelog">ℹ️</button>
-    <button class="btn-ghost btn-sm" id="go-profile" title="Profil & Benachrichtigungen">⚙️</button>
+    <button class="btn-ghost btn-sm nav-icon-btn" id="site-info-btn" title="Über MotoRoute & Changelog">
+      <span class="nav-icon-emoji">ℹ️</span><span class="nav-icon-label">Info</span>
+    </button>
+    <button class="btn-ghost btn-sm nav-icon-btn" id="go-profile" title="Profil & Benachrichtigungen">
+      <span class="nav-icon-emoji">⚙️</span><span class="nav-icon-label">Einstellungen</span>
+    </button>
     <button class="btn-logout" id="logout-btn"><span class="logout-text">Abmelden</span><span class="logout-icon">⏻</span></button>
   </div>
 </nav>
-${renderSiteInfoModal()}`;
+${renderSiteInfoModal()}
+${renderProfileModal()}
+${renderCommunitySettingsModal()}`;
 }
 
 /* ----------------------------------------------------------
@@ -1021,23 +1027,28 @@ function _renderTourCalMonth(tour, y, m, tourStart, tourEnd, today, hasRange, sh
 
 
 /* ----------------------------------------------------------
-   Profile page
+   Profile modal body (content only; shell is the modal wrapper)
    ---------------------------------------------------------- */
 
-async function renderProfile() {
+async function renderProfileBody() {
   let profile = { notification_email: '', notify_chat: true, notify_changes: true };
   try { profile = await loadProfile(); } catch(e) {}
 
   return `
-<div class="page-form">
-  <button class="btn btn-ghost btn-sm" style="margin-bottom:24px" id="back-home">← Zurück</button>
-  <div class="page-title">Profil</div>
-  <div class="page-sub">Verwalte deine Benachrichtigungseinstellungen.</div>
-
   <div class="info-block" style="margin-bottom:24px">
     <div class="info-label">Benutzername</div>
     <div style="font-size:16px;font-weight:500">${esc(state.currentUser?.username || '')}</div>
   </div>
+
+  <div class="divider"></div>
+  <h3 style="font-size:15px;font-weight:600;margin-bottom:6px">📱 App-Benachrichtigungen (Push)</h3>
+  <p style="color:var(--muted);font-size:13px;margin-bottom:16px">
+    Erhalte Push-Benachrichtigungen direkt auf deinem Gerät – auch ohne E-Mail.
+    <span id="pwa-push-hint" style="display:block;margin-top:4px"></span>
+  </p>
+  <button class="btn btn-ghost" id="pwa-push-btn" style="width:100%;justify-content:center;margin-bottom:24px">
+    🔔 Push-Benachrichtigungen aktivieren
+  </button>
 
   <div class="divider"></div>
   <h3 style="font-size:15px;font-weight:600;margin-bottom:6px">🔔 E-Mail-Benachrichtigungen</h3>
@@ -1079,17 +1090,22 @@ async function renderProfile() {
   <button class="btn btn-primary" id="profile-save"
     style="width:100%;justify-content:center;padding:13px;font-size:15px;margin-top:24px">
     Einstellungen speichern
-  </button>
+  </button>`;
+}
 
-  <div class="divider" style="margin-top:32px"></div>
-  <h3 style="font-size:15px;font-weight:600;margin-bottom:6px">📱 App-Benachrichtigungen (Push)</h3>
-  <p style="color:var(--muted);font-size:13px;margin-bottom:16px">
-    Erhalte Push-Benachrichtigungen direkt auf deinem Gerät – auch ohne E-Mail.
-    <span id="pwa-push-hint" style="display:block;margin-top:4px"></span>
-  </p>
-  <button class="btn btn-ghost" id="pwa-push-btn" style="width:100%;justify-content:center">
-    🔔 Push-Benachrichtigungen aktivieren
-  </button>
+/* Modal shell (static, rendered once in nav) */
+function renderProfileModal() {
+  return `
+<div class="modal-overlay settings-modal-overlay" id="profile-modal" style="display:none">
+  <div class="settings-modal-content">
+    <div class="settings-modal-header">
+      <div class="settings-modal-title">⚙️ Profil & Benachrichtigungen</div>
+      <button class="btn btn-ghost btn-sm" id="profile-modal-close" title="Schliessen" style="font-size:18px;padding:6px 14px">✕</button>
+    </div>
+    <div class="settings-modal-body" id="profile-modal-body">
+      <div style="color:var(--muted);padding:20px">Lädt…</div>
+    </div>
+  </div>
 </div>`;
 }
 
@@ -1181,8 +1197,8 @@ function renderSiteInfoModal() {
   <div class="site-info-content">
     <div class="site-info-header">
       <div class="site-info-tabs">
-        <button class="site-info-tab active" data-si-tab="info">ℹ️ Info</button>
-        <button class="site-info-tab" data-si-tab="changelog">📝 Changelog</button>
+        <button class="site-info-tab active" data-si-tab="changelog">📝 Changelog</button>
+        <button class="site-info-tab" data-si-tab="info">ℹ️ Info</button>
       </div>
       <div style="display:flex;gap:8px;align-items:center">
         ${isAdmin ? `<button class="btn btn-ghost btn-sm" id="site-info-edit" title="Bearbeiten">✏️ Bearbeiten</button>` : ''}
@@ -1349,10 +1365,10 @@ function renderTetAtlasModal() {
 }
 
 /* ----------------------------------------------------------
-   Community Settings page
+   Community Settings (body content + modal shell)
    ---------------------------------------------------------- */
 
-function renderCommunitySettings() {
+function renderCommunitySettingsBody() {
   const c       = state.currentCommunity;
   const isAdmin = c.admin_id === state.currentUser.id;
 
@@ -1380,10 +1396,7 @@ function renderCommunitySettings() {
   }).join('');
 
   return `
-<div class="page-form">
-  <button class="btn btn-ghost btn-sm" style="margin-bottom:24px" id="back-community-home">← Zurück</button>
-  <div class="page-title">Community Einstellungen</div>
-  <div class="page-sub" style="margin-bottom:24px">${esc(c.name)}</div>
+  <div style="color:var(--muted);font-size:14px;margin-bottom:18px">${esc(c.name)}</div>
 
   <div class="form-group">
     <label>Community Name</label>
@@ -1402,6 +1415,21 @@ function renderCommunitySettings() {
   <h3 style="font-size:15px;font-weight:600;margin-bottom:16px">👥 Mitglieder (${state.communityMembers.length})</h3>
   <div style="display:flex;flex-direction:column;gap:6px">
     ${memberRows}
+  </div>`;
+}
+
+/* Modal shell (static, rendered once in nav) */
+function renderCommunitySettingsModal() {
+  return `
+<div class="modal-overlay settings-modal-overlay" id="community-settings-modal" style="display:none">
+  <div class="settings-modal-content">
+    <div class="settings-modal-header">
+      <div class="settings-modal-title">🛡️ Community Einstellungen</div>
+      <button class="btn btn-ghost btn-sm" id="community-settings-modal-close" title="Schliessen" style="font-size:18px;padding:6px 14px">✕</button>
+    </div>
+    <div class="settings-modal-body" id="community-settings-modal-body">
+      <div style="color:var(--muted);padding:20px">Lädt…</div>
+    </div>
   </div>
 </div>`;
 }
