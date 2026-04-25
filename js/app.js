@@ -234,6 +234,7 @@ function render() {
 
     app.innerHTML = html;
     attachEvents();
+    syncStickyLayout();
   } catch (e) {
     console.error('[render] error:', e);
     app.innerHTML = `<div style="padding:40px;color:#e04444;font-family:monospace">
@@ -241,6 +242,18 @@ function render() {
       <button onclick="location.reload()" style="padding:8px 16px;cursor:pointer">Seite neu laden</button>
     </div>`;
   }
+}
+
+function syncStickyLayout() {
+  requestAnimationFrame(() => {
+    const nav = document.querySelector('.nav');
+    const subnav = document.querySelector('.community-subnav');
+    const navHeight = nav ? Math.ceil(nav.getBoundingClientRect().height) : 0;
+    const subnavHeight = subnav ? Math.ceil(subnav.getBoundingClientRect().height) : 0;
+
+    document.documentElement.style.setProperty('--nav-height', `${navHeight}px`);
+    document.documentElement.style.setProperty('--community-subnav-height', `${subnavHeight}px`);
+  });
 }
 
 /* ----------------------------------------------------------
@@ -252,6 +265,7 @@ function render() {
  * Checks for an existing Supabase session and routes accordingly.
  */
 async function init() {
+  window.addEventListener('resize', syncStickyLayout);
   // Listen for auth events — handle token refresh failures gracefully
   sb.auth.onAuthStateChange((event, session) => {
     if (event === 'TOKEN_REFRESHED') return; // all good

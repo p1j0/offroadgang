@@ -455,7 +455,7 @@ select option       { background: var(--surface2); }
 /* ============================================================
    TOUR DETAIL
    ============================================================ */
-.tour-detail { display: flex; flex-direction: column; height: calc(100vh - 62px); }
+.tour-detail { display: flex; flex-direction: column; height: calc(100vh - var(--nav-height, 62px)); }
 
 .tour-detail-header {
   padding: 16px 28px;
@@ -550,10 +550,10 @@ select option       { background: var(--surface2); }
   bottom: 0; left: 0; right: 0;
   background: rgba(13,13,16,0.92);
   border-top: 1px solid var(--border);
-  padding: 10px 18px;
+  padding: 8px 14px;
   display: flex;
-  gap: 24px;
-  font-size: 13px;
+  gap: 18px;
+  font-size: 12px;
   color: var(--muted);
   z-index: 1000;
   flex-wrap: wrap;
@@ -601,10 +601,10 @@ select option       { background: var(--surface2); }
 .chat-meta { font-size: 11px; color: var(--muted); margin-top: 4px; }
 
 .chat-input-bar {
-  padding: 14px 20px;
+  padding: 10px 14px;
   border-top: 1px solid var(--border);
   display: flex;
-  gap: 10px;
+  gap: 8px;
   background: var(--surface);
 }
 .chat-input-bar input { flex: 1; }
@@ -640,12 +640,12 @@ select option       { background: var(--surface2); }
 /* ============================================================
    INFO TAB
    ============================================================ */
-.info-layout { padding: 28px; }
+.info-layout { padding: 18px 20px; }
 
 .info-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 28px;
+  grid-template-columns: minmax(0, 0.95fr) minmax(280px, 0.8fr);
+  gap: 20px;
 }
 @media (max-width: 720px) { .info-grid { grid-template-columns: 1fr; } }
 
@@ -653,7 +653,7 @@ select option       { background: var(--surface2); }
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 14px 18px;
+  padding: 12px 14px;
 }
 .info-label {
   font-size: 11px;
@@ -668,11 +668,11 @@ select option       { background: var(--surface2); }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 14px;
+  padding: 8px 12px;
   background: var(--surface2);
   border-radius: var(--radius);
   margin-bottom: 6px;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 /* ============================================================
