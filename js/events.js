@@ -27,6 +27,26 @@ function attachEvents() {
 
   /* --- Navigation bar --- */
   document.getElementById('nav-logo')?.addEventListener('click', () => navigateTo('communities'));
+
+  /* Avatar dropdown */
+  const avatarBtn = document.getElementById('nav-avatar-btn');
+  const avatarDropdown = document.getElementById('nav-avatar-dropdown');
+  if (avatarBtn && avatarDropdown) {
+    avatarBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      avatarDropdown.hidden = !avatarDropdown.hidden;
+    });
+    document.addEventListener('click', e => {
+      if (!avatarDropdown.hidden && !avatarDropdown.contains(e.target) && e.target !== avatarBtn) {
+        avatarDropdown.hidden = true;
+      }
+    });
+    // Close dropdown when an item inside is clicked
+    avatarDropdown.querySelectorAll('.dropdown-item').forEach(item => {
+      item.addEventListener('click', () => { avatarDropdown.hidden = true; });
+    });
+  }
+
   document.getElementById('go-profile')?.addEventListener('click', () => openProfileModal());
   document.getElementById('logout-btn')?.addEventListener('click', doLogout);
 
@@ -308,6 +328,21 @@ function attachEvents() {
   /* --- Community: create tour button --- */
   document.getElementById('create-tour-btn')?.addEventListener('click', () => navigateTo('create'));
 
+  /* --- Community: 3-dot menu toggle --- */
+  const communityMenuBtn = document.getElementById('community-menu-btn');
+  const communityMenu    = document.getElementById('community-menu');
+  if (communityMenuBtn && communityMenu) {
+    communityMenuBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      communityMenu.hidden = !communityMenu.hidden;
+    });
+    document.addEventListener('click', e => {
+      if (!communityMenu.hidden && !communityMenu.contains(e.target) && e.target !== communityMenuBtn) {
+        communityMenu.hidden = true;
+      }
+    });
+  }
+
   /* --- Community: leave --- */
   document.getElementById('leave-community-btn')?.addEventListener('click', async () => {
     if (!confirm('Community wirklich verlassen?')) return;
@@ -330,6 +365,21 @@ function attachEvents() {
       copyTourLink(el.dataset.copyId);
     });
   });
+
+  /* Tour: 3-dot menu toggle */
+  const tourMenuBtn = document.getElementById('tour-menu-btn');
+  const tourMenu    = document.getElementById('tour-menu');
+  if (tourMenuBtn && tourMenu) {
+    tourMenuBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      tourMenu.hidden = !tourMenu.hidden;
+    });
+    document.addEventListener('click', e => {
+      if (!tourMenu.hidden && !tourMenu.contains(e.target) && e.target !== tourMenuBtn) {
+        tourMenu.hidden = true;
+      }
+    });
+  }
 
   /* Leave tour (non-admin members) — in header */
   document.getElementById('leave-tour-btn')?.addEventListener('click', async () => {
@@ -508,32 +558,16 @@ function _refreshTabBar() {
   const tour = state.currentTour;
   if (!tour) return;
   const tabs = [
-    { id: 'map',          label: '🗺️ Karte' },
-    { id: 'chat',         label: '💬 Chat' },
-    { id: 'media',        label: '📸 Media' },
-    { id: 'participants', label: '👥 Teilnehmer' },
-    { id: 'info',         label: '📋 Info & Kalender' },
-    { id: 'changelog',    label: '📝 Change Log' },
+    { id: 'map',          label: 'Karte' },
+    { id: 'chat',         label: 'Chat' },
+    { id: 'media',        label: 'Media' },
+    { id: 'participants', label: 'Teilnehmer' },
+    { id: 'info',         label: 'Info' },
+    { id: 'changelog',    label: 'Log' },
   ];
   const bar = document.querySelector('.tour-tabs');
   if (!bar) return;
-  bar.innerHTML = tabs.map(t => {
-    const badge    = state.tabBadges[t.id];
-    const isActive = state.currentTab === t.id;
-    const tooltipLines = badge
-      ? badge.slice(0, 5).map(b => {
-          const time = b.time.toLocaleTimeString('de-DE', { hour:'2-digit', minute:'2-digit' });
-          const date = b.time.toLocaleDateString('de-DE', { day:'2-digit', month:'2-digit' });
-          return `${date} ${time}  ${b.text}`;
-        }).join('&#10;')
-      : '';
-    return `<button class="tab-btn ${isActive ? 'active' : ''}" data-tab="${t.id}">
-      ${t.label}
-      ${badge && !isActive
-        ? `<span class="tab-badge" title="${tooltipLines}">${badge.length > 9 ? '9+' : badge.length}</span>`
-        : ''}
-    </button>`;
-  }).join('');
+  bar.innerHTML = renderTourTabs(tabs, state.currentTourId);
   // Re-attach tab click handlers on the new buttons
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
@@ -546,6 +580,9 @@ function _refreshTabBar() {
       const tc = document.getElementById('tab-content');
       if (tc && state.currentTour) { tc.innerHTML = renderTab(state.currentTour); afterTabRender(); }
     });
+  });
+  bar.querySelectorAll('[data-copy-id]').forEach(el => {
+    el.addEventListener('click', () => copyInviteLink(el.dataset.copyId));
   });
 }
 
@@ -911,9 +948,9 @@ function attachInfoEvents() {
       await updateTourInfo(updates);
       toast('✓ Gespeichert');
       const hn = document.querySelector('.tour-detail-title'); if (hn) hn.textContent = name;
-      const hd = document.getElementById('hdr-dest'); if (hd) hd.textContent = '📍 ' + (updates.destination || 'Kein Ziel');
+      const hd = document.getElementById('hdr-dest'); if (hd) hd.textContent = updates.destination || 'Kein Ziel';
       const id = document.getElementById('info-dest'); if (id) id.textContent = updates.destination || '—';
-      if (dist) { const hdi = document.getElementById('hdr-dist'); if (hdi) hdi.textContent = '📏 ' + dist; }
+      if (dist) { const hdi = document.getElementById('hdr-dist'); if (hdi) hdi.textContent = dist; }
     } catch (e) { toast(e.message, 'error'); }
   });
 

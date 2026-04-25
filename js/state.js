@@ -14,6 +14,7 @@ const state = {
   /* Communities landing */
   communities:       [],
   myCommunityIds:    new Set(),
+  communityMemberCounts: {},
 
   /* Active community */
   currentCommunityId: null,
@@ -34,6 +35,7 @@ const state = {
   myTourIds:     new Set(),
   profileCache:  {},
   memberCounts:  {},
+  tourMemberIds: {},
   homeBadges:    {},
   calMonth:      null,       // home calendar current month
 

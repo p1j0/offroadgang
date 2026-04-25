@@ -3,7 +3,7 @@
    Handles: offline caching + Web Push Notifications
    ============================================================ */
 
-const CACHE_NAME = 'motoroute-v2';
+const CACHE_NAME = 'motoroute-v8';
 
 // App-Shell: alles was offline verfügbar sein soll
 const PRECACHE = [
@@ -11,6 +11,7 @@ const PRECACHE = [
   '/index.html',
   '/manifest.json',
   '/css/styles.css',
+  '/css/theme-premium.css',
   '/js/config.js',
   '/js/state.js',
   '/js/utils.js',

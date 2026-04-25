@@ -24,6 +24,7 @@ async function loadHomeData() {
   if (!state.tours.length) {
     state.myTourIds   = new Set();
     state.memberCounts = {};
+    state.tourMemberIds = {};
     state.homeBadges   = {};
     return;
   }
@@ -33,7 +34,7 @@ async function loadHomeData() {
   // Load memberships and member counts filtered to this community's tours
   const [membershipsRes, memberCountsRes] = await Promise.all([
     sb.from('tour_members').select('tour_id').eq('user_id', state.currentUser.id).in('tour_id', tourIds),
-    sb.from('tour_members').select('tour_id').in('tour_id', tourIds),
+    sb.from('tour_members').select('tour_id, user_id').in('tour_id', tourIds),
   ]);
 
   const memberIds = (membershipsRes.data || []).map(m => m.tour_id);
@@ -43,15 +44,19 @@ async function loadHomeData() {
 
   state.myTourIds = new Set([...memberIds, ...adminIds]);
 
-  state.memberCounts = {};
+  // Build per-tour member id list AND counts in one pass
+  state.memberCounts  = {};
+  state.tourMemberIds = {};
   (memberCountsRes.data || []).forEach(m => {
     state.memberCounts[m.tour_id] = (state.memberCounts[m.tour_id] || 0) + 1;
+    if (!state.tourMemberIds[m.tour_id]) state.tourMemberIds[m.tour_id] = [];
+    state.tourMemberIds[m.tour_id].push(m.user_id);
   });
 
-  // Cache admin usernames
-  const uncached = [...new Set(
-    state.tours.map(t => t.admin_id).filter(id => !state.profileCache[id])
-  )];
+  // Cache admin usernames AND member usernames in one fetch
+  const allNeededIds = new Set(state.tours.map(t => t.admin_id));
+  Object.values(state.tourMemberIds).forEach(arr => arr.forEach(id => allNeededIds.add(id)));
+  const uncached = [...allNeededIds].filter(id => !state.profileCache[id]);
   if (uncached.length) {
     const { data: profs } = await sb.from('profiles').select('id,username').in('id', uncached);
     (profs || []).forEach(p => { state.profileCache[p.id] = p.username; });
@@ -550,14 +555,28 @@ async function loadCommunities() {
     console.warn('[loadCommunities]', error.message);
     state.communities    = [];
     state.myCommunityIds = new Set();
+    state.communityMemberCounts = {};
     return;
   }
   state.communities = data || [];
 
-  const { data: memberships } = await sb
-    .from('community_members')
-    .select('community_id')
-    .eq('user_id', state.currentUser.id);
+  const [{ data: memberships }, { data: allMembers }] = await Promise.all([
+    sb
+      .from('community_members')
+      .select('community_id')
+      .eq('user_id', state.currentUser.id),
+    sb
+      .from('community_members')
+      .select('community_id'),
+  ]);
+
+  state.communityMemberCounts = {};
+  (allMembers || []).forEach(row => {
+    state.communityMemberCounts[row.community_id] = (state.communityMemberCounts[row.community_id] || 0) + 1;
+  });
+  state.communities.forEach(c => {
+    state.communityMemberCounts[c.id] = (state.communityMemberCounts[c.id] || 0) + 1;
+  });
 
   const adminOf = state.communities
     .filter(c => c.admin_id === state.currentUser.id ||

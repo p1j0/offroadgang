@@ -92,23 +92,180 @@ function renderAuth() {
    ---------------------------------------------------------- */
 
 function renderNav() {
+  const username = state.currentUser?.username || '';
+  const initials = username
+    ? username.trim().split(/\s+/).slice(0,2).map(s => s[0]).join('').toUpperCase()
+    : '?';
   return `
 <nav class="nav">
-  <div class="nav-logo" id="nav-logo"><img src="img/logo.png" alt="MotoRoute" class="nav-logo-img" /><span class="nav-logo-text">MOTO<span>ROUTE</span></span></div>
+  <div class="nav-logo" id="nav-logo" title="Zur Startseite">
+    <img src="img/logo.png" alt="MotoRoute" class="nav-logo-img" />
+  </div>
+  <div class="nav-page-header" id="nav-page-header">${renderPageHeader()}</div>
   <div class="nav-user">
-    <span class="nav-user-icon">🏍️</span> <strong>${esc(state.currentUser?.username || '')}</strong>
-    <button class="btn-ghost btn-sm nav-icon-btn" id="site-info-btn" title="Über MotoRoute & Changelog">
-      <span class="nav-icon-emoji">ℹ️</span><span class="nav-icon-label">Info</span>
-    </button>
-    <button class="btn-ghost btn-sm nav-icon-btn" id="go-profile" title="Profil & Benachrichtigungen">
-      <span class="nav-icon-emoji">⚙️</span><span class="nav-icon-label">Einstellungen</span>
-    </button>
-    <button class="btn-logout" id="logout-btn"><span class="logout-text">Abmelden</span><span class="logout-icon">⏻</span></button>
+    <div class="nav-avatar-menu">
+      <button class="nav-avatar" id="nav-avatar-btn" aria-label="Menü" aria-haspopup="true" title="${esc(username)}">
+        ${initials}
+      </button>
+      <div class="dropdown-menu nav-avatar-dropdown" id="nav-avatar-dropdown" hidden>
+        <div class="dropdown-header">
+          <div class="dropdown-header-name">${esc(username)}</div>
+        </div>
+        <button class="dropdown-item" id="go-profile">Profil &amp; Benachrichtigungen</button>
+        <button class="dropdown-item" id="site-info-btn">Über MotoRoute</button>
+        <div class="dropdown-divider"></div>
+        <button class="dropdown-item dropdown-item-danger" id="logout-btn">Abmelden</button>
+      </div>
+    </div>
   </div>
 </nav>
 ${renderSiteInfoModal()}
 ${renderProfileModal()}
 ${renderCommunitySettingsModal()}`;
+}
+
+/* ----------------------------------------------------------
+   Page header — rendered inside the nav, content depends on view
+   ---------------------------------------------------------- */
+function renderPageHeader() {
+  const view = state.view;
+  const community = state.currentCommunity;
+  const tour = state.currentTour;
+
+  const backIcon = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>`;
+  const moreIcon = `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>`;
+
+  // Build pieces; not every view needs all of them
+  let backBtn = '';
+  let eyebrow = '';
+  let title   = '';
+  let menu    = '';
+  let cta     = '';
+
+  switch (view) {
+    case 'communities':
+      title = 'MOTOROUTE';
+      break;
+
+    case 'create-community':
+      backBtn = `<button class="btn-icon-back" id="back-communities" title="Zurück" aria-label="Zurück">${backIcon}</button>`;
+      title = 'Neue Community';
+      break;
+
+    case 'community-home': {
+      const isAdmin = community && (
+        community.admin_id === state.currentUser.id ||
+        (community.co_admin_ids || []).includes(state.currentUser.id)
+      );
+      backBtn = `<button class="btn-icon-back" id="back-communities" title="Zurück zu Communities" aria-label="Zurück">${backIcon}</button>`;
+      eyebrow = `Community${state.tours.length ? ` · ${state.tours.length} ${state.tours.length === 1 ? 'Tour' : 'Touren'}` : ''}`;
+      menu = `
+        <div class="home-header-menu">
+          <button class="btn-icon-more" id="community-menu-btn" aria-label="Community-Menü" aria-haspopup="true">${moreIcon}</button>
+          <div class="dropdown-menu" id="community-menu" hidden>
+            ${isAdmin ? '<button class="dropdown-item" id="community-settings-btn">Einstellungen</button>' : ''}
+            <button class="dropdown-item dropdown-item-danger" id="leave-community-btn">Community verlassen</button>
+          </div>
+        </div>`;
+      return `
+        ${backBtn}
+        <div class="page-header-titleblock page-header-titleblock-community">
+          <div class="page-header-eyebrow">${eyebrow}</div>
+          <div class="page-header-titleline">
+            <div class="page-header-title page-header-title-inline">${esc(community?.name || '')}</div>
+          </div>
+        </div>
+        <div class="page-header-actions">${menu}</div>`;
+    }
+
+    case 'planning':
+      backBtn = `<button class="btn-icon-back" id="back-community-home" title="Zurück" aria-label="Zurück">${backIcon}</button>`;
+      eyebrow = esc(community?.name || 'Community');
+      title   = 'Touren Planung';
+      break;
+
+    case 'community-media':
+      backBtn = `<button class="btn-icon-back" id="back-community-home-media" title="Zurück" aria-label="Zurück">${backIcon}</button>`;
+      eyebrow = esc(community?.name || 'Community');
+      title   = 'Media';
+      break;
+
+    case 'create':
+      backBtn = `<button class="btn-icon-back" id="back-home" title="Zurück" aria-label="Zurück">${backIcon}</button>`;
+      eyebrow = esc(community?.name || 'Community');
+      title   = 'Neue Tour';
+      break;
+
+    case 'join':
+      backBtn = `<button class="btn-icon-back" id="back-home" title="Zurück" aria-label="Zurück">${backIcon}</button>`;
+      title   = 'Tour beitreten';
+      break;
+
+    case 'tour': {
+      if (!tour) return '';
+      const canLeave = tour.admin_id !== state.currentUser.id;
+      // Date period
+      const tStart = new Date(tour.date + 'T12:00:00');
+      const tEnd   = tour.end_date && tour.end_date !== tour.date ? new Date(tour.end_date + 'T12:00:00') : null;
+      const tSameMonth = tEnd && tStart.getMonth() === tEnd.getMonth() && tStart.getFullYear() === tEnd.getFullYear();
+      const tFmtShort = (d) => d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
+      const tFmtFull  = (d) => d.toLocaleDateString('de-DE', { day: '2-digit', month: 'short', year: 'numeric' });
+      let tDateDisplay;
+      if (tEnd && tSameMonth) {
+        tDateDisplay = `${tStart.getDate().toString().padStart(2,'0')}.–${tFmtFull(tEnd)}`;
+      } else if (tEnd) {
+        tDateDisplay = `${tFmtShort(tStart)} – ${tFmtFull(tEnd)}`;
+      } else {
+        tDateDisplay = tFmtFull(tStart);
+      }
+      const isAdminT = isCurrentUserAdmin();
+      backBtn = `<button class="btn-icon-back" id="back-home" title="Zurück" aria-label="Zurück">${backIcon}</button>`;
+      eyebrow = esc(community?.name || 'Tour');
+      title   = esc(tour.name);
+      // Custom meta block + actions for tour view
+      const metaBlock = `
+        <div class="tour-detail-meta">
+          ${isAdminT ? '<span class="tag tag-accent">Admin</span>' : ''}
+          <span class="tour-detail-meta-item" id="hdr-date">${tDateDisplay}</span>
+          <span class="tour-detail-meta-sep">·</span>
+          <span class="tour-detail-meta-item" id="hdr-dest">${esc(tour.destination || 'Kein Ziel')}</span>
+          <span class="tour-detail-meta-sep">·</span>
+          <span class="tour-detail-meta-item" id="hdr-dist">${esc(tour.distance || '—')}</span>
+        </div>`;
+      cta = '';
+      if (canLeave) {
+        menu = `
+          <div class="home-header-menu">
+            <button class="btn-icon-more" id="tour-menu-btn" aria-label="Menü" aria-haspopup="true">${moreIcon}</button>
+            <div class="dropdown-menu" id="tour-menu" hidden>
+              <button class="dropdown-item dropdown-item-danger" id="leave-tour-btn">Tour verlassen</button>
+            </div>
+          </div>`;
+      }
+      // Tour view gets a special structure with the meta block tucked under the title row
+      return `
+        ${backBtn}
+        <div class="page-header-titleblock">
+          <div class="page-header-eyebrow">${eyebrow}</div>
+          <div class="page-header-title">${title}</div>
+          ${metaBlock}
+        </div>
+        <div class="page-header-actions">${cta}${menu}</div>`;
+    }
+
+    default:
+      return '';
+  }
+
+  // Default layout for non-tour views
+  return `
+    ${backBtn}
+    <div class="page-header-titleblock">
+      ${eyebrow ? `<div class="page-header-eyebrow">${eyebrow}</div>` : ''}
+      <div class="page-header-title">${title}</div>
+    </div>
+    <div class="page-header-actions">${cta}${menu}</div>
+  `;
 }
 
 /* ----------------------------------------------------------
@@ -163,53 +320,101 @@ function renderHome() {
 }
 
 function renderTourCard(tour, locked) {
-  const date     = new Date(tour.date + 'T12:00:00');
+  const start = new Date(tour.date + 'T12:00:00');
+  const end   = tour.end_date && tour.end_date !== tour.date ? new Date(tour.end_date + 'T12:00:00') : null;
   const isAdmin  = tour.admin_id === state.currentUser.id || (tour.co_admin_ids||[]).includes(state.currentUser.id);
   const isMine   = state.myTourIds.has(tour.id);
-  const dateStr  = date.toLocaleDateString('de-DE', { day: '2-digit', month: 'short', year: 'numeric' });
   const adminName   = state.profileCache[tour.admin_id] || '…';
-  // +1 for the admin who is not in tour_members
   const memberCount = (state.memberCounts[tour.id] || 0) + 1;
 
-  // Unread badges (only for tours the user is a member of)
+  // Date period
+  const sameMonth = end && start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear();
+  const fmtShort  = (d) => d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
+  const fmtFull   = (d) => d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' });
+  let dateDisplay;
+  if (end && sameMonth) {
+    dateDisplay = `${start.getDate().toString().padStart(2,'0')}.–${fmtFull(end)}`;
+  } else if (end) {
+    dateDisplay = `${fmtShort(start)} – ${fmtFull(end)}`;
+  } else {
+    dateDisplay = fmtFull(start);
+  }
+
+  const tourColor = getHomeTourCalendarColor(tour);
+  const cardClass = isMine ? 'tour-card tour-card-mine' : 'tour-card tour-card-other';
+
+  // Unread badges
   const newMsgs    = isMine ? (state.homeBadges[tour.id]?.chat     || 0) : 0;
   const newChanges = isMine ? (state.homeBadges[tour.id]?.changelog || 0) : 0;
   const badgesHtml = (newMsgs > 0 || newChanges > 0) ? `
     <div class="tour-card-badges">
-      ${newMsgs    > 0 ? `<span class="tour-card-badge">💬 ${newMsgs    > 99 ? '99+' : newMsgs}</span>`    : ''}
-      ${newChanges > 0 ? `<span class="tour-card-badge">📋 ${newChanges > 99 ? '99+' : newChanges}</span>` : ''}
+      ${newMsgs    > 0 ? `<span class="tour-card-badge">${newMsgs    > 99 ? '99+' : newMsgs} Chat</span>`    : ''}
+      ${newChanges > 0 ? `<span class="tour-card-badge">${newChanges > 99 ? '99+' : newChanges} Update</span>` : ''}
     </div>` : '';
 
+  // Stats
+  const distanceTxt = (tour.distance || '').toString().trim();
+  const distanceClean = distanceTxt && distanceTxt !== '—'
+    ? distanceTxt.replace(/\s*km\s*$/i, '').trim()
+    : '—';
+
+  // Avatar initials helper
+  const initials = (name) => {
+    if (!name) return '??';
+    const parts = name.trim().split(/\s+/);
+    return (parts[0][0] + (parts[1]?.[0] || parts[0][1] || '')).toUpperCase().slice(0,2);
+  };
+  const adminInitials = initials(adminName);
+
+  // Real member initials (excluding admin)
+  const memberUserIds = (state.tourMemberIds?.[tour.id] || [])
+    .filter(uid => uid !== tour.admin_id);
+
+  // Adaptive avatar stack: admin first, then up to MAX_AVATARS-1 real members
+  const MAX_AVATARS = 5;
+  const visibleMemberIds = memberUserIds.slice(0, MAX_AVATARS - 1);
+  const overflowCount = Math.max(0, memberUserIds.length - visibleMemberIds.length);
+
+  let avatarStack = `<span class="tour-avatar tour-avatar-admin" title="${esc(adminName)}">${adminInitials}</span>`;
+  for (const uid of visibleMemberIds) {
+    const name = state.profileCache[uid] || '?';
+    avatarStack += `<span class="tour-avatar tour-avatar-member" title="${esc(name)}">${initials(name)}</span>`;
+  }
+  if (overflowCount > 0) {
+    avatarStack += `<span class="tour-avatar tour-avatar-more">+${overflowCount}</span>`;
+  }
+
   return `
-<div class="card tour-card" data-tour-id="${tour.id}">
+<div class="card ${cardClass}" data-tour-id="${tour.id}">
   <div class="tour-card-stripe"></div>
-  <div class="tour-card-header">
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px">
+  <div class="tour-card-topbar">
+    <div class="tour-card-eyebrow">${dateDisplay}</div>
+    <div class="tour-card-toplabels">
+      ${isMine ? '<span class="tag tag-mine">✓ Dabei</span>' : ''}
       ${isAdmin ? '<span class="tag tag-accent">Admin</span>' : ''}
-      ${locked  ? '<span class="tag tag-muted">🔒 Passwort nötig</span>' : ''}
+      ${locked  ? '<span class="tag tag-muted">Passwort</span>' : ''}
     </div>
-    <div class="tour-card-name">${esc(tour.name)}</div>
   </div>
-  <div style="padding:0 22px">
-    <div class="tour-card-meta">
-      <span>📅 ${dateStr}</span>
-      <span>📍 ${esc(tour.destination || 'Kein Ziel')}</span>
-      <span>📏 ${esc(tour.distance    || '—')}</span>
-    </div>
+  <div class="tour-card-header">
+    <div class="tour-card-name">${esc(tour.name)}</div>
+    <div class="tour-card-sub">${esc(tour.destination || 'Kein Ziel')}</div>
+  </div>
+  <div class="tour-card-stats">
+    <span class="tour-card-stat-dot" style="background:${tourColor};--tour-card-dot:${tourColor}"></span>
+    <span class="tour-card-stat"><strong>${distanceClean}</strong>${distanceClean !== '—' ? '<span class="tour-card-stat-unit">KM</span>' : ''}</span>
+    <span class="tour-card-stat-sep">·</span>
+    <span class="tour-card-stat"><strong>${memberCount}</strong><span class="tour-card-stat-unit">RIDER</span></span>
   </div>
   <div class="tour-card-footer">
-    <div style="display:flex;flex-direction:column;gap:3px">
-      <span style="font-size:12px;color:var(--muted)">von ${esc(adminName)}</span>
-      <span style="font-size:12px;color:var(--muted)">👥 ${memberCount} Mitfahrer</span>
-    </div>
-    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
+    <div class="tour-card-avatars">${avatarStack}</div>
+    <div class="tour-card-actions">
       ${badgesHtml}
-      <div style="display:flex;gap:6px;align-items:center">
-        <button class="btn-copy-link" data-copy-id="${tour.id}" title="Einladungslink kopieren">🔗</button>
-        ${isMine
-          ? `<button class="btn btn-primary btn-sm" data-open-id="${tour.id}">Öffnen →</button>`
-          : `<button class="btn btn-ghost btn-sm"   data-join-id="${tour.id}">Beitreten</button>`}
-      </div>
+      <button class="btn-copy-link" data-copy-id="${tour.id}" title="Einladungslink kopieren" aria-label="Link kopieren">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+      </button>
+      ${isMine
+        ? `<button class="btn btn-primary btn-sm" data-open-id="${tour.id}">Öffnen →</button>`
+        : `<button class="btn btn-ghost btn-sm"   data-join-id="${tour.id}">Beitreten</button>`}
     </div>
   </div>
 </div>`;
@@ -224,6 +429,13 @@ const TOUR_PALETTE = [
   '#f07800', '#3dba7b', '#4a9eff', '#e04444',
   '#c97bff', '#f5c400', '#ff6b9d', '#00d4aa',
 ];
+
+function getHomeTourCalendarColor(tour) {
+  const myTours = state.tours.filter(t => state.myTourIds.has(t.id));
+  return state.myTourIds.has(tour.id)
+    ? TOUR_PALETTE[Math.max(0, myTours.indexOf(tour)) % TOUR_PALETTE.length]
+    : '#7a7880';
+}
 
 function renderCalWidget() {
   if (!state.calMonth) state.calMonth = new Date();
@@ -248,9 +460,7 @@ function renderCalWidget() {
   toursToShow.forEach((tour, idx) => {
     const isMine = state.myTourIds.has(tour.id);
     // Own tours use the palette; other tours use muted grey tones
-    const color  = isMine
-      ? TOUR_PALETTE[myTours.indexOf(tour) % TOUR_PALETTE.length]
-      : '#7a7880';
+    const color  = getHomeTourCalendarColor(tour);
 
     const start = new Date(tour.date + 'T12:00:00');
     const end   = tour.end_date ? new Date(tour.end_date + 'T12:00:00') : start;
@@ -476,60 +686,49 @@ function renderTour() {
   const tour = state.currentTour;
   if (!tour) return '<div style="padding:40px;color:var(--muted)">Tour nicht gefunden.</div>';
 
-  const isAdmin = isCurrentUserAdmin();
-  const tabs    = [
-    { id: 'map',          label: '🗺️ Karte' },
-    { id: 'chat',         label: '💬 Chat' },
-    { id: 'media',        label: '📸 Media' },
-    { id: 'participants', label: '👥 Teilnehmer' },
-    { id: 'info',         label: '📋 Info & Kalender' },
-    { id: 'changelog',    label: '📝 Change Log' },
+  const tabs = [
+    { id: 'map',          label: 'Karte' },
+    { id: 'chat',         label: 'Chat' },
+    { id: 'media',        label: 'Media' },
+    { id: 'participants', label: 'Teilnehmer' },
+    { id: 'info',         label: 'Info' },
+    { id: 'changelog',    label: 'Log' },
   ];
 
   return `
 <div class="tour-detail">
-  <div class="tour-detail-header">
-    <button class="btn btn-ghost btn-sm" id="back-home">← Zurück</button>
-    <div class="tour-detail-title">${esc(tour.name)}</div>
-    <div style="display:flex;gap:7px;flex-wrap:wrap">
-      ${isAdmin ? '<span class="tag tag-accent">Admin</span>' : ''}
-      <span class="tag tag-muted">
-        📅 ${new Date(tour.date + 'T12:00:00').toLocaleDateString('de-DE', { day:'2-digit', month:'short', year:'numeric' })}
-      </span>
-      <span class="tag tag-muted" id="hdr-dest">📍 ${esc(tour.destination || 'Kein Ziel')}</span>
-      <span class="tag tag-muted" id="hdr-dist">📏 ${esc(tour.distance    || '—')}</span>
-      <button class="btn btn-ghost btn-sm" data-copy-id="${tour.id}">🔗 Einladen</button>
-      ${tour.admin_id !== state.currentUser.id ? `<button class="map-btn map-btn-danger" id="leave-tour-btn" title="Tour verlassen">
-        <span class="map-btn-icon">🚪</span><span class="map-btn-label">Tour verlassen</span>
-      </button>` : ''}
-    </div>
-  </div>
-
   <div class="tour-tabs">
-    ${tabs.map(t => {
-      const badge   = state.tabBadges[t.id];
-      const isActive = state.currentTab === t.id;
-      const tooltipLines = badge
-        ? badge.slice(0, 5).map(b => {
-            const time = b.time.toLocaleTimeString('de-DE', { hour:'2-digit', minute:'2-digit' });
-            const date = b.time.toLocaleDateString('de-DE', { day:'2-digit', month:'2-digit' });
-            return `${date} ${time}  ${b.text}`;
-          }).join('&#10;')
-        : '';
-      return `
-      <button class="tab-btn ${isActive ? 'active' : ''}" data-tab="${t.id}">
-        ${t.label}
-        ${badge && !isActive
-          ? `<span class="tab-badge" title="${tooltipLines}">${badge.length > 9 ? '9+' : badge.length}</span>`
-          : ''}
-      </button>`;
-    }).join('')}
+    ${renderTourTabs(tabs, tour.id)}
   </div>
 
   <div class="tab-content" id="tab-content">
     ${renderTab(tour)}
   </div>
 </div>`;
+}
+
+function renderTourTabs(tabs, tourId) {
+  const tabBar = tabs.map(t => {
+    const badge = state.tabBadges[t.id];
+    const isActive = state.currentTab === t.id;
+    const tooltipLines = badge
+      ? badge.slice(0, 5).map(b => {
+          const time = b.time.toLocaleTimeString('de-DE', { hour:'2-digit', minute:'2-digit' });
+          const date = b.time.toLocaleDateString('de-DE', { day:'2-digit', month:'2-digit' });
+          return `${date} ${time}  ${b.text}`;
+        }).join('&#10;')
+      : '';
+    return `
+      <button class="tab-btn ${isActive ? 'active' : ''}" data-tab="${t.id}">
+        ${t.label}
+        ${badge && !isActive
+          ? `<span class="tab-badge" title="${tooltipLines}">${badge.length > 9 ? '9+' : badge.length}</span>`
+          : ''}
+      </button>`;
+  }).join('');
+
+  return `${tabBar}
+    <button class="tour-tab-action-btn" data-copy-id="${tourId}" aria-label="Einladen">Einladen</button>`;
 }
 
 function renderTab(tour) {
@@ -774,8 +973,8 @@ function renderInfoTab(tour) {
 
       <!-- Left: tour details + admin edit form -->
       <div>
-        <h2 style="font-family:var(--font-display);font-size:28px;letter-spacing:1px;margin-bottom:20px">Tour-Details</h2>
-        <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:24px">
+        <h2 style="font-family:var(--font-display);font-size:24px;letter-spacing:0.5px;margin-bottom:14px">Tour-Details</h2>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:18px">
           <div class="info-block">
             <div class="info-label">Beschreibung</div>
             <div>${esc(tour.description || 'Keine Beschreibung')}</div>
@@ -805,7 +1004,7 @@ function renderInfoTab(tour) {
 
         ${isAdmin ? `
         <div class="divider"></div>
-        <h3 style="font-size:15px;font-weight:600;margin-bottom:14px">⚙️ Infos bearbeiten</h3>
+        <h3 style="font-size:14px;font-weight:600;margin-bottom:12px">⚙️ Infos bearbeiten</h3>
         <div class="form-group">
           <label>Tour-Name</label>
           <input type="text" id="edit-name" value="${esc(tour.name)}" maxlength="60" />
@@ -828,24 +1027,24 @@ function renderInfoTab(tour) {
           <label>Beschreibung</label>
           <textarea id="edit-desc">${esc(tour.description || '')}</textarea>
         </div>
-        <div class="divider" style="margin:16px 0 14px"></div>
-        <h4 style="font-size:13px;font-weight:600;margin-bottom:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em">
+        <div class="divider" style="margin:14px 0 12px"></div>
+        <h4 style="font-size:12px;font-weight:600;margin-bottom:8px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em">
           📏 Distanz berechnen
         </h4>
         ${renderDistanceSelector(tour)}
         <button class="btn btn-primary btn-sm" id="edit-save">Änderungen speichern</button>
         <div class="divider"></div>
-        <h3 style="font-size:15px;font-weight:600;margin-bottom:12px;color:var(--danger)">⚠️ Gefahrenzone</h3>
+        <h3 style="font-size:14px;font-weight:600;margin-bottom:10px;color:var(--danger)">⚠️ Gefahrenzone</h3>
         <button class="btn btn-danger btn-sm" id="delete-tour-btn" style="width:100%;justify-content:center">🗑️ Tour endgültig löschen</button>
         ` : ''}
       </div>
 
       <!-- Right: planning calendar -->
       <div>
-        <h2 style="font-family:var(--font-display);font-size:28px;letter-spacing:1px;margin-bottom:20px">Planungskalender</h2>
+        <h2 style="font-family:var(--font-display);font-size:24px;letter-spacing:0.5px;margin-bottom:14px">Planungskalender</h2>
         ${renderTourCal(tour)}
 
-        <div style="margin-top:18px">
+        <div style="margin-top:14px">
           ${state.tourPlanDates.length === 0
             ? '<p style="color:var(--muted);font-size:13px;margin-bottom:12px">Noch keine Planungstermine.</p>'
             : ''}
@@ -861,8 +1060,8 @@ function renderInfoTab(tour) {
         </div>
 
         ${isAdmin ? `
-        <div style="margin-top:16px;background:var(--surface2);border-radius:var(--radius);padding:16px">
-          <div style="font-size:12px;font-weight:600;margin-bottom:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em">
+        <div style="margin-top:14px;background:var(--surface2);border-radius:var(--radius);padding:12px">
+          <div style="font-size:11px;font-weight:600;margin-bottom:8px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em">
             Termin hinzufügen
           </div>
           <div class="form-group" style="margin-bottom:10px">
@@ -915,7 +1114,7 @@ function renderTourCal(tour) {
     _renderTourCalMonth(tour, y, m, tourStart, tourEnd, today, hasRange, false, true)
   ).join('');
 
-  return `<div class="calendar-widget" style="background:var(--surface2);padding:12px">
+  return `<div class="calendar-widget compact-tour-calendar" style="background:var(--surface2);padding:10px">
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
       ${blocks}
     </div>
@@ -990,7 +1189,7 @@ function _renderTourCalMonth(tour, y, m, tourStart, tourEnd, today, hasRange, sh
 
   if (showNav) {
     return `
-<div class="calendar-widget" style="background:var(--surface2)">
+<div class="calendar-widget compact-tour-calendar" style="background:var(--surface2)">
   <div class="cal-nav">
     <button class="cal-nav-btn" id="tcal-prev">‹</button>
     <div class="cal-title" style="font-size:18px">${monthName}</div>
@@ -1118,14 +1317,16 @@ function renderCommunities() {
     const isMember  = state.myCommunityIds.has(c.id);
     const isAdmin   = c.admin_id === state.currentUser.id ||
                       (c.co_admin_ids || []).includes(state.currentUser.id);
+    const memberCount = state.communityMemberCounts[c.id] || 1;
     return `
 <div class="card community-card" data-community-id="${c.id}">
   <div class="community-card-inner">
-    <div>
+    <div class="community-card-copy">
       <div class="community-card-name">${esc(c.name)}</div>
-      <div style="font-size:12px;color:var(--muted);margin-top:4px">
+      <div class="community-card-meta">
         ${isAdmin ? '<span class="tag tag-accent" style="font-size:10px">Admin</span>' : ''}
         ${isMember ? '<span class="tag tag-muted" style="font-size:10px">✓ Mitglied</span>' : '<span class="tag tag-muted" style="font-size:10px">🔒 Passwort nötig</span>'}
+        <span class="community-card-members">${memberCount} ${memberCount === 1 ? 'Mitglied' : 'Mitglieder'}</span>
       </div>
     </div>
     <button class="btn ${isMember ? 'btn-primary' : 'btn-ghost'} btn-sm" data-enter-community="${c.id}">
@@ -1142,13 +1343,15 @@ function renderCommunities() {
   return `
 <div class="page-form" style="max-width:560px">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;flex-wrap:wrap;gap:8px">
-    <div class="page-title" style="margin:0"><img src="img/logo.png" alt="" style="height:108px;vertical-align:middle;margin-right:14px" />Communities</div>
-    <button class="btn btn-primary btn-sm" id="request-community-btn">+ Community beantragen</button>
+    <div class="page-title" style="margin:0"><img src="img/logo.png" alt="" style="height:108px;vertical-align:middle;margin-right:14px" />COMMUNITIES</div>
   </div>
-  <div class="page-sub" style="margin-bottom:28px">
+  <div class="page-sub" style="margin-bottom:10px">
     Wähle eine Community um loszulegen.
     ${state.isSiteAdminUser ? `<span class="tag tag-accent" style="margin-left:8px;font-size:11px">🛡️ Seitenadmin</span>
       <button class="btn btn-ghost btn-sm" id="toggle-admin-panel" style="margin-left:4px;font-size:11px;padding:3px 10px">⚙️ Verwalten</button>` : ''}
+  </div>
+  <div style="display:flex;align-items:center;justify-content:flex-start;margin-bottom:28px;flex-wrap:wrap;gap:8px">
+    <button class="btn btn-primary btn-sm" id="request-community-btn">+ Community beantragen</button>
   </div>
 
   <div id="community-request-form" style="display:none;margin-bottom:24px">
@@ -1243,8 +1446,22 @@ function renderCommunityHome() {
     (community.co_admin_ids || []).includes(state.currentUser.id)
   );
 
-  const myTours   = state.tours.filter(t => state.myTourIds.has(t.id));
-  const otherTours = state.tours.filter(t => !state.myTourIds.has(t.id));
+  // Partition tours into upcoming vs past based on end_date (or date if no end_date).
+  // A tour is "past" only after its last day has fully passed.
+  const todayMidnight = new Date();
+  todayMidnight.setHours(0, 0, 0, 0);
+  const tourEndDate = (t) => {
+    const lastDay = t.end_date && t.end_date !== t.date ? t.end_date : t.date;
+    return new Date(lastDay + 'T23:59:59');
+  };
+  const tourStartDate = (t) => new Date(t.date + 'T12:00:00');
+
+  const upcoming = state.tours
+    .filter(t => tourEndDate(t) >= todayMidnight)
+    .sort((a, b) => tourStartDate(a) - tourStartDate(b)); // earliest first
+  const past = state.tours
+    .filter(t => tourEndDate(t) < todayMidnight)
+    .sort((a, b) => tourStartDate(b) - tourStartDate(a)); // most recent first
 
   const tourCards = tours => tours.map(t => renderTourCard(t, false)).join('');
 
@@ -1254,62 +1471,30 @@ function renderCommunityHome() {
       <div style="font-size:18px;font-weight:600;margin-bottom:8px">Noch keine Touren</div>
       <div style="font-size:14px">Erstelle die erste Tour für diese Community!</div>
     </div>` : `
-    ${myTours.length > 0 ? `<div class="home-section-title">Meine Touren (${myTours.length})</div>
-    <div class="tour-grid">${tourCards(myTours)}</div>` : ''}
-    ${otherTours.length > 0 ? `<div class="home-section-title" style="margin-top:24px">Weitere Touren (${otherTours.length})</div>
-    <div class="tour-grid">${tourCards(otherTours)}</div>` : ''}`;
+    ${upcoming.length > 0 ? `<div class="home-section-title">Kommende Touren (${upcoming.length})</div>
+    <div class="tour-grid">${tourCards(upcoming)}</div>` : ''}
+    ${past.length > 0 ? `<div class="home-section-title" style="margin-top:32px">Vergangene Touren (${past.length})</div>
+    <div class="tour-grid">${tourCards(past)}</div>` : ''}`;
 
   return `
 <div class="home-wrap">
-  <div class="home-header">
-    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-      <button class="btn btn-ghost btn-sm" id="back-communities"><span class="back-full">← Communities</span><span class="back-icon">←</span></button>
-      <div class="tour-detail-title">${esc(community?.name || '')}</div>
-      ${isAdmin ? `<button class="map-btn" id="community-settings-btn" title="Einstellungen">
-        <span class="map-btn-icon">⚙️</span><span class="map-btn-label">Einstellungen</span>
-      </button>` : ''}
-      <button class="map-btn map-btn-danger" id="leave-community-btn" title="Verlassen">
-        <span class="map-btn-icon">🚪</span><span class="map-btn-label">Verlassen</span>
-      </button>
-    </div>
-    <div class="community-actions" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-      <button class="btn btn-ghost" id="community-media-btn" style="
-        font-size:15px;font-weight:600;padding:10px 20px;position:relative;
-        border:2px solid var(--accent);border-radius:8px;letter-spacing:.02em
-      ">
-        📸 Media
-        ${(() => {
-          const cm = state.mediaBadges?.community || 0;
-          const tm = state.mediaBadges?.tours || 0;
-          const total = cm + tm;
-          if (!total) return '';
-          return `<span class="tab-badge" title="${total} neue Medien" style="margin-left:6px">${total > 9 ? '9+' : total}</span>`;
-        })()}
-      </button>
-      <button class="btn btn-ghost" id="planning-btn" style="
-        font-size:15px;font-weight:600;padding:10px 20px;position:relative;
-        border:2px solid var(--accent);border-radius:8px;letter-spacing:.02em
-      ">
-        📋 Touren Planung
-        ${(() => {
-          const b = state.planningBadges;
-          const total = (b.chat || 0) + (b.polls || 0);
-          if (!total) return '';
-          const tip = [
-            b.chat  ? `${b.chat} neue Nachricht${b.chat  > 1 ? 'en' : ''}` : '',
-            b.polls ? `${b.polls} neue Abfrage${b.polls > 1 ? 'n' : ''}`   : '',
-          ].filter(Boolean).join(', ');
-          return `<span class="tab-badge" title="${tip}" style="margin-left:6px">${total > 9 ? '9+' : total}</span>`;
-        })()}
-      </button>
-      <button class="btn btn-tet" id="tet-atlas-btn" style="
-        font-size:15px;font-weight:600;padding:10px 20px;
-        border-radius:8px;letter-spacing:.02em
-      " title="Trans Euro Trail Atlas">
-        🗺️ TET Atlas
-      </button>
-      <button class="btn btn-primary btn-sm" id="create-tour-btn">+ Tour erstellen</button>
-    </div>
+  <div class="home-header community-subnav">
+    <nav class="community-tabs">
+      <a class="community-tab community-tab-active" href="#touren">Touren</a>
+      <a class="community-tab" id="community-media-btn">Media${(() => {
+        const cm = state.mediaBadges?.community || 0;
+        const tm = state.mediaBadges?.tours || 0;
+        const total = cm + tm;
+        return total ? `<span class="community-tab-badge">${total > 9 ? '9+' : total}</span>` : '';
+      })()}</a>
+      <a class="community-tab" id="planning-btn">Planung${(() => {
+        const b = state.planningBadges;
+        const total = (b.chat || 0) + (b.polls || 0);
+        return total ? `<span class="community-tab-badge">${total > 9 ? '9+' : total}</span>` : '';
+      })()}</a>
+      <a class="community-tab community-tab-tet" id="tet-atlas-btn" title="Trans Euro Trail Atlas">TET Atlas</a>
+    </nav>
+    ${isAdmin ? `<button class="btn btn-primary btn-sm community-subnav-cta" id="create-tour-btn"><span class="community-subnav-cta-full">+ Tour erstellen</span><span class="community-subnav-cta-short">+ Tour</span></button>` : ''}
   </div>
   <div class="home-layout">
     <div>${toursHtml}</div>
@@ -1469,10 +1654,10 @@ function renderCreateCommunity() {
 
 function renderPlanning() {
   const tabs = [
-    { id: 'polls', label: '📋 Abfragen' },
-    { id: 'map',   label: '🗺️ Karte'    },
-    { id: 'chat',  label: '💬 Chat'     },
-    { id: 'log',   label: '📝 Log'      },
+    { id: 'polls', label: 'Abfragen' },
+    { id: 'map',   label: 'Karte'    },
+    { id: 'chat',  label: 'Chat'     },
+    { id: 'log',   label: 'Log'      },
   ];
 
   const tabBar = tabs.map(t => `
@@ -1490,10 +1675,6 @@ function renderPlanning() {
 
   return `
 <div class="tour-detail">
-  <div class="tour-detail-header">
-    <button class="btn btn-ghost btn-sm" id="back-community-home">← ${esc(state.currentCommunity?.name || 'Community')}</button>
-    <div class="tour-detail-title">📋 Touren Planung</div>
-  </div>
   <div class="tour-tabs">${tabBar}</div>
   <div class="tab-content" id="plan-tab-content">
     ${tabContent}
@@ -2263,10 +2444,6 @@ function renderCommunityMedia() {
 
   return `
 <div class="tour-detail">
-  <div class="tour-detail-header">
-    <button class="btn btn-ghost btn-sm" id="back-community-home-media">← ${esc(state.currentCommunity?.name || 'Community')}</button>
-    <div class="tour-detail-title">📸 Media</div>
-  </div>
   <div class="cm-layout">
     <div class="cm-sidebar">
       <div class="cm-sidebar-header">Touren Media</div>
