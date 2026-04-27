@@ -93,15 +93,16 @@ function renderAuth() {
 
 function renderNav() {
   const username = state.currentUser?.username || '';
-  const initials = username
-    ? username.trim().split(/\s+/).slice(0,2).map(s => s[0]).join('').toUpperCase()
+  const _parts = username ? username.trim().split(/\s+/) : [];
+  const initials = _parts.length
+    ? (_parts[0][0] + (_parts[1]?.[0] || _parts[0][1] || '')).toUpperCase().slice(0, 2)
     : '?';
   return `
 <nav class="nav">
   <div class="nav-logo" id="nav-logo" title="Zur Startseite">
     <img src="img/logo.png" alt="MotoRoute" class="nav-logo-img" />
   </div>
-  <div class="nav-page-header" id="nav-page-header">${renderPageHeader()}</div>
+  <div class="nav-page-header${state.view === 'tour' ? ' nav-ph-tour' : ''}" id="nav-page-header">${renderPageHeader()}</div>
   <div class="nav-user">
     <div class="nav-avatar-menu">
       <button class="nav-avatar" id="nav-avatar-btn" aria-label="Menü" aria-haspopup="true" title="${esc(username)}">
@@ -242,7 +243,6 @@ function renderPageHeader() {
             </div>
           </div>`;
       }
-      // Tour view gets a special structure with the meta block tucked under the title row
       return `
         ${backBtn}
         <div class="page-header-titleblock">
@@ -250,7 +250,7 @@ function renderPageHeader() {
           <div class="page-header-title">${title}</div>
           ${metaBlock}
         </div>
-        <div class="page-header-actions">${cta}${menu}</div>`;
+        <div class="page-header-actions">${menu}</div>`;
     }
 
     default:
@@ -340,6 +340,10 @@ function renderTourCard(tour, locked) {
     dateDisplay = fmtFull(start);
   }
 
+  const todayMidnight = new Date(); todayMidnight.setHours(0, 0, 0, 0);
+  const lastDay = tour.end_date && tour.end_date !== tour.date ? tour.end_date : tour.date;
+  const isPast = new Date(lastDay + 'T23:59:59') < todayMidnight;
+
   const tourColor = getHomeTourCalendarColor(tour);
   const cardClass = isMine ? 'tour-card tour-card-mine' : 'tour-card tour-card-other';
 
@@ -384,37 +388,115 @@ function renderTourCard(tour, locked) {
     avatarStack += `<span class="tour-avatar tour-avatar-more">+${overflowCount}</span>`;
   }
 
+  const kmPct = distanceClean !== '—' ? Math.min(100, Math.round((parseFloat(distanceClean) / 500) * 100)) : 35;
+  const stripeColor = isMine ? 'var(--accent)' : 'var(--orange)';
+
+  // Country outline SVG paths derived from real geographic coordinates (lon/lat → SVG x/y).
+  // Each country uses its own scale/offset so it fills the 400×110 viewport well.
+  const COUNTRY_PATHS = {
+    // France – scale 8.9 px/°, x=145+(lon+5)*8.9, y=95-(lat-42)*8.9
+    // Clockwise: Belgium→Calais→Brittany tip→Bay of Biscay→Pyrenees→Med→Alps→Rhine
+    FR: "M 238 24 L 207 15 L 172 35 L 149 38 L 163 48 L 179 58 L 176 82 L 218 91 L 238 83 L 256 79 L 244 59 L 259 36 L 252 31 L 245 28 Z",
+    // Germany – scale 12.2 px/°, x=145+(lon-6)*12.2, y=103-(lat-47.3)*12.2
+    // Clockwise: North Sea→Denmark→Baltic→Poland→Czech→Bavaria→Konstanz→Rhine→Aachen
+    DE: "M 157 27 L 177 9 L 200 12 L 237 18 L 246 27 L 249 60 L 224 65 L 237 86 L 227 101 L 184 98 L 167 96 L 157 80 L 146 60 L 160 29 Z",
+    // Italy – scale 8.3 px/°, x=154+(lon-7)*8.3, y=92-(lat-38)*8.3
+    // Alpine arc → Trieste → Adriatic coast → heel → toe → Tyrrhenian coast
+    IT: "M 158 44 L 170 39 L 167 21 L 183 17 L 200 17 L 211 29 L 197 41 L 225 63 L 236 67 L 248 75 L 225 91 L 227 80 L 212 68 L 200 60 Z",
+    // Austria – scale 18 px/°, centered lon 13.35 / lat 47.7
+    // Very elongated E-W strip; x=200+(lon-13.35)*18, y=55-(lat-47.7)*18
+    AT: "M 131 64 L 149 46 L 194 50 L 217 44 L 259 44 L 269 71 L 237 75 L 208 75 L 149 73 L 131 64 Z",
+    // Spain (mainland) – scale 10.2 px/°, x=200+(lon+3)*10.2, y=58-(lat-39.85)*10.2
+    // NW Atlantic coast → N coast → Pyrenees → Med → SE → SW → Portugal border
+    ES: "M 142 37 L 192 21 L 212 22 L 249 29 L 264 32 L 236 82 L 210 90 L 168 97 L 155 88 L 142 37 Z",
+    // Switzerland – scale 17.4 px/°, x=200+(lon-8.2)*17.4, y=55-(lat-46.8)*17.4
+    CH: "M 190 43 L 207 39 L 223 41 L 240 55 L 214 72 L 164 65 L 160 52 Z",
+    // Greece – scale 14 px/°, x=200+(lon-23)*14, y=55-(lat-38.4)*14
+    // NW→N coast→NE→Aegean→Athens→Peloponnese→back
+    GR: "M 151 23 L 200 19 L 246 12 L 228 21 L 204 44 L 210 62 L 186 83 L 182 65 L 158 40 Z",
+    // Morocco – scale 10 px/°, x=200+(lon+7.1)*10, y=55-(lat-31.8)*10
+    MA: "M 195 15 L 242 20 L 253 23 L 253 94 L 139 94 L 175 69 L 195 37 Z",
+    // Portugal – scale 18.3 px/°, x=170+(lon+9.5)*18.3, y=103-(lat-37)*18.3
+    PT: "M 183 8 L 230 13 L 225 48 L 208 101 L 179 103 L 185 26 Z",
+    // Balkans – scale 13 px/°, x=200+(lon-18)*13, y=55-(lat-44.2)*13
+    BA: "M 142 25 L 173 34 L 223 33 L 259 58 L 252 84 L 207 77 L 169 60 L 147 46 Z",
+  };
+  const COUNTRY_LABELS = {
+    DE:'Deutschland', FR:'Frankreich', IT:'Italien', AT:'Österreich',
+    ES:'Spanien', CH:'Schweiz', GR:'Griechenland', MA:'Marokko', PT:'Portugal', BA:'Balkan',
+  };
+  function detectCountry(t) {
+    const hay = ((t.name || '') + ' ' + (t.destination || '')).toLowerCase();
+    if (/frankreich|france|\bfr\b|pyrenäen|provence|elsass|bretagne|normandie|vosges|ardeche|tdr\b|tet.?fr/.test(hay)) return 'FR';
+    if (/italien|italy|italian|dolomit|bozen|cortina|meran|südtirol|south tyrol|alto adige|gardasee|\bgarda\b|toskana|umbrien|sardin|sizili|ligurien|venedig|veneto|trient|trento/.test(hay)) return 'IT';
+    if (/österreich|austria|austrian|\btirol\b|salzburg|innsbruck|hallstatt|montafon|vorarlberg|steiermark|kärnten|carinthia|zell am see|grossglockner/.test(hay)) return 'AT';
+    if (/deutschland|germany|german|bayerisch|münchen|allgäu|schwarzwald|eifel|\brhein\b|mosel|harz|tet.?de|thüringen|sachsen|franken|berchtesgaden/.test(hay)) return 'DE';
+    if (/spanien|spain|spanish|katalonien|andalusien|madrid|barcelona|camino|tet.?es|mallorca|asturien|navarra|aragonien/.test(hay)) return 'ES';
+    if (/schweiz|switzerland|swiss|davos|engadin|graubünden|appenzell|wallis|tessin|lugano|interlaken|luzern/.test(hay)) return 'CH';
+    if (/griechenland|greece|greek|kreta|crete|korinth|olympia|peloponnes|thessaloniki|athen|athens/.test(hay)) return 'GR';
+    if (/marokko|morocco|marrakech|atlas|fes\b|agadir|casablanca|rabat|sahara/.test(hay)) return 'MA';
+    if (/portugal|lissabon|lisbon|porto\b|algarve|alentejo/.test(hay)) return 'PT';
+    if (/balkan|kroatien|croatia|slowenien|slovenia|bosnien|serbien|zagreb|belgrad|split|dubrovnik|kotor|montenegro|nordmazedonien/.test(hay)) return 'BA';
+    return null;
+  }
+  const countryCode = detectCountry(tour);
+  const countryPath = countryCode ? COUNTRY_PATHS[countryCode] : null;
+  const countryLabel = countryCode ? COUNTRY_LABELS[countryCode] : null;
+
+  const gpxThumb = `
+  <div class="tour-card-thumb">
+    <div class="tour-card-thumb-labels">
+      ${isMine  ? '<span class="tag tag-mine">✓ Dabei</span>'   : ''}
+      ${isAdmin ? '<span class="tag tag-accent">Admin</span>'    : ''}
+      ${locked  ? '<span class="tag tag-muted">Passwort</span>'  : ''}
+    </div>
+    ${isPast ? '<span class="tag tag-past tour-card-thumb-tag-right">Vergangen</span>' : ''}
+    <svg class="tour-card-thumb-svg" viewBox="0 0 400 110" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+      <rect width="400" height="110" fill="var(--surface2)"/>
+      <ellipse cx="200" cy="56" rx="195" ry="54" fill="none" stroke="rgba(255,255,255,0.028)" stroke-width="1"/>
+      <ellipse cx="200" cy="56" rx="160" ry="44" fill="none" stroke="rgba(255,255,255,0.032)" stroke-width="1"/>
+      <ellipse cx="200" cy="56" rx="124" ry="34" fill="none" stroke="rgba(255,255,255,0.038)" stroke-width="1"/>
+      <ellipse cx="200" cy="56" rx="88"  ry="24" fill="none" stroke="rgba(255,255,255,0.042)" stroke-width="1"/>
+      <ellipse cx="200" cy="56" rx="52"  ry="14" fill="none" stroke="rgba(255,255,255,0.038)" stroke-width="1"/>
+      <ellipse cx="200" cy="56" rx="20"  ry="6"  fill="none" stroke="rgba(255,255,255,0.030)" stroke-width="1"/>
+      ${countryPath ? `
+        <path d="${countryPath}" fill="${tourColor}" fill-opacity="0.08" stroke="${tourColor}" stroke-width="1.5" stroke-opacity="0.5" stroke-linejoin="round"/>
+        <path d="${countryPath}" fill="none" stroke="${tourColor}" stroke-width="0.7" stroke-opacity="0.25" stroke-linejoin="round" transform="translate(3,3)"/>
+      ` : `
+        <path d="M 20 95 L 80 38 L 115 62 L 160 18 L 205 70 L 230 50 L 270 85 L 310 30 L 355 72 L 380 55 L 380 95 Z"
+          fill="${tourColor}" fill-opacity="0.07" stroke="${tourColor}" stroke-width="1.4" stroke-opacity="0.35" stroke-linejoin="round"/>
+        <path d="M 20 95 L 80 38 L 115 62 L 160 18 L 205 70 L 230 50 L 270 85 L 310 30 L 355 72 L 380 55 L 380 95 Z"
+          fill="none" stroke="${tourColor}" stroke-width="0.6" stroke-opacity="0.18" stroke-linejoin="round" transform="translate(2,3)"/>
+        <path d="M 155 18 L 160 11 L 165 18" fill="none" stroke="${tourColor}" stroke-width="1" stroke-opacity="0.4" stroke-linejoin="round"/>
+        <path d="M 306 30 L 310 22 L 314 30" fill="none" stroke="${tourColor}" stroke-width="1" stroke-opacity="0.4" stroke-linejoin="round"/>
+      `}
+    </svg>
+  <span class="tour-card-country-label" style="color:${tourColor}">${countryLabel ? countryLabel.toUpperCase() : 't.b.d.'}</span>
+  </div>
+  <div class="tour-card-km-stripe" style="background:rgba(255,255,255,0.06)"><div class="tour-card-km-fill" style="width:${kmPct}%;background:${stripeColor}"></div></div>`;
+
   return `
 <div class="card ${cardClass}" data-tour-id="${tour.id}">
-  <div class="tour-card-stripe"></div>
-  <div class="tour-card-topbar">
-    <div class="tour-card-eyebrow">${dateDisplay}</div>
-    <div class="tour-card-toplabels">
-      ${isMine ? '<span class="tag tag-mine">✓ Dabei</span>' : ''}
-      ${isAdmin ? '<span class="tag tag-accent">Admin</span>' : ''}
-      ${locked  ? '<span class="tag tag-muted">Passwort</span>' : ''}
-    </div>
-  </div>
-  <div class="tour-card-header">
+  ${gpxThumb}
+  <div class="tour-card-body">
     <div class="tour-card-name">${esc(tour.name)}</div>
     <div class="tour-card-sub">${esc(tour.destination || 'Kein Ziel')}</div>
-  </div>
-  <div class="tour-card-stats">
-    <span class="tour-card-stat-dot" style="background:${tourColor};--tour-card-dot:${tourColor}"></span>
-    <span class="tour-card-stat"><strong>${distanceClean}</strong>${distanceClean !== '—' ? '<span class="tour-card-stat-unit">KM</span>' : ''}</span>
-    <span class="tour-card-stat-sep">·</span>
-    <span class="tour-card-stat"><strong>${memberCount}</strong><span class="tour-card-stat-unit">RIDER</span></span>
+    <div class="tour-card-stats">
+      <span class="tour-card-stat"><span class="tour-card-stat-dot">●</span> <strong>${distanceClean}</strong>${distanceClean !== '—' ? '<span class="tour-card-stat-unit"> KM</span>' : ''}</span>
+      <span class="tour-card-stat tour-card-stat-muted"><strong>${memberCount}</strong><span class="tour-card-stat-unit"> RIDER</span></span>
+    </div>
   </div>
   <div class="tour-card-footer">
-    <div class="tour-card-avatars">${avatarStack}</div>
+    <div class="tour-card-date">${dateDisplay}</div>
     <div class="tour-card-actions">
       ${badgesHtml}
+      <div class="tour-card-avatars">${avatarStack}</div>
       <button class="btn-copy-link" data-copy-id="${tour.id}" title="Einladungslink kopieren" aria-label="Link kopieren">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
       </button>
       ${isMine
-        ? `<button class="btn btn-primary btn-sm" data-open-id="${tour.id}">Öffnen →</button>`
-        : `<button class="btn btn-ghost btn-sm"   data-join-id="${tour.id}">Beitreten</button>`}
+        ? `<button class="btn btn-green-soft btn-sm" data-open-id="${tour.id}">Öffnen →</button>`
+        : `<button class="btn btn-orange-soft btn-sm" data-join-id="${tour.id}">Beitreten</button>`}
     </div>
   </div>
 </div>`;
@@ -437,62 +519,58 @@ function getHomeTourCalendarColor(tour) {
     : '#7a7880';
 }
 
-function renderCalWidget() {
-  if (!state.calMonth) state.calMonth = new Date();
-  const y = state.calMonth.getFullYear();
-  const m = state.calMonth.getMonth();
-
-  const days     = daysInMonth(y, m);
-  const firstDay = (new Date(y, m, 1).getDay() + 6) % 7;
-  const today    = new Date();
+/**
+ * Build a single-month grid HTML (cells only, no nav).
+ * Returns { cells, dayMap, visibleTours }
+ * visibleTours: [{name, color, kw}] — tours/plans visible this month, deduped
+ */
+function _buildMonthGrid(y, m, ranges) {
+  const days      = daysInMonth(y, m);
+  const firstDay  = (new Date(y, m, 1).getDay() + 6) % 7;
+  const today     = new Date();
   const monthStart = new Date(y, m, 1);
   const monthEnd   = new Date(y, m, days);
 
-  const myTours    = state.tours.filter(t =>  state.myTourIds.has(t.id));
-  const otherTours = state.tours.filter(t => !state.myTourIds.has(t.id));
-  const toursToShow = state.calShowAll ? [...myTours, ...otherTours] : myTours;
-
-  // Map: dayNumber → [{name, color, isMine}]
   const dayMap = {};
-  const visibleMine  = [];
-  const visibleOther = [];
+  const seenNames = new Set();
+  const visibleTours = [];
 
-  toursToShow.forEach((tour, idx) => {
-    const isMine = state.myTourIds.has(tour.id);
-    // Own tours use the palette; other tours use muted grey tones
-    const color  = getHomeTourCalendarColor(tour);
-
-    const start = new Date(tour.date + 'T12:00:00');
-    const end   = tour.end_date ? new Date(tour.end_date + 'T12:00:00') : start;
-
+  ranges.forEach(range => {
+    const start = range.start instanceof Date ? range.start : new Date(range.start + 'T12:00:00');
+    const end   = range.end   instanceof Date ? range.end   : new Date(range.end   + 'T12:00:00');
     if (start > monthEnd || end < monthStart) return;
-    if (isMine) visibleMine.push({ name: tour.name, color });
-    else        visibleOther.push({ name: tour.name, color });
+
+    if (!seenNames.has(range.name)) {
+      seenNames.add(range.name);
+      // Compute ISO week of the start (clamped to month)
+      const kwDate = new Date(Math.max(start, monthStart));
+      const mon = new Date(kwDate);
+      mon.setDate(mon.getDate() - ((mon.getDay() + 6) % 7));
+      const kw = getISOWeek(mon);
+      visibleTours.push({ name: range.name, color: range.color, isMine: range.isMine, kw });
+    }
 
     const cursor = new Date(Math.max(start, monthStart));
-    cursor.setHours(12, 0, 0, 0); // normalise to noon — avoids DST skip
-    const limit  = new Date(Math.min(end,   monthEnd));
+    cursor.setHours(12, 0, 0, 0);
+    const limit  = new Date(Math.min(end, monthEnd));
     limit.setHours(12, 0, 0, 0);
     while (cursor <= limit) {
       const dn = cursor.getDate();
       if (!dayMap[dn]) dayMap[dn] = [];
-      dayMap[dn].push({ name: tour.name, color, isMine });
+      dayMap[dn].push(range);
       cursor.setDate(cursor.getDate() + 1);
       cursor.setHours(12, 0, 0, 0);
     }
   });
 
-  const monthName = state.calMonth.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' });
-  const total     = Math.ceil((firstDay + days) / 7) * 7;
-
+  const total = Math.ceil((firstDay + days) / 7) * 7;
   let cells = '';
   for (let i = 0; i < total; i++) {
-    const dn   = i - firstDay + 1;
-    const inM  = dn >= 1 && dn <= days;
+    const dn      = i - firstDay + 1;
+    const inM     = dn >= 1 && dn <= days;
     const isToday = inM && today.getDate() === dn && today.getMonth() === m && today.getFullYear() === y;
     const tours   = inM ? (dayMap[dn] || []) : [];
 
-    // Tint based on first own tour; fall back to first other tour (dimmer)
     const firstMine  = tours.find(t => t.isMine);
     const firstOther = tours.find(t => !t.isMine);
     const bg = firstMine  ? `background:${firstMine.color}26;`
@@ -502,31 +580,257 @@ function renderCalWidget() {
       .filter(Boolean).join(' ');
 
     const dots = tours.slice(0, 3)
-      .map(t => `<span class="cal-day-dot" style="background:${t.color};opacity:${t.isMine ? 1 : 0.45}"></span>`)
+      .map(t => `<span class="cal-day-dot" style="background:${t.color};opacity:${(t.isMine === false) ? 0.45 : 1}"></span>`)
       .join('');
 
     cells += `<div class="${cls}" style="${bg}">${inM ? dn : ''}${dots ? `<div class="cal-day-dots">${dots}</div>` : ''}</div>`;
   }
 
-  const legendMine  = visibleMine.map(t => `
-    <div class="cal-legend-item">
-      <span class="cal-legend-swatch" style="background:${t.color}"></span>
-      <span class="cal-legend-name">${esc(t.name)}</span>
-    </div>`).join('');
+  return { cells, dayMap, visibleTours };
+}
 
-  const legendOther = visibleOther.length && state.calShowAll ? `
-    <div class="cal-legend-divider">Andere Touren</div>
-    ${visibleOther.map(t => `
-    <div class="cal-legend-item" style="opacity:.55">
-      <span class="cal-legend-swatch" style="background:${t.color}"></span>
-      <span class="cal-legend-name">${esc(t.name)}</span>
-    </div>`).join('')}` : '';
+/**
+ * Render the year-grid body (nav header + months + legend).
+ * Returns inner HTML string — caller wraps in outer div.
+ * @param {number} y - year to display
+ * @param {boolean} showPlans - include poll/plan date ranges
+ * @param {string} prevBtnId - id for prev button
+ * @param {string} nextBtnId - id for next button
+ */
+function _renderYearBody(y, showPlans, prevBtnId, nextBtnId) {
+  const today = new Date();
 
-  const legendHtml = (legendMine + legendOther) ||
-    `<span style="color:var(--muted);font-size:11px">Keine Touren in diesem Monat</span>`;
+  // Build tour date ranges from all community tours
+  const tours = state.tours || [];
+  const tourRanges = tours.map((t, i) => ({
+    name:  t.name,
+    color: TOUR_PALETTE[i % TOUR_PALETTE.length],
+    start: new Date(t.date + 'T12:00:00'),
+    end:   t.end_date ? new Date(t.end_date + 'T12:00:00') : new Date(t.date + 'T12:00:00'),
+    isTour: true,
+    isMine: state.myTourIds ? state.myTourIds.has(t.id) : true,
+  }));
+
+  // Build plan ranges (if requested)
+  const PLAN_COLOR = '#00bcd4';
+  let planRanges = [];
+  if (showPlans) {
+    const yearlyPolls = (state.communityPolls || []).filter(p => p.poll_type === 'yearly' && p.poll_year === y);
+    yearlyPolls.forEach(poll => {
+      (poll.options || []).forEach(opt => {
+        if (opt.date_start && opt.date_end) {
+          planRanges.push({
+            name:   opt.text || poll.question,
+            color:  PLAN_COLOR,
+            start:  new Date(opt.date_start + 'T12:00:00'),
+            end:    new Date(opt.date_end   + 'T12:00:00'),
+            isPlan: true,
+            isMine: true,
+          });
+        }
+      });
+    });
+  }
+
+  const allRanges = [...tourRanges, ...planRanges];
+
+  const MONTH_NAMES = ['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
+  const DAY_NAMES   = ['Mo','Di','Mi','Do','Fr','Sa','So'];
+
+  let monthsHtml = '';
+
+  for (let m = 0; m < 12; m++) {
+    const days      = daysInMonth(y, m);
+    const firstDay  = (new Date(y, m, 1).getDay() + 6) % 7;
+    const monthStart = new Date(y, m, 1);
+    const monthEnd   = new Date(y, m, days);
+
+    // Build dayMap for this month
+    const dayMap = {};
+    allRanges.forEach(tr => {
+      if (tr.start > monthEnd || tr.end < monthStart) return;
+      const cur = new Date(Math.max(tr.start, monthStart));
+      cur.setHours(12, 0, 0, 0);
+      const lim = new Date(Math.min(tr.end, monthEnd));
+      lim.setHours(12, 0, 0, 0);
+      while (cur <= lim) {
+        const dn = cur.getDate();
+        if (!dayMap[dn]) dayMap[dn] = [];
+        dayMap[dn].push(tr);
+        cur.setDate(cur.getDate() + 1);
+        cur.setHours(12, 0, 0, 0);
+      }
+    });
+
+    // Week header
+    const weekHeader = `<div class="ycal-kw-cell"></div>` +
+      DAY_NAMES.map(d => `<div class="ycal-head">${d}</div>`).join('');
+
+    const total = Math.ceil((firstDay + days) / 7) * 7;
+    let rowsHtml = '';
+
+    for (let i = 0; i < total; i += 7) {
+      const rowDay  = i - firstDay + 1;
+      const rowDate = rowDay >= 1 && rowDay <= days
+        ? new Date(y, m, rowDay)
+        : rowDay < 1 ? new Date(y, m, 1) : new Date(y, m, days);
+      const mon = new Date(rowDate);
+      mon.setDate(mon.getDate() - ((mon.getDay() + 6) % 7));
+      const kw = getISOWeek(mon);
+
+      let numCells = `<div class="ycal-kw-cell" title="KW ${kw}">
+        <span style="font-size:9px;color:var(--muted)">KW${kw}</span>
+      </div>`;
+
+      for (let j = 0; j < 7; j++) {
+        const dn      = i + j - firstDay + 1;
+        const inM     = dn >= 1 && dn <= days;
+        const isToday = inM && today.getDate() === dn && today.getMonth() === m && today.getFullYear() === y;
+        const toursHere = inM ? (dayMap[dn] || []) : [];
+        const bg = toursHere.filter(t=>t.isTour)[0]?.color
+          ? `background:${toursHere.filter(t=>t.isTour)[0].color}22;`
+          : toursHere.filter(t=>t.isPlan)[0]?.color
+            ? `background:${toursHere.filter(t=>t.isPlan)[0].color}15;`
+            : '';
+        const title = toursHere.map(t => t.name).join(', ');
+        numCells += `<div class="ycal-day${isToday ? ' ycal-today' : ''}${!inM ? ' ycal-out' : ''}"
+          style="${bg}" title="${esc(title)}">${inM ? dn : ''}</div>`;
+      }
+
+      const weekEvents = { tour: [], plan: [] };
+      for (let j = 0; j < 7; j++) {
+        const dn = i + j - firstDay + 1;
+        if (dn < 1 || dn > days) continue;
+        (dayMap[dn] || []).forEach(item => {
+          const arr = item.isTour ? weekEvents.tour : weekEvents.plan;
+          if (!arr.find(e => e.name === item.name)) {
+            let startCol = j + 1;
+            for (let k = j - 1; k >= 0; k--) {
+              const kdn = i + k - firstDay + 1;
+              if (kdn >= 1 && (dayMap[kdn] || []).find(x => x.name === item.name)) {
+                startCol = k + 1;
+              } else break;
+            }
+            let endCol = j + 1;
+            for (let k = j + 1; k < 7; k++) {
+              const kdn = i + k - firstDay + 1;
+              if (kdn >= 1 && kdn <= days && (dayMap[kdn] || []).find(x => x.name === item.name)) {
+                endCol = k + 1;
+              } else break;
+            }
+            arr.push({ name: item.name, color: item.color, startCol, endCol });
+          }
+        });
+      }
+
+      let eventCells = '';
+      const allWeekEvents = [...weekEvents.tour, ...weekEvents.plan];
+      if (allWeekEvents.length > 0) {
+        eventCells = '<div></div>';
+        allWeekEvents.forEach(ev => {
+          const textColor = ev.color === '#00bcd4' ? '#003' : '#000';
+          eventCells += `<div class="ycal-event-bar" title="${esc(ev.name)}"
+            style="grid-column:${ev.startCol + 1} / ${ev.endCol + 2};background:${ev.color};color:${textColor}">
+            ${esc(ev.name)}
+          </div>`;
+        });
+      }
+
+      const eventsRow = allWeekEvents.length > 0
+        ? `<div class="ycal-events-row">${eventCells}</div>`
+        : '';
+
+      rowsHtml += `<div class="ycal-num-row">${numCells}</div>${eventsRow}`;
+    }
+
+    monthsHtml += `
+<div class="ycal-month">
+  <div class="ycal-month-name">${MONTH_NAMES[m]}</div>
+  <div class="ycal-grid-header">${weekHeader}</div>
+  <div class="ycal-rows">${rowsHtml}</div>
+</div>`;
+  }
+
+  // Legend
+  const tourLegend = tourRanges.map(t => `
+<div class="cal-legend-item" style="margin-bottom:4px">
+  <span class="cal-legend-swatch" style="background:${t.color}"></span>
+  <span class="cal-legend-name">${esc(t.name)}</span>
+</div>`).join('');
+
+  const planLegend = (showPlans && planRanges.length) ? `
+<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
+            color:#00bcd4;margin:8px 0 4px">Jahresplanung ${y}</div>` +
+  planRanges.map(p => `
+<div class="cal-legend-item" style="margin-bottom:4px">
+  <span class="cal-legend-swatch" style="background:#00bcd4"></span>
+  <span class="cal-legend-name">${esc(p.name)}</span>
+</div>`).join('') : '';
+
+  const legend = (tourLegend + planLegend) ||
+    `<span style="color:var(--muted);font-size:11px">Keine Touren</span>`;
+
+  return `
+  <div class="ycal-header">
+    <button class="cal-nav-btn" id="${prevBtnId}">‹</button>
+    <div class="cal-title">${y}</div>
+    <button class="cal-nav-btn" id="${nextBtnId}">›</button>
+  </div>
+  <div class="ycal-months">${monthsHtml}</div>
+  <div class="cal-legend-list" style="padding:0 4px 4px">${legend}</div>`;
+}
+
+function renderCalWidget() {
+  if (!state.calMonth) state.calMonth = new Date();
+  const view = state.calView || 'month';
+
+  const toggleHtml = `
+<div class="cal-view-toggle">
+  <button class="cal-view-btn${view === 'month' ? ' active' : ''}" onclick="window._setCalView('month')">Monat</button>
+  <button class="cal-view-btn${view === 'year'  ? ' active' : ''}" onclick="window._setCalView('year')">Jahr</button>
+</div>`;
+
+  if (view === 'year') {
+    const y = state.calMonth.getFullYear();
+    return `
+<div class="calendar-widget">
+  ${toggleHtml}
+  ${_renderYearBody(y, false, 'home-ycal-prev', 'home-ycal-next')}
+</div>`;
+  }
+
+  // ── Month view ──
+  const y = state.calMonth.getFullYear();
+  const m = state.calMonth.getMonth();
+
+  const myTours    = state.tours.filter(t =>  state.myTourIds.has(t.id));
+  const otherTours = state.tours.filter(t => !state.myTourIds.has(t.id));
+  const toursToShow = state.calShowAll ? [...myTours, ...otherTours] : myTours;
+
+  const ranges = toursToShow.map(tour => ({
+    name:  tour.name,
+    color: getHomeTourCalendarColor(tour),
+    start: new Date(tour.date + 'T12:00:00'),
+    end:   tour.end_date ? new Date(tour.end_date + 'T12:00:00') : new Date(tour.date + 'T12:00:00'),
+    isMine: state.myTourIds.has(tour.id),
+  }));
+
+  const { cells, visibleTours } = _buildMonthGrid(y, m, ranges);
+
+  const monthName = state.calMonth.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' });
+
+  const tourListHtml = visibleTours.length
+    ? visibleTours.map(t => `
+<div class="cal-month-tour-row">
+  <span class="cal-month-tour-dot" style="background:${t.color}"></span>
+  <span class="cal-month-tour-kw">KW${t.kw}</span>
+  <span class="cal-month-tour-name">${esc(t.name)}</span>
+</div>`).join('')
+    : `<span style="color:var(--muted);font-size:11px">Keine Touren in diesem Monat</span>`;
 
   return `
 <div class="calendar-widget">
+  ${toggleHtml}
   <div class="cal-nav">
     <button class="cal-nav-btn" id="cal-prev">‹</button>
     <div class="cal-title">${monthName}</div>
@@ -536,7 +840,7 @@ function renderCalWidget() {
     ${['Mo','Di','Mi','Do','Fr','Sa','So'].map(d => `<div class="cal-dow">${d}</div>`).join('')}
     ${cells}
   </div>
-  <div class="cal-legend-list">${legendHtml}</div>
+  <div class="cal-month-tours">${tourListHtml}</div>
   <label class="cal-show-all-label">
     <input type="checkbox" id="cal-show-all" ${state.calShowAll ? 'checked' : ''} />
     Alle Touren anzeigen
@@ -1048,21 +1352,34 @@ function renderInfoTab(tour) {
           ${state.tourPlanDates.length === 0
             ? '<p style="color:var(--muted);font-size:13px;margin-bottom:12px">Noch keine Planungstermine.</p>'
             : ''}
-          ${state.tourPlanDates.map(pd => `
+          ${state.tourPlanDates.map(pd => {
+            const pdDate = new Date(pd.date + 'T12:00:00').toLocaleDateString('de-DE', { weekday:'short', day:'2-digit', month:'short' });
+            const icon = pd.type === 'treffpunkt' ? '📍' : '📅';
+            return `
           <div class="plan-date-item">
-            <div>
-              <strong>${new Date(pd.date + 'T12:00:00').toLocaleDateString('de-DE', { weekday:'short', day:'2-digit', month:'short' })}</strong>
+            <div style="min-width:0">
+              <span style="font-size:13px">${icon}</span>
+              <strong>${pdDate}</strong>
               ${pd.label ? ` <span style="color:var(--muted)">— ${esc(pd.label)}</span>` : ''}
+              ${pd.maps_link ? ` <a href="${esc(pd.maps_link)}" target="_blank" rel="noopener" class="plan-date-maps-link">Maps →</a>` : ''}
             </div>
             ${isAdmin ? `<button class="btn btn-ghost btn-sm" data-del-date="${pd.id}"
-              style="color:var(--danger);padding:3px 8px">✕</button>` : ''}
-          </div>`).join('')}
+              style="color:var(--danger);padding:3px 8px;flex-shrink:0">✕</button>` : ''}
+          </div>`;
+          }).join('')}
         </div>
 
         ${isAdmin ? `
         <div style="margin-top:14px;background:var(--surface2);border-radius:var(--radius);padding:12px">
-          <div style="font-size:11px;font-weight:600;margin-bottom:8px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em">
+          <div style="font-size:11px;font-weight:600;margin-bottom:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em">
             Termin hinzufügen
+          </div>
+          <div class="form-group" style="margin-bottom:10px">
+            <label>Art</label>
+            <select id="pd-type">
+              <option value="treffpunkt">📍 Treffpunkt</option>
+              <option value="sonstiger">📅 Sonstiger Termin</option>
+            </select>
           </div>
           <div class="form-group" style="margin-bottom:10px">
             <label>Datum</label>
@@ -1070,7 +1387,11 @@ function renderInfoTab(tour) {
           </div>
           <div class="form-group" style="margin-bottom:10px">
             <label>Beschriftung (optional)</label>
-            <input type="text" id="add-label" placeholder="z.B. Abfahrt, Mittagspause…" maxlength="60" />
+            <input type="text" id="add-label" placeholder="z.B. Parkplatz Talstation, Abfahrt…" maxlength="80" />
+          </div>
+          <div class="form-group" style="margin-bottom:12px">
+            <label>Google Maps Link (optional)</label>
+            <input type="url" id="add-maps-link" placeholder="https://maps.google.com/…" />
           </div>
           <button class="btn btn-ghost btn-sm" id="add-date-btn">+ Termin hinzufügen</button>
         </div>` : ''}
@@ -1168,7 +1489,7 @@ function _renderTourCalMonth(tour, y, m, tourStart, tourEnd, today, hasRange, sh
     const isEnd    = inTour && new Date(y, m, dn).toDateString() === tourEnd.toDateString();
     const isSingle = isStart && isEnd;
 
-    const cls = ['cal-day', !inM && 'other-month', isToday && 'today', hasPlan && 'has-tour']
+    const cls = ['cal-day', !inM && 'other-month', isToday && 'today', hasPlan && 'has-plan']
       .filter(Boolean).join(' ');
 
     let style = '';
@@ -1184,7 +1505,7 @@ function _renderTourCalMonth(tour, y, m, tourStart, tourEnd, today, hasRange, sh
       }
     }
 
-    cells += `<div class="${cls}" style="${style}">${inM ? dn : ''}</div>`;
+    cells += `<div class="${cls}" style="${style}">${inM ? dn : ''}${hasPlan && inM ? '<span class="cal-plan-dot"></span>' : ''}</div>`;
   }
 
   if (showNav) {
@@ -1205,7 +1526,7 @@ function _renderTourCalMonth(tour, y, m, tourStart, tourEnd, today, hasRange, sh
       <span class="cal-legend-name">${hasRange ? 'Tourdauer' : 'Startdatum'}</span>
     </div>
     <div class="cal-legend-item">
-      <span class="cal-legend-swatch" style="background:rgba(240,120,0,0.35)"></span>
+      <span class="cal-plan-dot" style="position:static;display:inline-block;margin:0 2px"></span>
       <span class="cal-legend-name">Planungstermin</span>
     </div>
   </div>
@@ -1329,7 +1650,7 @@ function renderCommunities() {
         <span class="community-card-members">${memberCount} ${memberCount === 1 ? 'Mitglied' : 'Mitglieder'}</span>
       </div>
     </div>
-    <button class="btn ${isMember ? 'btn-primary' : 'btn-ghost'} btn-sm" data-enter-community="${c.id}">
+    <button class="btn btn-accent-soft btn-sm" data-enter-community="${c.id}">
       ${isMember ? 'Öffnen →' : 'Beitreten'}
     </button>
   </div>
@@ -1465,16 +1786,136 @@ function renderCommunityHome() {
 
   const tourCards = tours => tours.map(t => renderTourCard(t, false)).join('');
 
-  const toursHtml = state.tours.length === 0 ? `
-    <div style="text-align:center;padding:60px 20px;color:var(--muted)">
-      <div style="font-size:48px;margin-bottom:16px">🏍️</div>
-      <div style="font-size:18px;font-weight:600;margin-bottom:8px">Noch keine Touren</div>
-      <div style="font-size:14px">Erstelle die erste Tour für diese Community!</div>
-    </div>` : `
-    ${upcoming.length > 0 ? `<div class="home-section-title">Kommende Touren (${upcoming.length})</div>
-    <div class="tour-grid">${tourCards(upcoming)}</div>` : ''}
-    ${past.length > 0 ? `<div class="home-section-title" style="margin-top:32px">Vergangene Touren (${past.length})</div>
-    <div class="tour-grid">${tourCards(past)}</div>` : ''}`;
+  const filter = state.tourFilter || 'all';
+  const filteredTours = filter === 'upcoming' ? upcoming
+                      : filter === 'past'     ? past
+                      : [...upcoming, ...past];
+
+  const filterTabs = `
+    <div class="tour-filter-tabs">
+      <button class="tour-filter-tab${filter === 'all'      ? ' active' : ''}" onclick="window._setTourFilter('all')">Alle</button>
+      <button class="tour-filter-tab${filter === 'upcoming' ? ' active' : ''}" onclick="window._setTourFilter('upcoming')">Bevorstehend</button>
+      <button class="tour-filter-tab${filter === 'past'     ? ' active' : ''}" onclick="window._setTourFilter('past')">Vergangen</button>
+    </div>`;
+
+  const toursCardsHtml = state.tours.length === 0
+    ? `<div style="text-align:center;padding:60px 20px;color:var(--muted)">
+        <div style="font-size:48px;margin-bottom:16px">🏍️</div>
+        <div style="font-size:18px;font-weight:600;margin-bottom:8px">Noch keine Touren</div>
+        <div style="font-size:14px">Erstelle die erste Tour für diese Community!</div>
+      </div>`
+    : filteredTours.length > 0
+      ? `<div class="tour-grid">${tourCards(filteredTours)}</div>`
+      : `<div style="text-align:center;padding:40px 20px;color:var(--muted);font-size:14px">Keine Touren in dieser Kategorie.</div>`;
+
+  // Check-in box — next upcoming tour: participant grid + weather forecast
+  const nextTour = upcoming[0] || null;
+  const checkInBox = nextTour ? (() => {
+    const tStart = new Date(nextTour.date + 'T12:00:00');
+    const tEnd   = nextTour.end_date && nextTour.end_date !== nextTour.date ? new Date(nextTour.end_date + 'T12:00:00') : null;
+    const fmtShort = (d) => d.toLocaleDateString('de-DE', { weekday:'short', day:'2-digit', month:'2-digit' });
+    const dateStr = tEnd ? `${fmtShort(tStart)} – ${fmtShort(tEnd)}` : fmtShort(tStart);
+    const now = new Date();
+    const diffDays = Math.ceil((tStart - now) / 86400000);
+    const countdown = diffDays <= 0 ? 'HEUTE' : diffDays === 1 ? 'IN 1 TAG' : `IN ${diffDays} TAGEN`;
+
+    const memberIds = (state.tourMemberIds?.[nextTour.id] || []);
+    const adminId   = nextTour.admin_id;
+    const allIds    = [adminId, ...memberIds.filter(id => id !== adminId)];
+    const isMineNext = state.myTourIds.has(nextTour.id);
+    const userId     = state.currentUser?.id;
+    const tourId     = nextTour.id;
+
+    const avatarInitials = (id) => {
+      const n = state.profileCache[id] || '?';
+      const p = n.trim().split(/\s+/);
+      return (p[0][0] + (p[1]?.[0] || p[0][1] || '')).toUpperCase().slice(0,2);
+    };
+
+    // Read per-user check-in state from Supabase (cached in state.tourCheckins)
+    const checkinSet = state.tourCheckins?.[tourId] || new Set();
+    const getConfirmed = (id) => checkinSet.has(id);
+    const confirmedCount = allIds.filter(getConfirmed).length;
+
+    const participantGrid = allIds.map(id => {
+      const confirmed = getConfirmed(id);
+      const name = state.profileCache[id] || '';
+      const isSelf = id === userId;
+      return `<div class="checkin-participant ${confirmed ? 'checkin-p-confirmed' : 'checkin-p-pending'}${isSelf ? ' checkin-p-self' : ''}" title="${esc(name)}">
+        <span class="checkin-p-initials">${avatarInitials(id)}</span>
+      </div>`;
+    }).join('');
+
+    // Tour days for weather forecast
+    const tourDays = [];
+    if (nextTour.date) {
+      const end = tEnd || tStart;
+      for (let d = new Date(tStart); d <= end; d.setDate(d.getDate() + 1)) {
+        tourDays.push(new Date(d));
+      }
+    }
+    const weatherRows = tourDays.map(d => {
+      const iso   = d.toISOString().slice(0, 10);
+      const label = d.toLocaleDateString('de-DE', { weekday:'short', day:'2-digit' }).toUpperCase();
+      return `<div class="checkin-weather-day" data-date="${iso}">
+        <span class="checkin-wd-label">${label}</span>
+        <span class="checkin-wd-icon" data-wicon="${iso}">N/A</span>
+        <span class="checkin-wd-temp" data-wtemp="${iso}"></span>
+      </div>`;
+    }).join('');
+
+    const isConfirmedSelf = isMineNext && getConfirmed(userId);
+    const checkinBtn = isMineNext
+      ? `<button class="btn btn-sm checkin-toggle-btn ${isConfirmedSelf ? 'btn-green-soft' : 'btn-ghost'}" data-checkin-id="${tourId}">${isConfirmedSelf ? '✓ Bestätigt' : 'Check-in'}</button>`
+      : `<button class="btn btn-orange-soft btn-sm" data-join-id="${tourId}">Beitreten</button>`;
+
+    return `
+    <div class="checkin-box" data-checkin-tour="${tourId}">
+      <div class="checkin-header">
+        <div class="checkin-header-info">
+          <div class="checkin-label">● ${countdown} · NÄCHSTE TOUR</div>
+          <div class="checkin-title">${esc(nextTour.name)}</div>
+          <div class="checkin-meta">${dateStr}${nextTour.destination ? ' · ' + esc(nextTour.destination) : ''}</div>
+        </div>
+        ${checkinBtn}
+      </div>
+      <div class="checkin-section">
+        <div class="checkin-section-hdr">
+          <span class="checkin-section-lbl">TEILNEHMER</span>
+          <span class="checkin-confirmed-count" id="checkin-count-${tourId}">${confirmedCount}/${allIds.length} BESTÄTIGT</span>
+        </div>
+        <div class="checkin-grid" id="checkin-grid-${tourId}">${participantGrid}</div>
+      </div>
+      ${(() => {
+        const treffpunkte = (state.tourPlanDates || []).filter(pd => pd.type === 'treffpunkt');
+        if (!treffpunkte.length) return '';
+        const rows = treffpunkte.map(pd => {
+          const pdDate = new Date(pd.date + 'T12:00:00').toLocaleDateString('de-DE', { weekday:'short', day:'2-digit', month:'2-digit' });
+          return `<div class="checkin-treffpunkt-row">
+            <div class="checkin-treffpunkt-date">${pdDate}</div>
+            <div class="checkin-treffpunkt-info">
+              ${pd.label ? `<span class="checkin-treffpunkt-label">${esc(pd.label)}</span>` : ''}
+              ${pd.maps_link ? `<a href="${esc(pd.maps_link)}" target="_blank" rel="noopener" class="checkin-maps-btn">📍 Maps</a>` : ''}
+            </div>
+          </div>`;
+        }).join('');
+        return `
+      <div class="checkin-section">
+        <div class="checkin-section-hdr">
+          <span class="checkin-section-lbl">TREFFPUNKT</span>
+        </div>
+        ${rows}
+      </div>`;
+      })()}
+      ${tourDays.length ? `
+      <div class="checkin-section">
+        <div class="checkin-section-hdr">
+          <span class="checkin-section-lbl">WETTERVORHERSAGE</span>
+        </div>
+        <div class="checkin-weather-rows" id="checkin-weather-${tourId}">${weatherRows}</div>
+      </div>` : ''}
+    </div>`;
+  })() : '';
 
   return `
 <div class="home-wrap">
@@ -1497,8 +1938,14 @@ function renderCommunityHome() {
     ${isAdmin ? `<button class="btn btn-primary btn-sm community-subnav-cta" id="create-tour-btn"><span class="community-subnav-cta-full">+ Tour erstellen</span><span class="community-subnav-cta-short">+ Tour</span></button>` : ''}
   </div>
   <div class="home-layout">
-    <div>${toursHtml}</div>
-    <div>${renderCalWidget()}</div>
+    <div class="home-col-left">
+      <div class="home-col-filters">${filterTabs}</div>
+      <div class="home-col-tours">${toursCardsHtml}</div>
+    </div>
+    <div class="home-col-right">
+      <div class="home-col-checkin">${checkInBox}</div>
+      <div class="home-col-cal">${renderCalWidget()}</div>
+    </div>
   </div>
 </div>
 ${renderTetAtlasModal()}`;
@@ -2001,193 +2448,86 @@ function renderPlanLog() {
 
 function renderPlanYearCal() {
   if (!state.planCalYear) state.planCalYear = new Date().getFullYear();
-  const y     = state.planCalYear;
-  const today = new Date();
+  const planView = state.planCalView || 'year';
 
-  // Build tour date ranges from all community tours
-  const tours = state.tours || [];
-  const tourRanges = tours.map((t, i) => ({
-    name:  t.name,
-    color: TOUR_PALETTE[i % TOUR_PALETTE.length],
-    start: new Date(t.date + 'T12:00:00'),
-    end:   t.end_date ? new Date(t.end_date + 'T12:00:00') : new Date(t.date + 'T12:00:00'),
-    isTour: true,
-  }));
+  const toggleHtml = `
+<div class="cal-view-toggle">
+  <button class="cal-view-btn${planView === 'month' ? ' active' : ''}" onclick="window._setPlanCalView('month')">Monat</button>
+  <button class="cal-view-btn${planView === 'year'  ? ' active' : ''}" onclick="window._setPlanCalView('year')">Jahr</button>
+</div>`;
 
-  // Build ranges from yearly poll options (distinct teal color)
-  const PLAN_COLOR = '#00bcd4';
-  const yearlyPolls = (state.communityPolls || []).filter(p => p.poll_type === 'yearly' && p.poll_year === y);
-  const planRanges = [];
-  yearlyPolls.forEach(poll => {
-    (poll.options || []).forEach(opt => {
-      if (opt.date_start && opt.date_end) {
-        planRanges.push({
-          name:   opt.text || poll.question,
-          color:  PLAN_COLOR,
-          start:  new Date(opt.date_start + 'T12:00:00'),
-          end:    new Date(opt.date_end   + 'T12:00:00'),
-          isPlan: true,
-        });
-      }
-    });
-  });
+  if (planView === 'month') {
+    // ── Planning month view ──
+    if (!state.planCalMonth) state.planCalMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+    const y = state.planCalMonth.getFullYear();
+    const m = state.planCalMonth.getMonth();
 
-  const allRanges = [...tourRanges, ...planRanges];
+    // Tour ranges (all community tours)
+    const tours = state.tours || [];
+    const PLAN_COLOR = '#00bcd4';
+    const tourRanges = tours.map((t, i) => ({
+      name:  t.name,
+      color: TOUR_PALETTE[i % TOUR_PALETTE.length],
+      start: new Date(t.date + 'T12:00:00'),
+      end:   t.end_date ? new Date(t.end_date + 'T12:00:00') : new Date(t.date + 'T12:00:00'),
+      isTour: true,
+      isMine: true,
+    }));
 
-  const MONTH_NAMES = ['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
-  const DAY_NAMES   = ['Mo','Di','Mi','Do','Fr','Sa','So'];
-
-  let monthsHtml = '';
-
-  for (let m = 0; m < 12; m++) {
-    const days      = daysInMonth(y, m);
-    const firstDay  = (new Date(y, m, 1).getDay() + 6) % 7; // 0=Mon
-    const monthStart = new Date(y, m, 1);
-    const monthEnd   = new Date(y, m, days);
-
-    // Build dayMap for this month
-    const dayMap = {};
-    allRanges.forEach(tr => {
-      if (tr.start > monthEnd || tr.end < monthStart) return;
-      const cur = new Date(Math.max(tr.start, monthStart));
-      cur.setHours(12, 0, 0, 0);
-      const lim = new Date(Math.min(tr.end, monthEnd));
-      lim.setHours(12, 0, 0, 0);
-      while (cur <= lim) {
-        const dn = cur.getDate();
-        if (!dayMap[dn]) dayMap[dn] = [];
-        dayMap[dn].push(tr);
-        cur.setDate(cur.getDate() + 1);
-        cur.setHours(12, 0, 0, 0);
-      }
+    // Plan ranges for this month's year
+    const yearlyPolls = (state.communityPolls || []).filter(p => p.poll_type === 'yearly' && p.poll_year === y);
+    const planRanges = [];
+    yearlyPolls.forEach(poll => {
+      (poll.options || []).forEach(opt => {
+        if (opt.date_start && opt.date_end) {
+          planRanges.push({
+            name:   opt.text || poll.question,
+            color:  PLAN_COLOR,
+            start:  new Date(opt.date_start + 'T12:00:00'),
+            end:    new Date(opt.date_end   + 'T12:00:00'),
+            isPlan: true,
+            isMine: true,
+          });
+        }
+      });
     });
 
-    // Week header
-    const weekHeader = `<div class="ycal-kw-cell"></div>` +
-      DAY_NAMES.map(d => `<div class="ycal-head">${d}</div>`).join('');
+    const allRanges = [...tourRanges, ...planRanges];
+    const { cells, visibleTours } = _buildMonthGrid(y, m, allRanges);
 
-    // Two-row-per-week approach: numbers row + events row with grid-column spanning
-    const total = Math.ceil((firstDay + days) / 7) * 7;
-    let rowsHtml = '';
+    const monthName = state.planCalMonth.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' });
 
-    for (let i = 0; i < total; i += 7) {
-      // ISO week number
-      const rowDay  = i - firstDay + 1;
-      const rowDate = rowDay >= 1 && rowDay <= days
-        ? new Date(y, m, rowDay)
-        : rowDay < 1 ? new Date(y, m, 1) : new Date(y, m, days);
-      const mon = new Date(rowDate);
-      mon.setDate(mon.getDate() - ((mon.getDay() + 6) % 7));
-      const kw = getISOWeek(mon);
+    const tourListHtml = visibleTours.length
+      ? visibleTours.map(t => `
+<div class="cal-month-tour-row">
+  <span class="cal-month-tour-dot" style="background:${t.color}"></span>
+  <span class="cal-month-tour-kw">KW${t.kw}</span>
+  <span class="cal-month-tour-name">${esc(t.name)}</span>
+</div>`).join('')
+      : `<span style="color:var(--muted);font-size:11px">Keine Einträge in diesem Monat</span>`;
 
-      // Numbers row
-      let numCells = `<div class="ycal-kw-cell" title="KW ${kw}">
-        <span style="font-size:9px;color:var(--muted)">KW${kw}</span>
-      </div>`;
-
-      for (let j = 0; j < 7; j++) {
-        const dn      = i + j - firstDay + 1;
-        const inM     = dn >= 1 && dn <= days;
-        const isToday = inM && today.getDate() === dn && today.getMonth() === m && today.getFullYear() === y;
-        const toursHere = inM ? (dayMap[dn] || []) : [];
-        const bg = toursHere.filter(t=>t.isTour)[0]?.color
-          ? `background:${toursHere.filter(t=>t.isTour)[0].color}22;`
-          : toursHere.filter(t=>t.isPlan)[0]?.color
-            ? `background:${toursHere.filter(t=>t.isPlan)[0].color}15;`
-            : '';
-        const title = toursHere.map(t => t.name).join(', ');
-        numCells += `<div class="ycal-day${isToday ? ' ycal-today' : ''}${!inM ? ' ycal-out' : ''}"
-          style="${bg}" title="${esc(title)}">${inM ? dn : ''}</div>`;
-      }
-
-      // Events row: find all events that START in this week row
-      // Collect unique events visible in this week
-      const weekEvents = { tour: [], plan: [] };
-      for (let j = 0; j < 7; j++) {
-        const dn = i + j - firstDay + 1;
-        if (dn < 1 || dn > days) continue;
-        (dayMap[dn] || []).forEach(item => {
-          const arr = item.isTour ? weekEvents.tour : weekEvents.plan;
-          if (!arr.find(e => e.name === item.name)) {
-            // Find start column (1-based, 1=Mon) in this week
-            let startCol = j + 1; // already 0-based j
-            // Go back to find actual start in this week
-            for (let k = j - 1; k >= 0; k--) {
-              const kdn = i + k - firstDay + 1;
-              if (kdn >= 1 && (dayMap[kdn] || []).find(x => x.name === item.name)) {
-                startCol = k + 1;
-              } else break;
-            }
-            // Find end column
-            let endCol = j + 1;
-            for (let k = j + 1; k < 7; k++) {
-              const kdn = i + k - firstDay + 1;
-              if (kdn >= 1 && kdn <= days && (dayMap[kdn] || []).find(x => x.name === item.name)) {
-                endCol = k + 1;
-              } else break;
-            }
-            arr.push({ name: item.name, color: item.color, startCol, endCol });
-          }
-        });
-      }
-
-      let eventCells = '';
-      const allWeekEvents = [...weekEvents.tour, ...weekEvents.plan];
-      if (allWeekEvents.length > 0) {
-        eventCells = '<div></div>'; // KW spacer
-        // Build a 7-slot grid, place events
-        // Use grid-column: startCol+1 / endCol+2 (offset by 1 for KW col)
-        allWeekEvents.forEach(ev => {
-          const textColor = ev.color === '#00bcd4' ? '#003' : '#000';
-          eventCells += `<div class="ycal-event-bar" title="${esc(ev.name)}"
-            style="grid-column:${ev.startCol + 1} / ${ev.endCol + 2};background:${ev.color};color:${textColor}">
-            ${esc(ev.name)}
-          </div>`;
-        });
-      }
-
-      const eventsRow = allWeekEvents.length > 0
-        ? `<div class="ycal-events-row">${eventCells}</div>`
-        : '';
-
-      rowsHtml += `<div class="ycal-num-row">${numCells}</div>${eventsRow}`;
-    }
-
-    monthsHtml += `
-<div class="ycal-month">
-  <div class="ycal-month-name">${MONTH_NAMES[m]}</div>
-  <div class="ycal-grid-header">${weekHeader}</div>
-  <div class="ycal-rows">${rowsHtml}</div>
+    return `
+<div class="ycal-wrap">
+  ${toggleHtml}
+  <div class="cal-nav">
+    <button class="cal-nav-btn" id="plan-cal-prev">‹</button>
+    <div class="cal-title">${monthName}</div>
+    <button class="cal-nav-btn" id="plan-cal-next">›</button>
+  </div>
+  <div class="cal-grid">
+    ${['Mo','Di','Mi','Do','Fr','Sa','So'].map(d => `<div class="cal-dow">${d}</div>`).join('')}
+    ${cells}
+  </div>
+  <div class="cal-month-tours">${tourListHtml}</div>
 </div>`;
   }
 
-  // Tour legend
-  const tourLegend = tourRanges.map(t => `
-<div class="cal-legend-item" style="margin-bottom:4px">
-  <span class="cal-legend-swatch" style="background:${t.color}"></span>
-  <span class="cal-legend-name">${esc(t.name)}</span>
-</div>`).join('');
-
-  const planLegend = planRanges.length ? `
-<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
-            color:#00bcd4;margin:8px 0 4px">Jahresplanung ${y}</div>` +
-  planRanges.map(p => `
-<div class="cal-legend-item" style="margin-bottom:4px">
-  <span class="cal-legend-swatch" style="background:#00bcd4"></span>
-  <span class="cal-legend-name">${esc(p.name)}</span>
-</div>`).join('') : '';
-
-  const legend = (tourLegend + planLegend) ||
-    `<span style="color:var(--muted);font-size:11px">Keine Touren</span>`;
-
+  // ── Year view (default) ──
+  const y = state.planCalYear;
   return `
 <div class="ycal-wrap">
-  <div class="ycal-header">
-    <button class="cal-nav-btn" id="ycal-prev">‹</button>
-    <div class="cal-title">${y}</div>
-    <button class="cal-nav-btn" id="ycal-next">›</button>
-  </div>
-  <div class="ycal-months">${monthsHtml}</div>
+  ${toggleHtml}
+  ${_renderYearBody(y, true, 'ycal-prev', 'ycal-next')}
 </div>`;
 }
 

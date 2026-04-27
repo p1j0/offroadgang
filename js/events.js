@@ -3,6 +3,18 @@
    Depends on: all other modules (called at runtime via globals)
    ============================================================ */
 
+/* --- Calendar view toggle globals --- */
+window._setCalView = (v) => {
+  state.calView = v;
+  render();
+};
+
+window._setPlanCalView = (v) => {
+  state.planCalView = v;
+  const sidebar = document.querySelector('.plan-polls-sidebar');
+  if (sidebar) { sidebar.innerHTML = renderPlanYearCal(); attachPlanningContentEvents(); }
+};
+
 /**
  * Attach all top-level event listeners after every render() call.
  * Delegates to specialised helpers for tab-specific events.
@@ -325,6 +337,37 @@ function attachEvents() {
     });
   });
 
+  /* --- Check-in toggle --- */
+  document.querySelectorAll('.checkin-toggle-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const tourId = btn.dataset.checkinId;
+      if (!tourId) return;
+      btn.disabled = true;
+      try {
+        await toggleCheckin(tourId);
+        render();
+      } catch (e) {
+        toast('Check-in fehlgeschlagen: ' + e.message, 'error');
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  });
+
+  /* --- Check-in weather forecast (async, community-home view) --- */
+  if (state.view === 'community-home') {
+    const nextTour = (state.tours || [])
+      .filter(t => {
+        const end = t.end_date && t.end_date !== t.date ? t.end_date : t.date;
+        return new Date(end + 'T23:59:59') >= new Date();
+      })
+      .sort((a, b) => new Date(a.date) - new Date(b.date))[0];
+    const treffpunktLink = (state.tourPlanDates || []).find(pd => pd.type === 'treffpunkt' && pd.maps_link)?.maps_link;
+    if (nextTour?.destination || treffpunktLink) {
+      _loadCheckinWeather(nextTour.id, nextTour.destination, nextTour.date, nextTour.end_date || nextTour.date, treffpunktLink);
+    }
+  }
+
   /* --- Community: create tour button --- */
   document.getElementById('create-tour-btn')?.addEventListener('click', () => navigateTo('create'));
 
@@ -427,6 +470,18 @@ function attachEvents() {
   });
   document.getElementById('cal-show-all')?.addEventListener('change', e => {
     state.calShowAll = e.target.checked;
+    render();
+  });
+
+  /* --- Home calendar year-view navigation --- */
+  document.getElementById('home-ycal-prev')?.addEventListener('click', () => {
+    if (!state.calMonth) state.calMonth = new Date();
+    state.calMonth = new Date(state.calMonth.getFullYear() - 1, 0, 1);
+    render();
+  });
+  document.getElementById('home-ycal-next')?.addEventListener('click', () => {
+    if (!state.calMonth) state.calMonth = new Date();
+    state.calMonth = new Date(state.calMonth.getFullYear() + 1, 0, 1);
     render();
   });
 
@@ -980,9 +1035,11 @@ function attachInfoEvents() {
   document.getElementById('add-date-btn')?.addEventListener('click', async () => {
     const d = document.getElementById('add-date')?.value || '';
     const l = (document.getElementById('add-label')?.value || '').trim();
+    const t = document.getElementById('pd-type')?.value || 'sonstiger';
+    const m = (document.getElementById('add-maps-link')?.value || '').trim();
     if (!d) { toast('Bitte Datum wählen.', 'error'); return; }
     try {
-      await addPlanDate(d, l);
+      await addPlanDate(d, l, t, m);
       _refreshInfoTab();
     } catch (e) { toast(e.message, 'error'); }
   });
@@ -1063,6 +1120,20 @@ function attachPlanningContentEvents() {
   document.getElementById('ycal-next')?.addEventListener('click', () => {
     if (!state.planCalYear) state.planCalYear = new Date().getFullYear();
     state.planCalYear++;
+    const sidebar = document.querySelector('.plan-polls-sidebar');
+    if (sidebar) { sidebar.innerHTML = renderPlanYearCal(); attachPlanningContentEvents(); }
+  });
+
+  /* ── Planning month-view nav ── */
+  document.getElementById('plan-cal-prev')?.addEventListener('click', () => {
+    if (!state.planCalMonth) state.planCalMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+    state.planCalMonth = new Date(state.planCalMonth.getFullYear(), state.planCalMonth.getMonth() - 1, 1);
+    const sidebar = document.querySelector('.plan-polls-sidebar');
+    if (sidebar) { sidebar.innerHTML = renderPlanYearCal(); attachPlanningContentEvents(); }
+  });
+  document.getElementById('plan-cal-next')?.addEventListener('click', () => {
+    if (!state.planCalMonth) state.planCalMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+    state.planCalMonth = new Date(state.planCalMonth.getFullYear(), state.planCalMonth.getMonth() + 1, 1);
     const sidebar = document.querySelector('.plan-polls-sidebar');
     if (sidebar) { sidebar.innerHTML = renderPlanYearCal(); attachPlanningContentEvents(); }
   });
