@@ -168,6 +168,15 @@ async function navigateTo(view, params = {}) {
           await loadHomeData();
           await computePlanningBadges();
           await computeMediaBadges();
+          // Load check-ins for the next upcoming tour
+          const todayMidnight = new Date(); todayMidnight.setHours(0,0,0,0);
+          const nextTour = (state.tours || [])
+            .filter(t => new Date((t.end_date || t.date) + 'T23:59:59') >= todayMidnight)
+            .sort((a,b) => new Date(a.date) - new Date(b.date))[0];
+          if (nextTour) {
+            state.tourCheckins[nextTour.id] = await loadTourCheckins(nextTour.id);
+            await loadNextTourPlanDates(nextTour.id);
+          }
         }
         if (view === 'community-media') {
           await loadHomeData(); // needed for tours list
@@ -241,6 +250,99 @@ function render() {
       <strong>Render-Fehler:</strong><br>${e.message}<br><br>
       <button onclick="location.reload()" style="padding:8px 16px;cursor:pointer">Seite neu laden</button>
     </div>`;
+  }
+}
+
+window._setTourFilter = (f) => { state.tourFilter = f; render(); };
+
+/* ----------------------------------------------------------
+   Check-in weather forecast (Open-Meteo, free, no API key)
+   ---------------------------------------------------------- */
+
+async function _extractMapCoords(url) {
+  if (!url) return null;
+
+  const parse = (u) => {
+    let m = u.match(/@(-?\d+\.?\d+),(-?\d+\.?\d+)/);
+    if (m) return { latitude: parseFloat(m[1]), longitude: parseFloat(m[2]) };
+    m = u.match(/[?&]q=(-?\d+\.?\d+),(-?\d+\.?\d+)/);
+    if (m) return { latitude: parseFloat(m[1]), longitude: parseFloat(m[2]) };
+    return null;
+  };
+
+  // Try direct parsing first (full Google Maps URLs)
+  const direct = parse(url);
+  if (direct) return direct;
+
+  // For goo.gl short links: resolve via Edge Function
+  if (url.startsWith('https://goo.gl/') || url.startsWith('https://maps.app.goo.gl/')) {
+    try {
+      const res = await fetch(
+        `https://kkoeeyqxubtcqvonckss.supabase.co/functions/v1/resolve-url?url=${encodeURIComponent(url)}`
+      );
+      const json = await res.json();
+      if (json.url) return parse(json.url);
+    } catch (e) {
+      console.warn('[resolveUrl]', e);
+    }
+  }
+
+  return null;
+}
+
+async function _loadCheckinWeather(tourId, destination, startDate, endDate, mapsLink) {
+  const weatherEl = document.getElementById(`checkin-weather-${tourId}`);
+  if (!weatherEl) return;
+
+  const wmoIcon = (code) => {
+    if (code === 0)              return '☀️';
+    if (code <= 2)               return '⛅';
+    if (code <= 3)               return '☁️';
+    if (code <= 48)              return '🌫️';
+    if (code <= 67)              return '🌧️';
+    if (code <= 77)              return '❄️';
+    if (code <= 82)              return '🌧️';
+    if (code <= 86)              return '❄️';
+    return '⚡';
+  };
+
+  try {
+    // 1. Resolve coordinates — prefer Treffpunkt maps link, fall back to geocoding destination
+    let latitude, longitude;
+    const fromMap = await _extractMapCoords(mapsLink);
+    if (fromMap) {
+      ({ latitude, longitude } = fromMap);
+    } else {
+      if (!destination) return;
+      const geoResp = await fetch(
+        `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(destination)}&count=1&language=de&format=json`
+      );
+      const geoData = await geoResp.json();
+      if (!geoData.results?.length) return;
+      ({ latitude, longitude } = geoData.results[0]);
+    }
+
+    // 2. Fetch daily forecast for tour dates
+    const weatherResp = await fetch(
+      `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&daily=temperature_2m_max,weathercode&timezone=auto&start_date=${startDate}&end_date=${endDate}`
+    );
+    const weatherData = await weatherResp.json();
+    const days  = weatherData.daily?.time        || [];
+    const codes = weatherData.daily?.weathercode  || [];
+    const temps = weatherData.daily?.temperature_2m_max || [];
+
+    // 3. Update DOM rows (still mounted — render() may not have fired again)
+    const el = document.getElementById(`checkin-weather-${tourId}`);
+    if (!el) return;
+    el.querySelectorAll('.checkin-weather-day').forEach(row => {
+      const date = row.dataset.date;
+      const idx  = days.indexOf(date);
+      if (idx === -1) return;
+      row.querySelector('[data-wicon]').textContent  = wmoIcon(codes[idx]);
+      row.querySelector('[data-wtemp]').textContent  = `${Math.round(temps[idx])}°C`;
+    });
+  } catch (e) {
+    console.warn('[checkin weather]', e);
   }
 }
 

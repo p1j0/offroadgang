@@ -31,6 +31,7 @@ const state = {
   planningBadges:   { chat: 0, polls: 0 },
 
   /* Community home (tours) */
+  tourFilter:    'all',   // 'all' | 'upcoming' | 'past'
   tours:         [],
   myTourIds:     new Set(),
   profileCache:  {},
@@ -38,6 +39,9 @@ const state = {
   tourMemberIds: {},
   homeBadges:    {},
   calMonth:      null,       // home calendar current month
+  calView:       'month',    // 'month' | 'year' — home calendar
+  planCalView:   'year',     // 'month' | 'year' — planning calendar
+  planCalMonth:  null,       // Date for planning month view nav
 
   /* Active tour */
   currentTourId: null,
@@ -57,6 +61,9 @@ const state = {
   isSiteAdminUser: false,   // tour id selected in community media view
   tabBadges:     {},
   tourCalMonth:  null,
+
+  /* Check-ins: tourId → Set of user_ids who confirmed */
+  tourCheckins:  {},
 
   /* Misc */
   preJoinId:     null,

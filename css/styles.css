@@ -6,8 +6,8 @@
   --surface:      #16161a;
   --surface2:     #1e1e25;
   --border:       #2a2a35;
-  --accent:       #f07800;
-  --accent-dark:  #b85c00;
+  --accent:       #d4ff3a;
+  --accent-dark:  #a0c820;
   --text:         #eeebe4;
   --muted:        #7a7880;
   --success:      #3dba7b;
@@ -24,6 +24,7 @@
 
 html, body {
   height: 100%;
+  overflow-x: hidden;
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-body);
@@ -90,9 +91,22 @@ html, body {
   white-space: nowrap;
 }
 
-.btn-primary            { background: var(--accent); color: #000; }
-.btn-primary:hover      { background: #d96d00; }
+.btn-primary            { background: var(--accent); color: #0a0a0d; }
+.btn-primary:hover      { background: var(--accent-dark); }
 .btn-primary:disabled   { opacity: 0.5; cursor: default; }
+
+.btn-success            { background: var(--green); color: #0a2300; }
+.btn-success:hover      { background: var(--green-dim); }
+.btn-success:disabled   { opacity: 0.5; cursor: default; }
+
+.btn-accent-soft            { background: rgba(212,255,58,0.12); color: var(--accent); border: none; }
+.btn-accent-soft:hover      { background: rgba(212,255,58,0.22); color: var(--accent-soft); }
+
+.btn-green-soft             { background: rgba(212,255,58,0.13); color: var(--accent); border: none; }
+.btn-green-soft:hover       { background: rgba(212,255,58,0.22); color: var(--accent-soft); }
+
+.btn-orange-soft            { background: rgba(212,255,58,0.10); color: var(--orange); border: none; }
+.btn-orange-soft:hover      { background: rgba(212,255,58,0.20); color: var(--orange); }
 
 .btn-ghost              { background: transparent; color: var(--muted); border: 1px solid var(--border); }
 .btn-ghost:hover        { color: var(--text); border-color: var(--muted); }
@@ -166,8 +180,9 @@ select option       { background: var(--surface2); }
   font-size: 12px;
   font-weight: 500;
 }
-.tag-accent { background: rgba(240,120,0,0.15); color: var(--accent); }
+.tag-accent { background: rgba(212,255,58,0.15); color: var(--accent); }
 .tag-muted  { background: var(--surface2); color: var(--muted); }
+.tag-past   { background: var(--surface2); color: var(--orange); }
 
 /* ============================================================
    CARDS
@@ -211,7 +226,7 @@ select option       { background: var(--surface2); }
   top: -100px; right: -100px;
   width: 400px; height: 400px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(240,120,0,0.12) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(212,255,58,0.12) 0%, transparent 70%);
   pointer-events: none;
 }
 
@@ -300,7 +315,7 @@ select option       { background: var(--surface2); }
   max-width: 1280px;
   margin: 0 auto;
 }
-@media (max-width: 960px) { .home-layout { grid-template-columns: 1fr; } }
+@media (max-width: 960px) { .home-layout { grid-template-columns: minmax(0, 1fr); gap: 16px; padding: 20px 16px 28px; } }
 
 .section-header {
   display: flex;
@@ -390,7 +405,7 @@ select option       { background: var(--surface2); }
 }
 .cal-day.other-month { color: var(--border); }
 .cal-day.today { font-weight: 700; color: var(--accent); }
-.cal-day.has-tour { background: rgba(240,120,0,0.18); color: var(--accent); font-weight: 600; }
+.cal-day.has-tour { background: rgba(212,255,58,0.18); color: var(--accent); font-weight: 600; }
 .cal-day.has-tour::after {
   content: '';
   position: absolute;
@@ -879,7 +894,7 @@ select option       { background: var(--surface2); }
 .btn-copy-link:hover {
   border-color: var(--accent);
   color: var(--accent);
-  background: rgba(240,120,0,0.08);
+  background: rgba(212,255,58,0.08);
 }
 
 /* Calendar "Alle Touren anzeigen" checkbox */
@@ -1098,9 +1113,9 @@ select option       { background: var(--surface2); }
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  background: rgba(240,120,0,0.15);
+  background: rgba(212,255,58,0.15);
   color: var(--accent);
-  border: 1px solid rgba(240,120,0,0.3);
+  border: 1px solid rgba(212,255,58,0.3);
   border-radius: 100px;
   font-size: 11px;
   font-weight: 600;
@@ -1161,7 +1176,7 @@ select option       { background: var(--surface2); }
 .poll-option-bar {
   position: absolute;
   inset: 0;
-  background: rgba(240,120,0,0.12);
+  background: rgba(212,255,58,0.12);
   transition: width 0.4s ease;
   pointer-events: none;
 }
@@ -1624,7 +1639,7 @@ select option       { background: var(--surface2); }
   transition: background 0.15s;
   user-select: none;
 }
-.lightbox-nav-btn:hover { background: rgba(240,120,0,0.6); }
+.lightbox-nav-btn:hover { background: rgba(212,255,58,0.6); }
 .lightbox-prev { left: 12px; }
 .lightbox-next { right: 12px; }
 
@@ -1667,7 +1682,7 @@ select option       { background: var(--surface2); }
 }
 .cm-tour-item:hover { background: var(--surface2); }
 .cm-tour-item.cm-tour-selected {
-  background: rgba(240,120,0,0.12);
+  background: rgba(212,255,58,0.12);
   border-left: 3px solid var(--accent);
 }
 .cm-tour-name {
@@ -1912,10 +1927,6 @@ select option       { background: var(--surface2); }
 }
 .ios-banner-close:hover { color: var(--text); }
 
-/* btn-success variant */
-.btn-success            { background: var(--success); color: #000; }
-.btn-success:hover      { background: #34a56a; }
-.btn-success:disabled   { opacity: 0.7; cursor: default; }
 
 /* PWA Update Banner — erscheint oben */
 #pwa-update-banner {

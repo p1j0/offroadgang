@@ -444,16 +444,36 @@ async function sendMessage(text) {
  * @param {string} date  – ISO date string (YYYY-MM-DD)
  * @param {string} label – optional description
  */
-async function addPlanDate(date, label) {
+async function addPlanDate(date, label, type = 'sonstiger', mapsLink = '') {
   const { data, error } = await sb
     .from('plan_dates')
-    .insert({ tour_id: state.currentTourId, date, label })
+    .insert({ tour_id: state.currentTourId, date, label, type, maps_link: mapsLink || null })
     .select()
     .single();
   if (error) throw new Error(error.message);
   state.tourPlanDates.push(data);
   const display = label ? `${date} (${label})` : date;
   await logChange('Planungstermin hinzugefügt', '', display);
+
+  if (type === 'treffpunkt') {
+    const userId = state.currentUser?.id;
+    _notifyTourEvent({
+      tour_id:        state.currentTourId,
+      event_type:     'treffpunkt',
+      actor_user_id:  userId,
+      actor_username: state.currentUser?.username || state.profileCache?.[userId] || 'Unbekannt',
+      details:        display,
+    }).catch(e => console.warn('[notify treffpunkt]', e));
+  }
+}
+
+async function loadNextTourPlanDates(tourId) {
+  const { data } = await sb
+    .from('plan_dates')
+    .select('*')
+    .eq('tour_id', tourId)
+    .order('date', { ascending: true });
+  state.tourPlanDates = data || [];
 }
 
 /**
@@ -560,22 +580,53 @@ async function loadCommunities() {
   }
   state.communities = data || [];
 
-  const [{ data: memberships }, { data: allMembers }] = await Promise.all([
+  const [{ data: memberships }, { data: allMembers }, { data: allTours }] = await Promise.all([
     sb
       .from('community_members')
       .select('community_id')
       .eq('user_id', state.currentUser.id),
     sb
       .from('community_members')
-      .select('community_id'),
+      .select('community_id, user_id'),
+    sb
+      .from('tours')
+      .select('id, community_id')
+      .not('community_id', 'is', null),
   ]);
 
-  state.communityMemberCounts = {};
-  (allMembers || []).forEach(row => {
-    state.communityMemberCounts[row.community_id] = (state.communityMemberCounts[row.community_id] || 0) + 1;
+  // Fetch tour members for all community tours in one query
+  const tourIds = (allTours || []).map(t => t.id);
+  let tourMemberRows = [];
+  if (tourIds.length) {
+    const { data: tm } = await sb
+      .from('tour_members')
+      .select('tour_id, user_id')
+      .in('tour_id', tourIds);
+    tourMemberRows = tm || [];
+  }
+
+  // Map tour_id → community_id for lookup
+  const tourCommunityMap = {};
+  (allTours || []).forEach(t => { tourCommunityMap[t.id] = t.community_id; });
+
+  // Build per-community member sets (deduplicates everything)
+  const membersByCommunity = {};
+  const ensureSet = (cid) => {
+    if (!membersByCommunity[cid]) membersByCommunity[cid] = new Set();
+    return membersByCommunity[cid];
+  };
+  (allMembers || []).forEach(row => ensureSet(row.community_id).add(row.user_id));
+  tourMemberRows.forEach(row => {
+    const cid = tourCommunityMap[row.tour_id];
+    if (cid) ensureSet(cid).add(row.user_id);
   });
+
+  state.communityMemberCounts = {};
   state.communities.forEach(c => {
-    state.communityMemberCounts[c.id] = (state.communityMemberCounts[c.id] || 0) + 1;
+    const memberSet = ensureSet(c.id);
+    memberSet.add(c.admin_id);
+    (c.co_admin_ids || []).forEach(id => memberSet.add(id));
+    state.communityMemberCounts[c.id] = memberSet.size;
   });
 
   const adminOf = state.communities
@@ -1390,4 +1441,75 @@ async function saveSiteContent(key, content) {
       updated_by: state.currentUser.id,
     });
   if (error) throw new Error('Speichern fehlgeschlagen: ' + error.message);
+}
+
+/* ============================================================
+   Tour Check-ins
+   ============================================================ */
+
+/**
+ * Fire-and-forget call to the notify-tour-event Edge Function.
+ * Sends push + email to all other tour members.
+ */
+async function _notifyTourEvent({ tour_id, event_type, actor_user_id, actor_username, details }) {
+  await fetch(
+    `${SUPABASE_URL}/functions/v1/notify-tour-event`,
+    {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON },
+      body: JSON.stringify({ tour_id, event_type, actor_user_id, actor_username, details }),
+    }
+  );
+}
+
+/**
+ * Load all check-ins for a tour. Returns a Set of user_ids who confirmed.
+ */
+async function loadTourCheckins(tourId) {
+  const { data, error } = await sb
+    .from('tour_checkins')
+    .select('user_id')
+    .eq('tour_id', tourId);
+  if (error) { console.warn('[loadTourCheckins]', error.message); return new Set(); }
+  return new Set((data || []).map(r => r.user_id));
+}
+
+/**
+ * Toggle the current user's check-in for a tour.
+ * Returns the new confirmed state (true = confirmed, false = removed).
+ */
+async function toggleCheckin(tourId) {
+  const userId = state.currentUser?.id;
+  if (!userId) throw new Error('Nicht eingeloggt');
+
+  const already = state.tourCheckins?.[tourId]?.has(userId);
+
+  if (already) {
+    const { error } = await sb
+      .from('tour_checkins')
+      .delete()
+      .eq('tour_id', tourId)
+      .eq('user_id', userId);
+    if (error) throw new Error(error.message);
+    state.tourCheckins[tourId].delete(userId);
+    return false;
+  } else {
+    const { error } = await sb
+      .from('tour_checkins')
+      .insert({ tour_id: tourId, user_id: userId });
+    if (error) throw new Error(error.message);
+    if (!state.tourCheckins) state.tourCheckins = {};
+    if (!state.tourCheckins[tourId]) state.tourCheckins[tourId] = new Set();
+    state.tourCheckins[tourId].add(userId);
+
+    // Fire-and-forget: notify other tour members
+    _notifyTourEvent({
+      tour_id:        tourId,
+      event_type:     'checkin',
+      actor_user_id:  userId,
+      actor_username: state.currentUser.username || state.profileCache[userId] || 'Unbekannt',
+    }).catch(e => console.warn('[notify checkin]', e));
+
+    return true;
+  }
 }
