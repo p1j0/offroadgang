@@ -139,6 +139,11 @@ async function navigateTo(view, params = {}) {
   try {
     // Tear down map when leaving the tour detail page
     if (mapInstance && view !== 'tour') destroyMap();
+    // Tear down overview mini-map when leaving tour
+    if (view !== 'tour' && window._tovMapInstance) {
+      try { window._tovMapInstance.remove(); } catch(e) {}
+      window._tovMapInstance = null;
+    }
 
     // Tear down realtime when leaving a tour
     if (view !== 'tour') unsubscribeFromChat();
@@ -408,7 +413,7 @@ async function init() {
           // Load tours so we know if the user is already a member
           await loadHomeData();
           if (state.myTourIds.has(joinId)) {
-            await navigateTo('tour', { currentTourId: joinId, currentTab: 'map' });
+            await navigateTo('tour', { currentTourId: joinId, currentTab: 'overview' });
           } else {
             await navigateTo('join');
           }

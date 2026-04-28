@@ -158,8 +158,8 @@ function renderPageHeader() {
         community.admin_id === state.currentUser.id ||
         (community.co_admin_ids || []).includes(state.currentUser.id)
       );
-      backBtn = `<button class="btn-icon-back" id="back-communities" title="Zurück zu Communities" aria-label="Zurück">${backIcon}</button>`;
-      eyebrow = `Community${state.tours.length ? ` · ${state.tours.length} ${state.tours.length === 1 ? 'Tour' : 'Touren'}` : ''}`;
+      backBtn = `<button class="btn-icon-back" id="back-communities" title="Zurück zu Rider Groups" aria-label="Zurück">${backIcon}</button>`;
+      eyebrow = `Rider Group${state.tours.length ? ` · ${state.tours.length} ${state.tours.length === 1 ? 'Tour' : 'Touren'}` : ''}`;
       menu = `
         <div class="home-header-menu">
           <button class="btn-icon-more" id="community-menu-btn" aria-label="Community-Menü" aria-haspopup="true">${moreIcon}</button>
@@ -679,7 +679,7 @@ function _renderYearBody(y, showPlans, prevBtnId, nextBtnId) {
       const kw = getISOWeek(mon);
 
       let numCells = `<div class="ycal-kw-cell" title="KW ${kw}">
-        <span style="font-size:9px;color:var(--muted)">KW${kw}</span>
+        <span style="font-size:9px;color:var(--muted)">${kw}</span>
       </div>`;
 
       for (let j = 0; j < 7; j++) {
@@ -823,7 +823,7 @@ function renderCalWidget() {
     ? visibleTours.map(t => `
 <div class="cal-month-tour-row">
   <span class="cal-month-tour-dot" style="background:${t.color}"></span>
-  <span class="cal-month-tour-kw">KW${t.kw}</span>
+  <span class="cal-month-tour-kw">${t.kw}</span>
   <span class="cal-month-tour-name">${esc(t.name)}</span>
 </div>`).join('')
     : `<span style="color:var(--muted);font-size:11px">Keine Touren in diesem Monat</span>`;
@@ -991,6 +991,7 @@ function renderTour() {
   if (!tour) return '<div style="padding:40px;color:var(--muted)">Tour nicht gefunden.</div>';
 
   const tabs = [
+    { id: 'overview',     label: '⊞' },
     { id: 'map',          label: 'Karte' },
     { id: 'chat',         label: 'Chat' },
     { id: 'media',        label: 'Media' },
@@ -1037,6 +1038,7 @@ function renderTourTabs(tabs, tourId) {
 
 function renderTab(tour) {
   switch (state.currentTab) {
+    case 'overview':     return renderTourOverview(tour);
     case 'map':          return renderMapTab(tour);
     case 'chat':         return renderChatTab();
     case 'media':        return renderMediaTab();
@@ -1045,6 +1047,246 @@ function renderTab(tour) {
     case 'changelog':    return renderChangelogTab();
     default: return '';
   }
+}
+
+/* ----------------------------------------------------------
+   Tour Overview Dashboard
+   ---------------------------------------------------------- */
+
+/**
+ * Build an SVG polyline preview of all GPX tracks.
+ * Returns null when no track data is available.
+ */
+function _overviewTrackSVG(gpxData) {
+  if (!gpxData?.tracks?.length) return null;
+
+  const W = 400, H = 260, PAD = 18;
+
+  // Collect a downsampled set of points across all tracks
+  const allPts = [];
+  gpxData.tracks.forEach(t => {
+    const pts  = t.points || [];
+    const step = Math.max(1, Math.floor(pts.length / 400));
+    for (let i = 0; i < pts.length; i += step) allPts.push(pts[i]);
+  });
+  if (!allPts.length) return null;
+
+  const lats = allPts.map(p => p[0]);
+  const lngs = allPts.map(p => p[1]);
+  const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+  const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
+  const latR   = maxLat - minLat || 0.001;
+  const lngR   = maxLng - minLng || 0.001;
+
+  // Uniform scale — preserve aspect ratio, centre within viewport
+  const dataAR = lngR / latR;
+  const svgAR  = (W - 2 * PAD) / (H - 2 * PAD);
+  let scaleX, scaleY, offX = 0, offY = 0;
+  if (dataAR > svgAR) {
+    scaleX = (W - 2 * PAD) / lngR; scaleY = scaleX;
+    offY   = ((H - 2 * PAD) - latR * scaleY) / 2;
+  } else {
+    scaleY = (H - 2 * PAD) / latR; scaleX = scaleY;
+    offX   = ((W - 2 * PAD) - lngR * scaleX) / 2;
+  }
+
+  const toX = lng => PAD + offX + (lng - minLng) * scaleX;
+  const toY = lat => H - PAD - offY - (lat - minLat) * scaleY;
+
+  // One <path> per track (with track colour)
+  const paths = gpxData.tracks.map((t, i) => {
+    const pts    = t.points || [];
+    const step   = Math.max(1, Math.floor(pts.length / 400));
+    const color  = t.color || TRACK_COLORS[i % TRACK_COLORS.length];
+    const d = pts
+      .filter((_, j) => j % step === 0)
+      .map((p, k) => `${k === 0 ? 'M' : 'L'}${toX(p[1]).toFixed(1)},${toY(p[0]).toFixed(1)}`)
+      .join(' ');
+    return `<path d="${d}" fill="none" stroke="${color}" stroke-width="2.5"
+              stroke-linejoin="round" stroke-linecap="round" opacity="0.9"/>`;
+  }).join('');
+
+  // Start (green) / end (orange) dots
+  const fp = gpxData.tracks[0]?.points?.[0];
+  const lt = gpxData.tracks[gpxData.tracks.length - 1];
+  const lp = lt?.points?.[lt.points.length - 1];
+  const dots = (fp && lp) ? `
+    <circle cx="${toX(fp[1]).toFixed(1)}" cy="${toY(fp[0]).toFixed(1)}" r="5"
+      fill="var(--green)" stroke="var(--bg)" stroke-width="2"/>
+    <circle cx="${toX(lp[1]).toFixed(1)}" cy="${toY(lp[0]).toFixed(1)}" r="5"
+      fill="var(--orange)" stroke="var(--bg)" stroke-width="2"/>` : '';
+
+  return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg"
+            style="width:100%;height:100%;display:block">${paths}${dots}</svg>`;
+}
+
+function renderTourOverview(tour) {
+  const isAdmin  = isCurrentUserAdmin();
+  const gpxData  = normalizeGPXRoute(tour.gpx_route);
+  const trackSVG = _overviewTrackSVG(gpxData);
+
+  // helper: badge bubble for a tab id
+  const badge = (id) => {
+    const b = state.tabBadges[id];
+    return b?.length
+      ? `<span class="tov-badge">${b.length > 9 ? '9+' : b.length}</span>`
+      : '';
+  };
+
+  // ── MAP CARD ─────────────────────────────────────────────────────────────
+  const trackCount = gpxData?.tracks?.length || 0;
+  const wpCount    = gpxData?.waypoints?.length || 0;
+
+  const mapBody = (gpxData?.tracks?.length)
+    ? `<div id="tov-mini-map" class="tov-map-leaflet"></div>
+       <div class="tov-map-stats">
+         ${tour.distance ? `<span class="tov-stat"><strong>${esc(tour.distance)}</strong> KM</span>` : ''}
+         ${trackCount    ? `<span class="tov-stat">${trackCount} Track${trackCount > 1 ? 's' : ''}</span>` : ''}
+         ${wpCount       ? `<span class="tov-stat">${wpCount} Wegpunkte</span>` : ''}
+       </div>`
+    : `<div class="tov-map-placeholder">
+         <div style="font-size:36px;margin-bottom:8px">🗺️</div>
+         <div style="font-size:12px;color:var(--muted)">
+           Noch keine Route${isAdmin ? '<br>Im Karte-Tab hochladen' : ''}
+         </div>
+       </div>`;
+
+  // ── INFO CARD ─────────────────────────────────────────────────────────────
+  const fmtD = iso => new Date(iso + 'T12:00:00')
+    .toLocaleDateString('de-DE', { weekday:'short', day:'2-digit', month:'short', year:'numeric' });
+
+  const dateStr = tour.end_date && tour.end_date !== tour.date
+    ? `${fmtD(tour.date)} – ${fmtD(tour.end_date)}`
+    : fmtD(tour.date);
+
+  const infoRows = [
+    { l: 'Datum',    v: dateStr },
+    tour.destination ? { l: 'Ziel',     v: tour.destination } : null,
+    tour.distance    ? { l: 'Distanz',  v: `${tour.distance} km` } : null,
+    { l: 'Admin',    v: state.profileCache[tour.admin_id] || '—' },
+  ].filter(Boolean);
+
+  const planDatesHtml = state.tourPlanDates.length
+    ? state.tourPlanDates.slice(0, 5).map(pd => {
+        const d       = new Date(pd.date + 'T12:00:00')
+          .toLocaleDateString('de-DE', { weekday:'short', day:'2-digit', month:'short' });
+        const timeStr = pd.meeting_time ? pd.meeting_time.slice(0, 5) : '';
+        const icon    = pd.type === 'treffpunkt' ? '📍' : '📅';
+        return `<div class="tov-plan-row">
+          ${icon} <strong>${d}</strong>${timeStr ? ` <span class="tov-plan-time">${timeStr}</span>` : ''}
+          ${pd.label ? `<span class="tov-plan-label">${esc(pd.label)}</span>` : ''}
+          ${pd.maps_link ? `<a href="${esc(pd.maps_link)}" target="_blank" rel="noopener"
+              class="tov-plan-maps" onclick="event.stopPropagation()">Maps →</a>` : ''}
+        </div>`;
+      }).join('')
+    : '<div class="tov-empty-hint">Keine Planungstermine</div>';
+
+  // ── CHAT CARD ─────────────────────────────────────────────────────────────
+  const recentMsgs = [...state.tourMessages].reverse().slice(0, 3);
+  const chatBody   = recentMsgs.length
+    ? recentMsgs.map(m => `
+        <div class="tov-chat-row">
+          <span class="tov-chat-user">${esc(m.username || '?')}</span>
+          <span class="tov-chat-text">${esc((m.text || '').slice(0, 70))}${(m.text||'').length > 70 ? '…' : ''}</span>
+        </div>`).join('')
+    : '<div class="tov-empty-hint">Noch keine Nachrichten</div>';
+
+  // ── MEDIA CARD ────────────────────────────────────────────────────────────
+  const mediaPrev = (state.tourMedia || []).slice(0, 4);
+  const mediaBody = mediaPrev.length
+    ? `<div class="tov-media-grid">${
+        mediaPrev.map(m => {
+          const isImg  = m.media_type === 'image';
+          const isVid  = m.media_type === 'video';
+          const thumb  = isImg ? m.url.replace('/upload/', '/upload/c_fill,w_200,h_200,q_auto/')
+                       : isVid ? (m.thumbnail_url || m.url.replace('/upload/', '/upload/c_fill,w_200,h_200,so_1/'))
+                       : '';
+          return thumb
+            ? `<div class="tov-media-thumb" style="background-image:url('${esc(thumb)}')"></div>`
+            : `<div class="tov-media-thumb tov-media-yt">▶</div>`;
+        }).join('')
+      }</div>`
+    : '<div class="tov-empty-hint">Noch keine Medien</div>';
+
+  // ── PARTICIPANTS CARD ─────────────────────────────────────────────────────
+  const members    = state.tourMembers.slice(0, 10);
+  const extraCount = Math.max(0, state.tourMembers.length - members.length);
+  const memberIds      = members.map(m => m.user_id);
+  const memberInitials = buildInitialsMap(memberIds);
+  const participantsBody = `
+    <div class="tov-avatars">
+      ${members.map(m => `
+        <div class="tov-avatar" title="${esc(m.username)}"
+             style="background:var(--accent);color:#000">
+          ${memberInitials[m.user_id] || (m.username||'?')[0].toUpperCase()}
+        </div>`).join('')}
+      ${extraCount > 0
+        ? `<div class="tov-avatar" style="background:var(--surface2);color:var(--muted);font-size:10px;border:1px solid var(--border)">+${extraCount}</div>`
+        : ''}
+    </div>
+    <div class="tov-empty-hint" style="margin-top:8px">${state.tourMembers.length} Teilnehmer</div>`;
+
+  // ── CHANGELOG CARD ────────────────────────────────────────────────────────
+  const recentLog = state.tourChangelog.slice(0, 3);
+  const logBody   = recentLog.length
+    ? recentLog.map(e => {
+        const dt = new Date(e.created_at).toLocaleDateString('de-DE', { day:'2-digit', month:'2-digit' });
+        return `<div class="tov-log-row">
+          <span class="tov-log-date">${dt}</span>
+          <span class="tov-log-text">${esc(e.username || '?')} · ${esc(e.field || '')}</span>
+        </div>`;
+      }).join('')
+    : '<div class="tov-empty-hint">Keine Einträge</div>';
+
+  // ── LAYOUT ────────────────────────────────────────────────────────────────
+  return `
+<div class="tab-scroll">
+  <div class="tov-wrap">
+
+    <div class="tov-row-main">
+      <!-- Map card (large) -->
+      <div class="tov-card tov-card-map" data-go-tab="map">
+        <div class="tov-card-eyebrow">KARTE</div>
+        <div class="tov-map-inner">${mapBody}</div>
+      </div>
+      <!-- Info card (medium) -->
+      <div class="tov-card tov-card-info" data-go-tab="info">
+        <div class="tov-card-eyebrow">INFO</div>
+        <div class="tov-info-rows">
+          ${infoRows.map(r => `
+            <div class="tov-info-row">
+              <span class="tov-info-label">${r.l}</span>
+              <span class="tov-info-value">${esc(r.v)}</span>
+            </div>`).join('')}
+          ${tour.description ? `
+            <div class="tov-info-desc">${esc(tour.description.slice(0, 140))}${tour.description.length > 140 ? '…' : ''}</div>` : ''}
+        </div>
+        <div class="tov-card-eyebrow" style="margin-top:auto;padding-top:14px">PLANUNGSTERMINE</div>
+        <div class="tov-plan-dates">${planDatesHtml}</div>
+      </div>
+    </div>
+
+    <div class="tov-row-mini">
+      <div class="tov-card tov-card-mini" data-go-tab="chat">
+        <div class="tov-card-eyebrow">CHAT ${badge('chat')}</div>
+        ${chatBody}
+      </div>
+      <div class="tov-card tov-card-mini" data-go-tab="media">
+        <div class="tov-card-eyebrow">MEDIA ${badge('media')}</div>
+        ${mediaBody}
+      </div>
+      <div class="tov-card tov-card-mini" data-go-tab="participants">
+        <div class="tov-card-eyebrow">TEILNEHMER</div>
+        ${participantsBody}
+      </div>
+      <div class="tov-card tov-card-mini" data-go-tab="changelog">
+        <div class="tov-card-eyebrow">LOG ${badge('changelog')}</div>
+        ${logBody}
+      </div>
+    </div>
+
+  </div>
+</div>`;
 }
 
 /* ----------------------------------------------------------
@@ -1353,13 +1595,14 @@ function renderInfoTab(tour) {
             ? '<p style="color:var(--muted);font-size:13px;margin-bottom:12px">Noch keine Planungstermine.</p>'
             : ''}
           ${state.tourPlanDates.map(pd => {
-            const pdDate = new Date(pd.date + 'T12:00:00').toLocaleDateString('de-DE', { weekday:'short', day:'2-digit', month:'short' });
-            const icon = pd.type === 'treffpunkt' ? '📍' : '📅';
+            const pdDate  = new Date(pd.date + 'T12:00:00').toLocaleDateString('de-DE', { weekday:'short', day:'2-digit', month:'short' });
+            const timeStr = pd.meeting_time ? pd.meeting_time.slice(0, 5) : '';
+            const icon    = pd.type === 'treffpunkt' ? '📍' : '📅';
             return `
           <div class="plan-date-item">
             <div style="min-width:0">
               <span style="font-size:13px">${icon}</span>
-              <strong>${pdDate}</strong>
+              <strong>${pdDate}</strong>${timeStr ? ` <span class="plan-date-time">${timeStr} Uhr</span>` : ''}
               ${pd.label ? ` <span style="color:var(--muted)">— ${esc(pd.label)}</span>` : ''}
               ${pd.maps_link ? ` <a href="${esc(pd.maps_link)}" target="_blank" rel="noopener" class="plan-date-maps-link">Maps →</a>` : ''}
             </div>
@@ -1376,7 +1619,7 @@ function renderInfoTab(tour) {
           </div>
           <div class="form-group" style="margin-bottom:10px">
             <label>Art</label>
-            <select id="pd-type">
+            <select id="pd-type" onchange="document.getElementById('pd-time-row').style.display=this.value==='treffpunkt'?'':'none'">
               <option value="treffpunkt">📍 Treffpunkt</option>
               <option value="sonstiger">📅 Sonstiger Termin</option>
             </select>
@@ -1384,6 +1627,10 @@ function renderInfoTab(tour) {
           <div class="form-group" style="margin-bottom:10px">
             <label>Datum</label>
             <input type="date" id="add-date" />
+          </div>
+          <div class="form-group" id="pd-time-row" style="margin-bottom:10px">
+            <label>Uhrzeit (optional)</label>
+            <input type="time" id="add-time" />
           </div>
           <div class="form-group" style="margin-bottom:10px">
             <label>Beschriftung (optional)</label>
@@ -1658,29 +1905,29 @@ function renderCommunities() {
   }).join('');
 
   const empty = state.communities.length === 0
-    ? '<div style="text-align:center;color:var(--muted);padding:40px">Noch keine Communities vorhanden.</div>'
+    ? '<div style="text-align:center;color:var(--muted);padding:40px">Noch keine Rider Groups vorhanden.</div>'
     : '';
 
   return `
 <div class="page-form" style="max-width:560px">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;flex-wrap:wrap;gap:8px">
-    <div class="page-title" style="margin:0"><img src="img/logo.png" alt="" style="height:108px;vertical-align:middle;margin-right:14px" />COMMUNITIES</div>
+    <div class="page-title" style="margin:0"><img src="img/logo.png" alt="" style="height:108px;vertical-align:middle;margin-right:14px" />RIDER GROUPS</div>
   </div>
   <div class="page-sub" style="margin-bottom:10px">
-    Wähle eine Community um loszulegen.
+    Wähle eine Rider Group um loszulegen.
     ${state.isSiteAdminUser ? `<span class="tag tag-accent" style="margin-left:8px;font-size:11px">🛡️ Seitenadmin</span>
       <button class="btn btn-ghost btn-sm" id="toggle-admin-panel" style="margin-left:4px;font-size:11px;padding:3px 10px">⚙️ Verwalten</button>` : ''}
   </div>
   <div style="display:flex;align-items:center;justify-content:flex-start;margin-bottom:28px;flex-wrap:wrap;gap:8px">
-    <button class="btn btn-primary btn-sm" id="request-community-btn">+ Community beantragen</button>
+    <button class="btn btn-primary btn-sm" id="request-community-btn">+ Rider Group beantragen</button>
   </div>
 
   <div id="community-request-form" style="display:none;margin-bottom:24px">
     <div class="info-block" style="padding:18px">
-      <div class="info-label" style="margin-bottom:12px">Neue Community beantragen</div>
+      <div class="info-label" style="margin-bottom:12px">Neue Rider Group beantragen</div>
       <div class="form-group">
-        <label>Community Name</label>
-        <input type="text" id="req-comm-name" placeholder="Name der Community" maxlength="100" />
+        <label>Rider Group Name</label>
+        <input type="text" id="req-comm-name" placeholder="Name der Rider Group" maxlength="100" />
       </div>
       <div class="form-group">
         <label>Passwort (für Beitritt)</label>
@@ -1692,7 +1939,7 @@ function renderCommunities() {
 
   ${state.isSiteAdminUser ? `<div id="admin-panel" style="display:none;margin-bottom:20px">
     <div id="pending-requests-area"></div>
-    <div class="info-block" style="padding:16px">
+    <div class="info-block" style="padding:16px;margin-bottom:12px">
       <div class="info-label">🛡️ Seitenadmin-Verwaltung</div>
       <div style="margin-top:8px">
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -1702,6 +1949,16 @@ function renderCommunities() {
           <button class="btn btn-primary btn-sm" id="add-site-admin-btn">+ Seitenadmin</button>
         </div>
         <div id="site-admin-list" style="margin-top:10px"></div>
+      </div>
+    </div>
+    <div class="info-block" style="padding:16px;border-color:var(--danger)">
+      <div class="info-label" style="color:var(--danger)">⚠️ User löschen</div>
+      <p style="font-size:12px;color:var(--muted);margin:6px 0 12px">Löscht den Account vollständig inkl. aller Mitgliedschaften. Nachrichten bleiben erhalten (als [gelöscht] markiert). Nicht rückgängig zu machen.</p>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <select id="delete-user-select" style="flex:1;min-width:160px;padding:7px 12px;font-size:13px">
+          <option value="">— User auswählen —</option>
+        </select>
+        <button class="btn btn-danger btn-sm" id="delete-user-btn">🗑 User löschen</button>
       </div>
     </div>
   </div>` : ''}
@@ -1826,11 +2083,9 @@ function renderCommunityHome() {
     const userId     = state.currentUser?.id;
     const tourId     = nextTour.id;
 
-    const avatarInitials = (id) => {
-      const n = state.profileCache[id] || '?';
-      const p = n.trim().split(/\s+/);
-      return (p[0][0] + (p[1]?.[0] || p[0][1] || '')).toUpperCase().slice(0,2);
-    };
+    // Collision-aware initials (shared helper in utils.js)
+    const _initialsMap   = buildInitialsMap(allIds);
+    const avatarInitials = (id) => _initialsMap[id] || '?';
 
     // Read per-user check-in state from Supabase (cached in state.tourCheckins)
     const checkinSet = state.tourCheckins?.[tourId] || new Set();
@@ -1856,7 +2111,7 @@ function renderCommunityHome() {
     }
     const weatherRows = tourDays.map(d => {
       const iso   = d.toISOString().slice(0, 10);
-      const label = d.toLocaleDateString('de-DE', { weekday:'short', day:'2-digit' }).toUpperCase();
+      const label = d.toLocaleDateString('de-DE', { weekday:'short', day:'2-digit' }).replace(/\./g, '').trim().toUpperCase();
       return `<div class="checkin-weather-day" data-date="${iso}">
         <span class="checkin-wd-label">${label}</span>
         <span class="checkin-wd-icon" data-wicon="${iso}">N/A</span>
@@ -1891,8 +2146,9 @@ function renderCommunityHome() {
         if (!treffpunkte.length) return '';
         const rows = treffpunkte.map(pd => {
           const pdDate = new Date(pd.date + 'T12:00:00').toLocaleDateString('de-DE', { weekday:'short', day:'2-digit', month:'2-digit' });
+          const timeStr = pd.meeting_time ? pd.meeting_time.slice(0, 5) : '';
           return `<div class="checkin-treffpunkt-row">
-            <div class="checkin-treffpunkt-date">${pdDate}</div>
+            <div class="checkin-treffpunkt-date">${pdDate}${timeStr ? `<span class="checkin-treffpunkt-time">${timeStr}</span>` : ''}</div>
             <div class="checkin-treffpunkt-info">
               ${pd.label ? `<span class="checkin-treffpunkt-label">${esc(pd.label)}</span>` : ''}
               ${pd.maps_link ? `<a href="${esc(pd.maps_link)}" target="_blank" rel="noopener" class="checkin-maps-btn">📍 Maps</a>` : ''}
@@ -2501,7 +2757,7 @@ function renderPlanYearCal() {
       ? visibleTours.map(t => `
 <div class="cal-month-tour-row">
   <span class="cal-month-tour-dot" style="background:${t.color}"></span>
-  <span class="cal-month-tour-kw">KW${t.kw}</span>
+  <span class="cal-month-tour-kw">${t.kw}</span>
   <span class="cal-month-tour-name">${esc(t.name)}</span>
 </div>`).join('')
       : `<span style="color:var(--muted);font-size:11px">Keine Einträge in diesem Monat</span>`;

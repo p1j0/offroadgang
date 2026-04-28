@@ -175,6 +175,7 @@ function attachEvents() {
     /* --- Site Admin list + user dropdown --- */
     const adminList = document.getElementById('site-admin-list');
     const adminSelect = document.getElementById('add-site-admin-select');
+    const deleteSelect = document.getElementById('delete-user-select');
 
     if (adminList && adminSelect) {
       Promise.all([loadSiteAdmins(), loadAllUsers()]).then(([admins, allUsers]) => {
@@ -186,7 +187,7 @@ function attachEvents() {
           </div>
         `).join('');
 
-        // Populate dropdown — exclude existing admins
+        // Populate site-admin dropdown — exclude existing admins
         const adminIds = new Set(admins.map(a => a.user_id));
         const available = allUsers.filter(u => !adminIds.has(u.id));
         available.forEach(u => {
@@ -195,6 +196,18 @@ function attachEvents() {
           opt.textContent = u.username;
           adminSelect.appendChild(opt);
         });
+
+        // Populate delete-user dropdown — all users except self
+        if (deleteSelect) {
+          allUsers
+            .filter(u => u.id !== state.currentUser.id)
+            .forEach(u => {
+              const opt = document.createElement('option');
+              opt.value = u.id;
+              opt.textContent = u.username;
+              deleteSelect.appendChild(opt);
+            });
+        }
 
         document.querySelectorAll('[data-remove-admin]').forEach(btn => {
           btn.addEventListener('click', async () => {
@@ -219,6 +232,34 @@ function attachEvents() {
         toast(`✓ ${username} ist jetzt Seitenadmin`);
         await navigateTo('communities');
       } catch (e) { toast(e.message, 'error'); }
+    });
+
+    /* --- Delete user --- */
+    document.getElementById('delete-user-btn')?.addEventListener('click', async () => {
+      const sel = document.getElementById('delete-user-select');
+      const userId = sel?.value;
+      if (!userId) { toast('Bitte einen User auswählen', 'error'); return; }
+      const username = sel.options[sel.selectedIndex]?.textContent || userId;
+      const confirmed = confirm(
+        `⚠️ User „${username}" wirklich DAUERHAFT löschen?\n\n` +
+        `Alle Mitgliedschaften und der Login werden gelöscht.\n` +
+        `Nachrichten bleiben als [gelöscht] erhalten.\n\n` +
+        `Diese Aktion kann NICHT rückgängig gemacht werden!`
+      );
+      if (!confirmed) return;
+      // Double-confirmation for safety
+      const typed = prompt(`Zur Bestätigung den Benutzernamen eingeben:\n„${username}"`);
+      if (typed?.trim() !== username.trim()) { toast('Benutzername stimmt nicht überein – abgebrochen.', 'error'); return; }
+      const btn = document.getElementById('delete-user-btn');
+      setBtn('delete-user-btn', true, 'Löschen…');
+      try {
+        await deleteUserAccount(userId);
+        toast(`✓ User „${username}" wurde gelöscht`);
+        await navigateTo('communities');
+      } catch (e) {
+        toast(e.message, 'error');
+        setBtn('delete-user-btn', false);
+      }
     });
   }
 
@@ -323,7 +364,7 @@ function attachEvents() {
   /* --- Community home: open tour card --- */
   document.querySelectorAll('[data-open-id]').forEach(btn => {
     btn.addEventListener('click', () => {
-      navigateTo('tour', { currentTourId: btn.dataset.openId, currentTab: 'map' });
+      navigateTo('tour', { currentTourId: btn.dataset.openId, currentTab: 'overview' });
     });
   });
 
@@ -332,7 +373,7 @@ function attachEvents() {
     btn.addEventListener('click', async () => {
       try {
         await joinTour(btn.dataset.joinId);
-        await navigateTo('tour', { currentTourId: btn.dataset.joinId, currentTab: 'map' });
+        await navigateTo('tour', { currentTourId: btn.dataset.joinId, currentTab: 'overview' });
       } catch (e) { toast(e.message, 'error'); }
     });
   });
@@ -439,7 +480,7 @@ function attachEvents() {
   document.querySelectorAll('[data-open-id]').forEach(el => {
     el.addEventListener('click', e => {
       e.stopPropagation();
-      navigateTo('tour', { currentTourId: el.dataset.openId, currentTab: 'map' });
+      navigateTo('tour', { currentTourId: el.dataset.openId, currentTab: 'overview' });
     });
   });
   document.querySelectorAll('[data-join-id]').forEach(el => {
@@ -455,7 +496,7 @@ function attachEvents() {
     card.addEventListener('click', e => {
       if (e.target.closest('[data-open-id]') || e.target.closest('[data-join-id]')) return;
       const id = card.dataset.tourId;
-      if (state.myTourIds.has(id)) navigateTo('tour', { currentTourId: id, currentTab: 'map' });
+      if (state.myTourIds.has(id)) navigateTo('tour', { currentTourId: id, currentTab: 'overview' });
     });
   });
 
@@ -506,7 +547,7 @@ function attachEvents() {
       });
       state.myTourIds.add(t.id);
       toast('✓ Tour erstellt!');
-      await navigateTo('tour', { currentTourId: t.id, currentTab: 'map' });
+      await navigateTo('tour', { currentTourId: t.id, currentTab: 'overview' });
     } catch (e) {
       toast(e.message, 'error');
       setBtn('create-submit', false, 'Tour anlegen →');
@@ -521,7 +562,7 @@ function attachEvents() {
     try {
       await joinTour(id);
       toast('✓ Willkommen in der Tour! 🏍️');
-      await navigateTo('tour', { currentTourId: id, currentTab: 'map' });
+      await navigateTo('tour', { currentTourId: id, currentTab: 'overview' });
     } catch (e) {
       toast(e.message, 'error');
       setBtn('join-submit', false, 'Beitreten →');
@@ -532,6 +573,22 @@ function attachEvents() {
   attachParticipantEvents();
 
   /* --- Tour tabs (only wire up when on tour view) --- */
+  /* --- Overview cards → switch to the target tab --- */
+  document.querySelectorAll('[data-go-tab]').forEach(card => {
+    card.addEventListener('click', async () => {
+      const tab = card.dataset.goTab;
+      if (!tab) return;
+      state.currentTab = tab;
+      if (tab === 'chat')      await loadMessages();
+      if (tab === 'changelog') await loadChangelog();
+      markTabSeen(state.currentTourId, tab);
+      computeTabBadges(state.currentTourId);
+      _refreshTabBar();
+      const tc = document.getElementById('tab-content');
+      if (tc && state.currentTour) { tc.innerHTML = renderTab(state.currentTour); afterTabRender(); }
+    });
+  });
+
   document.querySelectorAll('.tab-btn:not(.plan-tab-btn)').forEach(btn => {
     btn.addEventListener('click', async () => {
       state.currentTab = btn.dataset.tab;
@@ -571,6 +628,24 @@ function attachEvents() {
    ---------------------------------------------------------- */
 
 function afterTabRender() {
+  if (state.currentTab === 'overview') {
+    // Re-attach card click handlers (attachEvents() only runs on full render)
+    document.querySelectorAll('[data-go-tab]').forEach(card => {
+      card.addEventListener('click', async () => {
+        const tab = card.dataset.goTab;
+        if (!tab) return;
+        state.currentTab = tab;
+        if (tab === 'chat')      await loadMessages();
+        if (tab === 'changelog') await loadChangelog();
+        markTabSeen(state.currentTourId, tab);
+        computeTabBadges(state.currentTourId);
+        _refreshTabBar();
+        const tc = document.getElementById('tab-content');
+        if (tc && state.currentTour) { tc.innerHTML = renderTab(state.currentTour); afterTabRender(); }
+      });
+    });
+    setTimeout(() => _initOverviewMap(), 80);
+  }
   if (state.currentTab === 'map') {
     setTimeout(() => {
       initMap(state.currentTour);
@@ -609,10 +684,58 @@ function afterTabRender() {
 /**
  * Re-render only the tab bar (to update badges) without touching tab content.
  */
+function _initOverviewMap() {
+  const container = document.getElementById('tov-mini-map');
+  if (!container) return;
+
+  // Destroy previous instance if still mounted
+  if (window._tovMapInstance) {
+    try { window._tovMapInstance.remove(); } catch (e) {}
+    window._tovMapInstance = null;
+  }
+
+  const gpxData = normalizeGPXRoute(state.currentTour?.gpx_route);
+  if (!gpxData?.tracks?.length) return;
+
+  const map = L.map(container, {
+    zoomControl:       false,
+    dragging:          false,
+    scrollWheelZoom:   false,
+    doubleClickZoom:   false,
+    boxZoom:           false,
+    keyboard:          false,
+    tap:               false,
+    touchZoom:         false,
+    attributionControl: false,
+  });
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    opacity: 0.85,
+  }).addTo(map);
+
+  const allLatLngs = [];
+  gpxData.tracks.forEach((t, i) => {
+    const color = t.color || TRACK_COLORS[i % TRACK_COLORS.length];
+    const pts   = (t.points || []).map(p => [p[0], p[1]]);
+    if (pts.length) {
+      L.polyline(pts, { color, weight: 3.5, opacity: 0.95 }).addTo(map);
+      allLatLngs.push(...pts);
+    }
+  });
+
+  if (allLatLngs.length) {
+    map.fitBounds(L.latLngBounds(allLatLngs), { padding: [20, 20] });
+  }
+
+  window._tovMapInstance = map;
+}
+
 function _refreshTabBar() {
   const tour = state.currentTour;
   if (!tour) return;
   const tabs = [
+    { id: 'overview',     label: '⊞' },
     { id: 'map',          label: 'Karte' },
     { id: 'chat',         label: 'Chat' },
     { id: 'media',        label: 'Media' },
@@ -1037,9 +1160,10 @@ function attachInfoEvents() {
     const l = (document.getElementById('add-label')?.value || '').trim();
     const t = document.getElementById('pd-type')?.value || 'sonstiger';
     const m = (document.getElementById('add-maps-link')?.value || '').trim();
+    const ti = t === 'treffpunkt' ? (document.getElementById('add-time')?.value || '') : '';
     if (!d) { toast('Bitte Datum wählen.', 'error'); return; }
     try {
-      await addPlanDate(d, l, t, m);
+      await addPlanDate(d, l, t, m, ti);
       _refreshInfoTab();
     } catch (e) { toast(e.message, 'error'); }
   });
