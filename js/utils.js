@@ -13,6 +13,37 @@ function esc(s) {
 }
 
 /**
+ * Build a collision-aware initials map for a list of user IDs.
+ * Uses 1st + 2nd char, escalating to 1st + 3rd, 4th, … when two users share the same result.
+ * Example: Rainer/Ralf/Raimund → RA→RI/RL/RI → RN/RL/RM
+ *
+ * Looks up names from state.profileCache[id].
+ * @param {string[]} ids
+ * @returns {Object.<string,string>}  id → two-letter initials
+ */
+function buildInitialsMap(ids) {
+  const clean = (uid) => (state.profileCache[uid] || '?').replace(/\s+/g, '').toUpperCase();
+  const map   = {};
+
+  function resolve(group, pos) {
+    if (pos > 9) return;
+    const bucket = {};
+    for (const uid of group) {
+      const n   = clean(uid);
+      const ini = (n[0] || '?') + (n[pos] || n[n.length - 1] || '?');
+      map[uid]  = ini;
+      (bucket[ini] = bucket[ini] || []).push(uid);
+    }
+    for (const sub of Object.values(bucket)) {
+      if (sub.length > 1) resolve(sub, pos + 1);
+    }
+  }
+
+  resolve(ids, 1);
+  return map;
+}
+
+/**
  * Show a temporary toast notification.
  * @param {string} msg
  * @param {string} [type=''] – '' (accent) | 'error'

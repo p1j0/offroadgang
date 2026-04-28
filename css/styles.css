@@ -659,7 +659,7 @@ select option       { background: var(--surface2); }
 
 .info-grid {
   display: grid;
-  grid-template-columns: minmax(0, 0.95fr) minmax(280px, 0.8fr);
+  grid-template-columns: minmax(0, 1fr) 420px;
   gap: 20px;
 }
 @media (max-width: 720px) { .info-grid { grid-template-columns: 1fr; } }
@@ -2195,4 +2195,200 @@ select option       { background: var(--surface2); }
     border: none;
   }
   .settings-modal-body { padding: 16px; }
+}
+
+/* ============================================================
+   Tour Overview Dashboard
+   ============================================================ */
+
+.tov-wrap {
+  padding: 20px 24px 36px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 1200px;
+}
+
+/* Top row: map (large) + info (medium) */
+.tov-row-main {
+  display: grid;
+  grid-template-columns: 3fr 2fr;
+  gap: 12px;
+  align-items: stretch;
+}
+
+/* Bottom row: 4 small cards */
+.tov-row-mini {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+/* Base card */
+.tov-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px 18px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, transform 0.1s;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+}
+.tov-card:hover {
+  border-color: var(--accent);
+  background: var(--surface2);
+  transform: translateY(-1px);
+}
+
+/* Specific min-heights */
+.tov-card-map  { min-height: 340px; }
+.tov-card-info { min-height: 340px; }
+.tov-card-mini { min-height: 150px; }
+
+/* Eyebrow label */
+.tov-card-eyebrow {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  text-transform: uppercase;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* Map card inner */
+.tov-map-inner {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 220px;
+}
+.tov-map-leaflet {
+  flex: 1;
+  min-height: 220px;
+  border-radius: 8px;
+  overflow: hidden;
+  /* Leaflet needs explicit height — set via flex + min-height */
+  height: 100%;
+}
+.tov-map-placeholder {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface2);
+  border-radius: 8px;
+  min-height: 200px;
+  text-align: center;
+  padding: 24px;
+}
+.tov-map-stats {
+  display: flex;
+  gap: 14px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+.tov-stat         { font-size: 12px; color: var(--muted-strong); }
+.tov-stat strong  { color: var(--text); font-family: var(--font-display); }
+
+/* Info card */
+.tov-info-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin-bottom: 4px;
+}
+.tov-info-row   { display: flex; flex-direction: column; gap: 1px; }
+.tov-info-label { font-size: 10px; font-weight: 600; text-transform: uppercase;
+                  letter-spacing: 0.07em; color: var(--muted); }
+.tov-info-value { font-size: 13px; color: var(--text); }
+.tov-info-desc  { font-size: 12px; color: var(--muted); line-height: 1.5; font-style: italic;
+                  border-top: 1px solid var(--border); padding-top: 8px; margin-top: 2px; }
+.tov-plan-dates { display: flex; flex-direction: column; gap: 5px; }
+.tov-plan-row   { font-size: 12px; color: var(--text); display: flex; align-items: center;
+                  gap: 5px; flex-wrap: wrap; }
+.tov-plan-label { color: var(--muted); }
+.tov-plan-maps  { color: var(--accent); font-size: 11px; text-decoration: none; }
+.tov-plan-maps:hover { text-decoration: underline; }
+
+/* Chat card */
+.tov-chat-row        { display: flex; flex-direction: column; gap: 1px;
+                       padding: 5px 0; border-bottom: 1px solid var(--border); }
+.tov-chat-row:last-child { border-bottom: none; }
+.tov-chat-user       { font-size: 11px; font-weight: 600; color: var(--accent); }
+.tov-chat-text       { font-size: 12px; color: var(--muted-strong); line-height: 1.4; }
+
+/* Media card */
+.tov-media-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px;
+  border-radius: 6px;
+  overflow: hidden;
+  flex: 1;
+  min-height: 80px;
+}
+.tov-media-thumb {
+  aspect-ratio: 1;
+  background-size: cover;
+  background-position: center;
+  background-color: var(--surface3);
+}
+.tov-media-yt {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  color: var(--muted);
+}
+
+/* Participants card */
+.tov-avatars { display: flex; flex-wrap: wrap; gap: 4px; }
+.tov-avatar  {
+  width: 30px; height: 30px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700;
+}
+
+/* Changelog card */
+.tov-log-row  { display: flex; gap: 8px; align-items: baseline;
+                padding: 4px 0; border-bottom: 1px solid var(--border); }
+.tov-log-row:last-child { border-bottom: none; }
+.tov-log-date { font-size: 10px; color: var(--muted); flex-shrink: 0; }
+.tov-log-text { font-size: 12px; color: var(--muted-strong);
+                overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Badge in overview eyebrow */
+.tov-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 16px; height: 16px; border-radius: 8px;
+  background: var(--orange); color: #000;
+  font-size: 9px; font-weight: 700; padding: 0 4px;
+}
+
+/* Empty state hint */
+.tov-empty-hint { font-size: 12px; color: var(--muted); }
+
+/* Responsive */
+@media (max-width: 900px) {
+  .tov-row-main { grid-template-columns: 1fr; }
+  .tov-card-map, .tov-card-info { min-height: 280px; }
+}
+@media (max-width: 640px) {
+  .tov-row-mini { grid-template-columns: 1fr 1fr; }
+  .tov-wrap     { padding: 14px 14px 28px; gap: 10px; }
+}
+
+/* ⊞ overview tab — slightly wider so the icon fits neatly */
+.tab-btn[data-tab="overview"] {
+  font-size: 16px;
+  padding-left: 10px;
+  padding-right: 10px;
 }

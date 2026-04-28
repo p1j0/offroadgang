@@ -444,10 +444,17 @@ async function sendMessage(text) {
  * @param {string} date  – ISO date string (YYYY-MM-DD)
  * @param {string} label – optional description
  */
-async function addPlanDate(date, label, type = 'sonstiger', mapsLink = '') {
+async function addPlanDate(date, label, type = 'sonstiger', mapsLink = '', meetingTime = '') {
   const { data, error } = await sb
     .from('plan_dates')
-    .insert({ tour_id: state.currentTourId, date, label, type, maps_link: mapsLink || null })
+    .insert({
+      tour_id:      state.currentTourId,
+      date,
+      label,
+      type,
+      maps_link:    mapsLink    || null,
+      meeting_time: meetingTime || null,
+    })
     .select()
     .single();
   if (error) throw new Error(error.message);
@@ -1344,6 +1351,28 @@ async function loadAllUsers() {
     .select('id, username')
     .order('username', { ascending: true });
   return data || [];
+}
+
+/**
+ * Permanently delete a user account (site admin only).
+ * Calls the delete-user Edge Function with the current user's JWT.
+ */
+async function deleteUserAccount(userId) {
+  const { data: { session } } = await sb.auth.getSession();
+  const token = session?.access_token;
+  if (!token) throw new Error('Nicht eingeloggt');
+
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/delete-user`, {
+    method:  'POST',
+    headers: {
+      'Content-Type':  'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({ user_id: userId }),
+  });
+
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
 }
 
 /* ----------------------------------------------------------

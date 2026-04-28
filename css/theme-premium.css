@@ -393,7 +393,7 @@ html, body {
   background: rgba(255,255,255,0.025);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  color: var(--muted-strong);
+  color: var(--accent);
   cursor: pointer;
   transition: all 0.15s;
   flex-shrink: 0;
@@ -401,8 +401,8 @@ html, body {
 }
 .btn-icon-back:hover, .btn-icon-more:hover {
   background: rgba(255,255,255,0.06);
-  border-color: var(--border-strong);
-  color: var(--text);
+  border-color: var(--accent);
+  color: var(--accent-soft);
 }
 
 /* ---------- DROPDOWN MENU ---------- */
@@ -914,9 +914,28 @@ html, body {
   font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 700;
-  color: var(--muted);
+  color: #fff;
   white-space: nowrap;
   flex-shrink: 0;
+}
+.checkin-treffpunkt-time {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--accent);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.plan-date-time {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  margin-left: 3px;
+}
+.tov-plan-time {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
 }
 .checkin-treffpunkt-info {
   display: flex;
@@ -1311,7 +1330,6 @@ label {
 
 .calendar-widget.compact-tour-calendar {
   padding: 8px !important;
-  max-width: 280px;
 }
 .calendar-widget.compact-tour-calendar .cal-nav {
   margin-bottom: 4px;

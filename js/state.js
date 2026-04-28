@@ -45,7 +45,7 @@ const state = {
 
   /* Active tour */
   currentTourId: null,
-  currentTab:    'map',
+  currentTab:    'overview',
   currentTour:   null,
   tourMembers:   [],
   tourMessages:  [],
