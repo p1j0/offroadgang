@@ -1101,7 +1101,7 @@ label {
 }
 @media (min-width: 1400px) {
   .plan-polls-sidebar { width: 700px; }
-  .ycal-months { grid-template-columns: 1fr 1fr 1fr; }
+  .ycal-wrap .ycal-months { grid-template-columns: 1fr 1fr 1fr; }
 }
 @media (max-width: 900px) {
   .plan-polls-sidebar { width: 100% !important; min-width: 0 !important; }
