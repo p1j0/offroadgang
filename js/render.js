@@ -77,10 +77,101 @@ function renderAuth() {
         ${isLogin ? 'Anmelden →' : 'Account erstellen →'}
       </button>
 
+      ${isLogin ? `<div style="text-align:center;margin-top:10px">
+        <a id="auth-forgot-pw" style="font-size:12px;color:var(--muted);cursor:pointer;text-decoration:underline">Passwort vergessen?</a>
+      </div>` : ''}
+
       <div class="auth-toggle">
         ${isLogin
           ? 'Noch kein Account? <a id="auth-switch">Jetzt registrieren</a>'
           : 'Bereits registriert? <a id="auth-switch">Anmelden</a>'}
+      </div>
+    </div>
+  </div>
+</div>`;
+}
+
+/* ----------------------------------------------------------
+   Password reset flow
+   ---------------------------------------------------------- */
+
+function renderForgotPassword() {
+  return `
+<div class="auth-screen">
+  <div class="auth-branding">
+    <img src="img/logo.png" alt="MotoRoute" style="width:200px;margin-bottom:20px" />
+    <div class="auth-branding-logo">MOTO<span>ROUTE</span></div>
+    <div class="auth-branding-tagline">Passwort zurücksetzen</div>
+  </div>
+  <div class="auth-form-panel">
+    <div class="auth-form-box">
+      <div class="auth-form-title">🔐 Passwort vergessen?</div>
+      <div class="auth-form-sub">
+        Gib deinen Benutzernamen ein. Wir schicken dir einen Link zum Zurücksetzen
+        an die E-Mail-Adresse, die du im Profil hinterlegt hast.
+      </div>
+
+      ${state.authErr ? `<div class="auth-err">⚠️ ${esc(state.authErr)}</div>` : ''}
+
+      <div class="form-group">
+        <label>Benutzername</label>
+        <input type="text" id="fpw-name" placeholder="Dein Benutzername"
+          maxlength="30" autocomplete="username" />
+      </div>
+
+      <button class="btn btn-primary" id="fpw-submit"
+        style="width:100%;justify-content:center;padding:13px;font-size:15px">
+        Reset-Link senden →
+      </button>
+
+      <div class="auth-toggle">
+        <a id="fpw-back">← Zurück zur Anmeldung</a>
+      </div>
+
+      <div style="margin-top:18px;padding:12px;background:var(--surface2);border-radius:8px;font-size:12px;color:var(--muted);line-height:1.5">
+        ℹ️ Wenn du keine E-Mail im Profil hinterlegt hast, kontaktiere bitte einen Seitenadmin —
+        der kann dein Passwort zurücksetzen.
+      </div>
+    </div>
+  </div>
+</div>`;
+}
+
+function renderResetPassword() {
+  return `
+<div class="auth-screen">
+  <div class="auth-branding">
+    <img src="img/logo.png" alt="MotoRoute" style="width:200px;margin-bottom:20px" />
+    <div class="auth-branding-logo">MOTO<span>ROUTE</span></div>
+    <div class="auth-branding-tagline">Neues Passwort setzen</div>
+  </div>
+  <div class="auth-form-panel">
+    <div class="auth-form-box">
+      <div class="auth-form-title">🔐 Neues Passwort</div>
+      <div class="auth-form-sub">
+        Wähle ein neues Passwort für dein MotoRoute-Konto.
+      </div>
+
+      ${state.authErr ? `<div class="auth-err">⚠️ ${esc(state.authErr)}</div>` : ''}
+
+      <div class="form-group">
+        <label>Neues Passwort</label>
+        <input type="password" id="rpw-new" placeholder="Mindestens 6 Zeichen"
+          autocomplete="new-password" />
+      </div>
+      <div class="form-group">
+        <label>Bestätigen</label>
+        <input type="password" id="rpw-new2" placeholder="Wiederholen"
+          autocomplete="new-password" />
+      </div>
+
+      <button class="btn btn-primary" id="rpw-submit"
+        style="width:100%;justify-content:center;padding:13px;font-size:15px">
+        Passwort speichern →
+      </button>
+
+      <div class="auth-toggle">
+        <a id="rpw-back">← Zurück zur Anmeldung</a>
       </div>
     </div>
   </div>
@@ -763,21 +854,34 @@ function _renderYearBody(y, showPlans, prevBtnId, nextBtnId) {
 </div>`;
   }
 
-  // Legend
-  const tourLegend = tourRanges.map(t => `
+  // Legend — only show tours/plans that overlap with year y
+  const yearStart = new Date(y, 0, 1);
+  const yearEnd   = new Date(y, 11, 31, 23, 59, 59);
+
+  const tourLegend = tourRanges
+    .filter(t => t.start <= yearEnd && t.end >= yearStart)
+    .map(t => {
+      const kw = getISOWeek(t.start);
+      return `
 <div class="cal-legend-item" style="margin-bottom:4px">
   <span class="cal-legend-swatch" style="background:${t.color}"></span>
+  <span class="cal-legend-kw">KW${kw}</span>
   <span class="cal-legend-name">${esc(t.name)}</span>
-</div>`).join('');
+</div>`;
+    }).join('');
 
   const planLegend = (showPlans && planRanges.length) ? `
 <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
             color:#d4ff3a;margin:8px 0 4px">Jahresplanung ${y}</div>` +
-  planRanges.map(p => `
+  planRanges.map(p => {
+    const kw = getISOWeek(p.start);
+    return `
 <div class="cal-legend-item" style="margin-bottom:4px">
   <span class="cal-legend-swatch" style="background:#d4ff3a"></span>
+  <span class="cal-legend-kw">KW${kw}</span>
   <span class="cal-legend-name">${esc(p.name)}</span>
-</div>`).join('') : '';
+</div>`;
+  }).join('') : '';
 
   const legend = (tourLegend + planLegend) ||
     `<span style="color:var(--muted);font-size:11px">Keine Touren</span>`;
@@ -817,7 +921,8 @@ function renderCalWidget() {
 
   const myTours    = state.tours.filter(t =>  state.myTourIds.has(t.id));
   const otherTours = state.tours.filter(t => !state.myTourIds.has(t.id));
-  const toursToShow = state.calShowAll ? [...myTours, ...otherTours] : myTours;
+  // Default: show all; checkbox "Nur eigene" filters to myTours only
+  const toursToShow = state.calShowAll ? myTours : [...myTours, ...otherTours];
 
   const ranges = toursToShow.map(tour => ({
     name:  tour.name,
@@ -856,7 +961,7 @@ function renderCalWidget() {
   <div class="cal-month-tours">${tourListHtml}</div>
   <label class="cal-show-all-label">
     <input type="checkbox" id="cal-show-all" ${state.calShowAll ? 'checked' : ''} />
-    Alle Touren anzeigen
+    Nur eigene Touren anzeigen
   </label>
 </div>`;
 }
@@ -1782,7 +1887,7 @@ function _renderTourCalMonth(tour, y, m, tourStart, tourEnd, today, hasRange, sh
       } else if (isEnd) {
         style = 'background:var(--accent);color:#000;font-weight:700;border-radius:0 6px 6px 0;';
       } else {
-        style = 'background:rgba(240,120,0,0.35);color:var(--text);border-radius:0;';
+        style = 'background:rgba(212,255,58,0.25);color:var(--text);border-radius:0;';
       }
     }
 
@@ -1891,6 +1996,27 @@ async function renderProfileBody() {
   <button class="btn btn-primary" id="profile-save"
     style="width:100%;justify-content:center;padding:13px;font-size:15px;margin-top:24px">
     Einstellungen speichern
+  </button>
+
+  <div class="divider" style="margin-top:32px"></div>
+  <h3 style="font-size:15px;font-weight:600;margin-bottom:6px">🔐 Passwort ändern</h3>
+  <p style="color:var(--muted);font-size:13px;margin-bottom:16px">
+    Wähle ein neues Passwort (mindestens 6 Zeichen). Du bleibst nach dem Ändern eingeloggt.
+  </p>
+
+  <div class="form-group">
+    <label>Neues Passwort</label>
+    <input type="password" id="p-new-pw" placeholder="Mindestens 6 Zeichen" autocomplete="new-password" />
+  </div>
+
+  <div class="form-group">
+    <label>Neues Passwort bestätigen</label>
+    <input type="password" id="p-new-pw2" placeholder="Wiederholen" autocomplete="new-password" />
+  </div>
+
+  <button class="btn btn-ghost" id="profile-change-pw"
+    style="width:100%;justify-content:center;padding:13px;font-size:14px;margin-top:8px">
+    🔐 Passwort ändern
   </button>`;
 }
 
@@ -1996,6 +2122,24 @@ function renderCommunities() {
           <button class="btn btn-primary btn-sm" id="add-site-admin-btn">+ Seitenadmin</button>
         </div>
         <div id="site-admin-list" style="margin-top:10px"></div>
+      </div>
+    </div>
+    <div class="info-block" style="padding:16px;margin-bottom:12px">
+      <div class="info-label">🔑 Passwort zurücksetzen</div>
+      <p style="font-size:12px;color:var(--muted);margin:6px 0 12px">Setzt das Passwort eines Users zurück. Das neue Passwort wird angezeigt und kann kopiert werden — gib es dem User direkt weiter.</p>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <select id="reset-pw-select" style="flex:1;min-width:160px;padding:7px 12px;font-size:13px">
+          <option value="">— User auswählen —</option>
+        </select>
+        <button class="btn btn-primary btn-sm" id="reset-pw-btn">🔑 Zurücksetzen</button>
+      </div>
+      <div id="reset-pw-result" style="display:none;margin-top:12px;padding:12px;background:var(--surface2);border:1px solid var(--accent);border-radius:8px">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Neues Passwort für <strong id="reset-pw-username" style="color:var(--text)"></strong>:</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <code id="reset-pw-value" style="flex:1;padding:8px 10px;background:var(--surface);border-radius:6px;font-family:monospace;font-size:14px;letter-spacing:0.05em;color:var(--accent);user-select:all"></code>
+          <button class="btn btn-ghost btn-sm" id="reset-pw-copy">📋 Kopieren</button>
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-top:6px">Schicke es dem User auf einem sicheren Weg (WhatsApp, Signal). Es wird nach dem Schließen nicht erneut angezeigt.</div>
       </div>
     </div>
     <div class="info-block" style="padding:16px;border-color:var(--danger)">
@@ -2119,7 +2263,12 @@ function renderCommunityHome() {
   const checkInBox = nextTour ? (() => {
     const tStart = new Date(nextTour.date + 'T12:00:00');
     const tEnd   = nextTour.end_date && nextTour.end_date !== nextTour.date ? new Date(nextTour.end_date + 'T12:00:00') : null;
-    const fmtShort = (d) => d.toLocaleDateString('de-DE', { weekday:'short', day:'2-digit', month:'2-digit' });
+    const fmtShort = (d) => {
+      const wd  = d.toLocaleDateString('de-DE', { weekday: 'short' }).replace('.', '');
+      const day = d.getDate();
+      const mon = d.toLocaleDateString('de-DE', { month: 'short' }).replace('.', '');
+      return `${wd} ${day}. ${mon}`;
+    };
     const dateStr = tEnd ? `${fmtShort(tStart)} – ${fmtShort(tEnd)}` : fmtShort(tStart);
     const now = new Date();
     const diffDays = Math.ceil((tStart - now) / 86400000);
@@ -2445,9 +2594,6 @@ function renderPlanPolls() {
   const currentYear = new Date().getFullYear();
 
   const createForm = isAdmin ? `
-<div style="margin-bottom:16px">
-  <button class="btn btn-primary btn-sm" id="poll-toggle-form">+ Neue Abfrage</button>
-</div>
 <div class="card" id="poll-create-form" style="margin-bottom:20px;padding:18px 20px;display:none">
   <div style="font-size:14px;font-weight:600;margin-bottom:12px">Neue Abfrage erstellen</div>
 
@@ -2519,8 +2665,16 @@ function renderPlanPolls() {
 
   const pollsHtml = yearlyHtml + generalHtml;
 
+  const headerRow = `
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;gap:8px">
+  ${isAdmin ? `<button class="btn btn-primary btn-sm" id="poll-toggle-form">+ Neue Abfrage</button>` : '<div></div>'}
+  <button class="btn btn-ghost btn-sm" onclick="copyPageLink()" style="font-size:11px">
+    🔗 Seitenlink kopieren
+  </button>
+</div>`;
+
   return `<div class="plan-polls-scroll"><div class="plan-polls-layout">
-    <div class="plan-polls-main">${createForm}${pollsHtml}</div>
+    <div class="plan-polls-main">${headerRow}${createForm}${pollsHtml}</div>
     <div class="plan-polls-sidebar">${renderPlanYearCal()}</div>
   </div></div>`;
 }

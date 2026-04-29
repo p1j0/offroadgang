@@ -103,6 +103,15 @@ function copyTourLink(tourId) {
   }
 }
 
+function copyPageLink() {
+  const url = location.origin + location.pathname;
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(url).then(() => toast('🔗 Link kopiert!'));
+  } else {
+    prompt('Link kopieren:', url);
+  }
+}
+
 /* ----------------------------------------------------------
    Tab "last seen" tracking – stored in localStorage
    ---------------------------------------------------------- */

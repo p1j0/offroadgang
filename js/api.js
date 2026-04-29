@@ -1401,6 +1401,66 @@ async function deleteUserAccount(userId) {
   if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
 }
 
+/**
+ * Request a self-service password reset email for the given username.
+ * Always returns success to prevent user enumeration.
+ * @param {string} username
+ * @returns {Promise<{ok:boolean, has_email?:boolean}>}
+ */
+async function requestPasswordReset(username) {
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/request-password-reset`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+  return json;
+}
+
+/**
+ * Complete a password reset with a token from the email link.
+ * @param {string} token
+ * @param {string} newPassword
+ */
+async function completePasswordReset(token, newPassword) {
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/complete-password-reset`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token, new_password: newPassword }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+}
+
+/**
+ * Reset another user's password (site admin only).
+ * @param {string} userId
+ * @param {string} [newPassword] - if omitted, a random one is generated
+ * @returns {Promise<string>} the new password
+ */
+async function adminResetPassword(userId, newPassword) {
+  const { data: { session } } = await sb.auth.getSession();
+  const token = session?.access_token;
+  if (!token) throw new Error('Nicht eingeloggt');
+
+  const body = { user_id: userId };
+  if (newPassword) body.new_password = newPassword;
+
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/admin-reset-password`, {
+    method:  'POST',
+    headers: {
+      'Content-Type':  'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+  return json.password;
+}
+
 /* ----------------------------------------------------------
    Push Notifications
    ---------------------------------------------------------- */
