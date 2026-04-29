@@ -467,6 +467,14 @@ select option       { background: var(--surface2); }
   border-radius: 3px;
   flex-shrink: 0;
 }
+.cal-legend-kw {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--muted);
+  letter-spacing: 0.03em;
+  flex-shrink: 0;
+  min-width: 32px;
+}
 .cal-legend-name {
   white-space: nowrap;
   overflow: hidden;
@@ -1231,6 +1239,7 @@ select option       { background: var(--surface2); }
   align-items: center;
   gap: 5px;
   user-select: none;
+  margin-left: auto;
 }
 .community-default-label input[type="checkbox"] { display: none; }
 .community-default-star {

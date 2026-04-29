@@ -231,13 +231,15 @@ function render() {
   const app = document.getElementById('app');
   if (!app) return;
 
-  const showNav = !['auth', 'loading'].includes(state.view);
+  const showNav = !['auth', 'loading', 'forgot-password', 'reset-password'].includes(state.view);
 
   try {
     let html = showNav ? renderNav() : '';
 
     switch (state.view) {
       case 'auth':                html += renderAuth();             break;
+      case 'forgot-password':     html += renderForgotPassword();   break;
+      case 'reset-password':      html += renderResetPassword();    break;
       case 'communities':         html += renderCommunities();      break;
     case 'create-community':    html += renderCreateCommunity();  break;
       case 'community-home':      html += renderCommunityHome();    break;
@@ -395,6 +397,19 @@ async function init() {
   if (joinId) {
     state.preJoinId = joinId;
     history.replaceState(null, '', location.pathname + location.search);
+  }
+
+  // Password reset link: #reset=TOKEN
+  const resetToken = location.hash.startsWith('#reset=') ? location.hash.slice(7) : null;
+  if (resetToken) {
+    state.resetToken = resetToken;
+    history.replaceState(null, '', location.pathname + location.search);
+    // If user is already logged in, sign them out so the reset flow runs cleanly
+    try { await sb.auth.signOut(); } catch(e) {}
+    state.currentUser = null;
+    state.view = 'reset-password';
+    render();
+    return;
   }
 
   try {

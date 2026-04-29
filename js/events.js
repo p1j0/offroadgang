@@ -37,6 +37,86 @@ function attachEvents() {
     setTimeout(() => document.getElementById('a-name')?.focus(), 50);
   }
 
+  /* --- "Passwort vergessen?" link on login screen --- */
+  document.getElementById('auth-forgot-pw')?.addEventListener('click', () => {
+    state.authErr = '';
+    state.view    = 'forgot-password';
+    render();
+  });
+
+  /* --- Forgot-password screen --- */
+  const fpwBtn = document.getElementById('fpw-submit');
+  if (fpwBtn) {
+    const submit = async () => {
+      const username = (document.getElementById('fpw-name')?.value || '').trim();
+      if (!username) { state.authErr = 'Bitte Benutzernamen eingeben.'; render(); return; }
+      state.authErr = '';
+      setBtn('fpw-submit', true, 'Sende…');
+      try {
+        const result = await requestPasswordReset(username);
+        if (result.has_email === false) {
+          // Username exists but no email on file
+          alert('Für diesen User ist keine E-Mail hinterlegt.\n\nBitte kontaktiere einen Seitenadmin, der dein Passwort zurücksetzen kann.');
+        } else {
+          // Either email sent or username unknown — same message either way
+          alert('✓ Falls der Benutzername existiert und eine E-Mail hinterlegt ist, wurde ein Reset-Link verschickt.\n\nDer Link ist 1 Stunde gültig. Schaue auch im Spam-Ordner nach.');
+        }
+        state.view = 'auth';
+        state.authMode = 'login';
+        render();
+      } catch (e) {
+        state.authErr = e.message || 'Fehler';
+        render();
+      }
+      setBtn('fpw-submit', false, 'Reset-Link senden →');
+    };
+    fpwBtn.addEventListener('click', submit);
+    document.getElementById('fpw-name')?.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
+    setTimeout(() => document.getElementById('fpw-name')?.focus(), 50);
+  }
+  document.getElementById('fpw-back')?.addEventListener('click', () => {
+    state.authErr = '';
+    state.view    = 'auth';
+    state.authMode = 'login';
+    render();
+  });
+
+  /* --- Reset-password screen (#reset=TOKEN) --- */
+  const rpwBtn = document.getElementById('rpw-submit');
+  if (rpwBtn) {
+    const submit = async () => {
+      const pw1 = document.getElementById('rpw-new')?.value  || '';
+      const pw2 = document.getElementById('rpw-new2')?.value || '';
+      if (pw1.length < 6) { state.authErr = 'Passwort muss mindestens 6 Zeichen haben.'; render(); return; }
+      if (pw1 !== pw2)    { state.authErr = 'Passwörter stimmen nicht überein.'; render(); return; }
+      if (!state.resetToken) { state.authErr = 'Kein Reset-Token vorhanden.'; render(); return; }
+      state.authErr = '';
+      setBtn('rpw-submit', true, 'Speichere…');
+      try {
+        await completePasswordReset(state.resetToken, pw1);
+        state.resetToken = null;
+        alert('✓ Passwort wurde erfolgreich geändert.\n\nDu kannst dich jetzt mit dem neuen Passwort anmelden.');
+        state.view = 'auth';
+        state.authMode = 'login';
+        render();
+      } catch (e) {
+        state.authErr = e.message || 'Fehler';
+        render();
+      }
+      setBtn('rpw-submit', false, 'Passwort speichern →');
+    };
+    rpwBtn.addEventListener('click', submit);
+    document.getElementById('rpw-new2')?.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
+    setTimeout(() => document.getElementById('rpw-new')?.focus(), 50);
+  }
+  document.getElementById('rpw-back')?.addEventListener('click', () => {
+    state.authErr = '';
+    state.resetToken = null;
+    state.view = 'auth';
+    state.authMode = 'login';
+    render();
+  });
+
   /* --- Navigation bar --- */
   document.getElementById('nav-logo')?.addEventListener('click', () => navigateTo('communities'));
 
@@ -176,6 +256,7 @@ function attachEvents() {
     const adminList = document.getElementById('site-admin-list');
     const adminSelect = document.getElementById('add-site-admin-select');
     const deleteSelect = document.getElementById('delete-user-select');
+    const resetSelect  = document.getElementById('reset-pw-select');
 
     if (adminList && adminSelect) {
       Promise.all([loadSiteAdmins(), loadAllUsers()]).then(([admins, allUsers]) => {
@@ -207,6 +288,16 @@ function attachEvents() {
               opt.textContent = u.username;
               deleteSelect.appendChild(opt);
             });
+        }
+
+        // Populate reset-password dropdown — all users (including self for self-reset is fine)
+        if (resetSelect) {
+          allUsers.forEach(u => {
+            const opt = document.createElement('option');
+            opt.value = u.id;
+            opt.textContent = u.username + (u.id === state.currentUser.id ? ' (du)' : '');
+            resetSelect.appendChild(opt);
+          });
         }
 
         document.querySelectorAll('[data-remove-admin]').forEach(btn => {
@@ -259,6 +350,42 @@ function attachEvents() {
       } catch (e) {
         toast(e.message, 'error');
         setBtn('delete-user-btn', false);
+      }
+    });
+
+    /* --- Reset password --- */
+    document.getElementById('reset-pw-btn')?.addEventListener('click', async () => {
+      const sel = document.getElementById('reset-pw-select');
+      const userId = sel?.value;
+      if (!userId) { toast('Bitte einen User auswählen', 'error'); return; }
+      const username = sel.options[sel.selectedIndex]?.textContent.replace(' (du)', '') || userId;
+      const confirmed = confirm(
+        `Passwort für „${username}" wirklich zurücksetzen?\n\n` +
+        `Es wird ein neues, zufälliges Passwort erzeugt — der alte Login funktioniert dann nicht mehr.`
+      );
+      if (!confirmed) return;
+      setBtn('reset-pw-btn', true, 'Setze zurück…');
+      try {
+        const newPw = await adminResetPassword(userId);
+        document.getElementById('reset-pw-username').textContent = username;
+        document.getElementById('reset-pw-value').textContent    = newPw;
+        document.getElementById('reset-pw-result').style.display = 'block';
+        toast(`✓ Passwort zurückgesetzt`);
+      } catch (e) {
+        toast(e.message, 'error');
+      } finally {
+        setBtn('reset-pw-btn', false);
+      }
+    });
+
+    /* --- Copy reset password to clipboard --- */
+    document.getElementById('reset-pw-copy')?.addEventListener('click', () => {
+      const pw = document.getElementById('reset-pw-value')?.textContent || '';
+      if (!pw) return;
+      if (navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(pw).then(() => toast('📋 Passwort kopiert!'));
+      } else {
+        prompt('Passwort kopieren:', pw);
       }
     });
   }
@@ -2455,6 +2582,27 @@ function attachProfileModalEvents() {
       toast('✓ Einstellungen gespeichert');
     } catch(e) { toast(e.message, 'error'); }
     setBtn('profile-save', false, 'Einstellungen speichern');
+  });
+
+  /* --- Change password --- */
+  document.getElementById('profile-change-pw')?.addEventListener('click', async () => {
+    const pw1 = document.getElementById('p-new-pw')?.value  || '';
+    const pw2 = document.getElementById('p-new-pw2')?.value || '';
+    if (pw1.length < 6) { toast('Passwort muss mindestens 6 Zeichen haben.', 'error'); return; }
+    if (pw1 !== pw2)    { toast('Passwörter stimmen nicht überein.', 'error'); return; }
+
+    setBtn('profile-change-pw', true, 'Ändere…');
+    try {
+      const { error } = await sb.auth.updateUser({ password: pw1 });
+      if (error) throw error;
+      // Clear inputs on success
+      document.getElementById('p-new-pw').value  = '';
+      document.getElementById('p-new-pw2').value = '';
+      toast('✓ Passwort erfolgreich geändert');
+    } catch (e) {
+      toast(e.message || 'Passwort ändern fehlgeschlagen', 'error');
+    }
+    setBtn('profile-change-pw', false, '🔐 Passwort ändern');
   });
 
   /* --- PWA Push Button --- */
