@@ -403,23 +403,29 @@ async function init() {
     if (session) {
       const { data: profile } = await sb
         .from('profiles')
-        .select('username')
+        .select('username, default_community_id')
         .eq('id', session.user.id)
         .single();
 
       if (profile) {
-        state.currentUser = { id: session.user.id, username: profile.username };
+        state.currentUser = {
+          id: session.user.id,
+          username: profile.username,
+          defaultCommunityId: profile.default_community_id || null,
+        };
         state.profileCache[session.user.id] = profile.username;
         startHeartbeat();
 
         if (joinId) {
-          // Load tours so we know if the user is already a member
           await loadHomeData();
           if (state.myTourIds.has(joinId)) {
             await navigateTo('tour', { currentTourId: joinId, currentTab: 'overview' });
           } else {
             await navigateTo('join');
           }
+        } else if (profile.default_community_id) {
+          // Auto-redirect to default community
+          await navigateTo('community-home', { currentCommunityId: profile.default_community_id });
         } else {
           await navigateTo('communities');
         }

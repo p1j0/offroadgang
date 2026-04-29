@@ -1915,13 +1915,18 @@ function renderProfileModal() {
    ---------------------------------------------------------- */
 
 function renderCommunities() {
+  const defaultId = state.currentUser.defaultCommunityId || null;
   const list = state.communities.map(c => {
     const isMember  = state.myCommunityIds.has(c.id);
     const isAdmin   = c.admin_id === state.currentUser.id ||
                       (c.co_admin_ids || []).includes(state.currentUser.id);
     const memberCount = state.communityMemberCounts[c.id] || 1;
+    const isDefault = defaultId === c.id;
+    const dragHandle = state.isSiteAdminUser
+      ? `<span class="community-drag-handle" title="Reihenfolge ändern">⠿</span>`
+      : '';
     return `
-<div class="card community-card" data-community-id="${c.id}">
+<div class="card community-card${state.isSiteAdminUser ? ' community-card-draggable' : ''}" data-community-id="${c.id}"${state.isSiteAdminUser ? ' draggable="true"' : ''}>
   <div class="community-card-inner">
     <div class="community-card-copy">
       <div class="community-card-name">${esc(c.name)}</div>
@@ -1931,9 +1936,17 @@ function renderCommunities() {
         <span class="community-card-members">${memberCount} ${memberCount === 1 ? 'Mitglied' : 'Mitglieder'}</span>
       </div>
     </div>
-    <button class="btn btn-accent-soft btn-sm" data-enter-community="${c.id}">
+    <button class="btn btn-accent-soft btn-sm" style="flex-shrink:0" data-enter-community="${c.id}">
       ${isMember ? 'Öffnen →' : 'Beitreten'}
     </button>
+  </div>
+  <div class="community-card-footer">
+    ${dragHandle}
+    <label class="community-default-label" title="Als Standard setzen (direkt nach Login öffnen)">
+      <input type="checkbox" class="community-default-cb" data-community-id="${c.id}" ${isDefault ? 'checked' : ''} />
+      <span class="community-default-star">${isDefault ? '★' : '☆'}</span>
+      <span class="community-default-text">Home Rider Group</span>
+    </label>
   </div>
 </div>`;
   }).join('');
@@ -1997,8 +2010,10 @@ function renderCommunities() {
     </div>
   </div>` : ''}
 
-  ${list}
-  ${empty}
+  <div id="community-list">
+    ${list}
+    ${empty}
+  </div>
 </div>`;
 }
 

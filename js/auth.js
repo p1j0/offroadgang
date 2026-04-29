@@ -82,11 +82,19 @@ async function doLogin() {
       render(); return;
     }
 
-    const { data: profile } = await sb.from('profiles').select('username').eq('id', data.user.id).single();
-    state.currentUser = { id: data.user.id, username: profile?.username || username };
+    const { data: profile } = await sb.from('profiles').select('username, default_community_id').eq('id', data.user.id).single();
+    state.currentUser = {
+      id: data.user.id,
+      username: profile?.username || username,
+      defaultCommunityId: profile?.default_community_id || null,
+    };
     state.profileCache[data.user.id] = state.currentUser.username;
     startHeartbeat();
-    await navigateTo('communities');
+    if (profile?.default_community_id) {
+      await navigateTo('community-home', { currentCommunityId: profile.default_community_id });
+    } else {
+      await navigateTo('communities');
+    }
   } catch (e) {
     console.error('[doLogin]', e);
     state.authErr = 'Login fehlgeschlagen: ' + (e.message || e);
