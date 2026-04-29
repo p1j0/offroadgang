@@ -370,7 +370,7 @@ html, body {
   font-weight: 600;
   box-shadow: 0 1px 0 rgba(255,255,255,0.18) inset;
 }
-.btn-primary:hover { background: #ff8410; }
+.btn-primary:hover { background: var(--accent-dark); }
 
 .btn-ghost {
   background: rgba(255,255,255,0.025);
@@ -925,6 +925,7 @@ html, body {
   color: var(--accent);
   white-space: nowrap;
   flex-shrink: 0;
+  margin-left: 10px;
 }
 .plan-date-time {
   font-size: 11px;
@@ -1097,6 +1098,10 @@ label {
 
 .plan-polls-sidebar {
   width: clamp(440px, 34vw, 560px);
+}
+@media (min-width: 1400px) {
+  .plan-polls-sidebar { width: 700px; }
+  .ycal-months { grid-template-columns: 1fr 1fr 1fr; }
 }
 @media (max-width: 900px) {
   .plan-polls-sidebar { width: 100% !important; min-width: 0 !important; }

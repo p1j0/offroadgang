@@ -581,6 +581,9 @@ function attachEvents() {
       state.currentTab = tab;
       if (tab === 'chat')      await loadMessages();
       if (tab === 'changelog') await loadChangelog();
+      if (tab === 'info' && state.tabBadges.info?.length) {
+        state.infoBannerItems = state.tabBadges.info;
+      }
       markTabSeen(state.currentTourId, tab);
       computeTabBadges(state.currentTourId);
       _refreshTabBar();
@@ -594,6 +597,11 @@ function attachEvents() {
       state.currentTab = btn.dataset.tab;
       if (state.currentTab === 'chat')      await loadMessages();
       if (state.currentTab === 'changelog') await loadChangelog();
+
+      // Capture info banner items BEFORE marking as seen clears the badge
+      if (state.currentTab === 'info' && state.tabBadges.info?.length) {
+        state.infoBannerItems = state.tabBadges.info;
+      }
 
       // Mark as seen → clear badge, recompute
       markTabSeen(state.currentTourId, state.currentTab);

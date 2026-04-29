@@ -566,6 +566,18 @@ function _buildMonthGrid(y, m, ranges) {
   const total = Math.ceil((firstDay + days) / 7) * 7;
   let cells = '';
   for (let i = 0; i < total; i++) {
+    // Insert KW number cell at the start of each week row
+    if (i % 7 === 0) {
+      const rowDay  = i - firstDay + 1;
+      const rowDate = rowDay >= 1 && rowDay <= days
+        ? new Date(y, m, rowDay)
+        : rowDay < 1 ? new Date(y, m, 1) : new Date(y, m, days);
+      const mon = new Date(rowDate);
+      mon.setDate(mon.getDate() - ((mon.getDay() + 6) % 7));
+      const kw = getISOWeek(mon);
+      cells += `<div class="cal-kw-cell">${kw}</div>`;
+    }
+
     const dn      = i - firstDay + 1;
     const inM     = dn >= 1 && dn <= days;
     const isToday = inM && today.getDate() === dn && today.getMonth() === m && today.getFullYear() === y;
@@ -612,7 +624,7 @@ function _renderYearBody(y, showPlans, prevBtnId, nextBtnId) {
   }));
 
   // Build plan ranges (if requested)
-  const PLAN_COLOR = '#00bcd4';
+  const PLAN_COLOR = '#d4ff3a';
   let planRanges = [];
   if (showPlans) {
     const yearlyPolls = (state.communityPolls || []).filter(p => p.poll_type === 'yearly' && p.poll_year === y);
@@ -728,7 +740,7 @@ function _renderYearBody(y, showPlans, prevBtnId, nextBtnId) {
       if (allWeekEvents.length > 0) {
         eventCells = '<div></div>';
         allWeekEvents.forEach(ev => {
-          const textColor = ev.color === '#00bcd4' ? '#003' : '#000';
+          const textColor = '#000';
           eventCells += `<div class="ycal-event-bar" title="${esc(ev.name)}"
             style="grid-column:${ev.startCol + 1} / ${ev.endCol + 2};background:${ev.color};color:${textColor}">
             ${esc(ev.name)}
@@ -760,10 +772,10 @@ function _renderYearBody(y, showPlans, prevBtnId, nextBtnId) {
 
   const planLegend = (showPlans && planRanges.length) ? `
 <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
-            color:#00bcd4;margin:8px 0 4px">Jahresplanung ${y}</div>` +
+            color:#d4ff3a;margin:8px 0 4px">Jahresplanung ${y}</div>` +
   planRanges.map(p => `
 <div class="cal-legend-item" style="margin-bottom:4px">
-  <span class="cal-legend-swatch" style="background:#00bcd4"></span>
+  <span class="cal-legend-swatch" style="background:#d4ff3a"></span>
   <span class="cal-legend-name">${esc(p.name)}</span>
 </div>`).join('') : '';
 
@@ -836,7 +848,8 @@ function renderCalWidget() {
     <div class="cal-title">${monthName}</div>
     <button class="cal-nav-btn" id="cal-next">›</button>
   </div>
-  <div class="cal-grid">
+  <div class="cal-grid cal-grid-kw">
+    <div class="cal-dow cal-kw-header"></div>
     ${['Mo','Di','Mi','Do','Fr','Sa','So'].map(d => `<div class="cal-dow">${d}</div>`).join('')}
     ${cells}
   </div>
@@ -1509,12 +1522,33 @@ function renderDistanceSelector(tour) {
   ].join('');
 }
 
+window._dismissInfoBanner = function() {
+  state.infoBannerItems = [];
+  _refreshInfoTab();
+};
+
 function renderInfoTab(tour) {
   const isAdmin = isCurrentUserAdmin();
+
+  const bannerItems = state.infoBannerItems || [];
+  const infoBanner = bannerItems.length ? `
+<div class="info-new-banner">
+  <div class="info-new-banner-header">
+    <span>🔔 Änderungen seit deinem letzten Besuch</span>
+    <button class="info-new-banner-close" onclick="window._dismissInfoBanner()">✕</button>
+  </div>
+  <ul class="info-new-banner-list">
+    ${bannerItems.map(item => {
+      const ago = _timeAgo(item.time);
+      return `<li><span class="info-new-banner-field">${esc(item.text)}</span><span class="info-new-banner-time">${ago}</span></li>`;
+    }).join('')}
+  </ul>
+</div>` : '';
 
   return `
 <div class="tab-scroll">
   <div class="info-layout">
+    ${infoBanner}
     <div class="info-grid">
 
       <!-- Left: tour details + admin edit form -->
@@ -2145,10 +2179,11 @@ function renderCommunityHome() {
         const treffpunkte = (state.tourPlanDates || []).filter(pd => pd.type === 'treffpunkt');
         if (!treffpunkte.length) return '';
         const rows = treffpunkte.map(pd => {
-          const pdDate = new Date(pd.date + 'T12:00:00').toLocaleDateString('de-DE', { weekday:'short', day:'2-digit', month:'2-digit' });
+          const _pd = new Date(pd.date + 'T12:00:00');
+          const pdDate = `${_pd.toLocaleDateString('de-DE',{weekday:'short'}).replace('.','')} ${_pd.getDate()}.${_pd.toLocaleDateString('de-DE',{month:'short'}).replace('.','')}`;
           const timeStr = pd.meeting_time ? pd.meeting_time.slice(0, 5) : '';
           return `<div class="checkin-treffpunkt-row">
-            <div class="checkin-treffpunkt-date">${pdDate}${timeStr ? `<span class="checkin-treffpunkt-time">${timeStr}</span>` : ''}</div>
+            <div class="checkin-treffpunkt-date">${pdDate}${timeStr ? `<span class="checkin-treffpunkt-time">⏱ ${timeStr}</span>` : ''}</div>
             <div class="checkin-treffpunkt-info">
               ${pd.label ? `<span class="checkin-treffpunkt-label">${esc(pd.label)}</span>` : ''}
               ${pd.maps_link ? `<a href="${esc(pd.maps_link)}" target="_blank" rel="noopener" class="checkin-maps-btn">📍 Maps</a>` : ''}
@@ -2493,18 +2528,24 @@ function renderPollCard(poll, isAdmin) {
       const de = new Date(opt.date_end   + 'T12:00:00');
       const kw = getISOWeek(ds);
       const fmt = d => d.toLocaleDateString('de-DE', { day:'2-digit', month:'2-digit', year:'2-digit' });
-      dateLabel = `<div style="font-size:11px;color:var(--muted);margin-top:2px">
+      dateLabel = `<div style="font-size:11px;color:#fff;margin-top:2px">
         KW${kw} · ${fmt(ds)} – ${fmt(de)}
       </div>`;
     }
 
-    // Who voted for this option
-    const voters = poll.votes
-      .filter(v => (v.option_ids || []).includes(opt.id))
-      .map(v => v.username);
-    const votersHtml = voters.length
-      ? `<div style="font-size:10px;color:var(--muted);margin-top:3px;padding-left:26px">
-           ${voters.map(u => `<span style="display:inline-block;background:var(--border);border-radius:10px;padding:0 6px;margin:1px 2px;line-height:1.8">${esc(u)}</span>`).join('')}
+    // Who voted for this option — shown as blue avatars
+    const voterEntries = poll.votes.filter(v => (v.option_ids || []).includes(opt.id));
+    const voterIds     = voterEntries.map(v => v.user_id);
+    // Ensure usernames are in profileCache (votes carry username directly)
+    voterEntries.forEach(v => { if (v.user_id && v.username) state.profileCache[v.user_id] = v.username; });
+    const voterInitials = buildInitialsMap(voterIds);
+    const votersHtml = voterIds.length
+      ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:5px;padding:0 26px 10px">
+           ${voterIds.map(uid => `<span title="${esc(state.profileCache[uid]||'')}"
+             style="width:26px;height:26px;border-radius:50%;background:var(--accent);color:#000;
+                    font-size:9px;font-weight:700;display:inline-flex;align-items:center;
+                    justify-content:center;flex-shrink:0;letter-spacing:0.03em">
+             ${esc(voterInitials[uid]||'?')}</span>`).join('')}
          </div>`
       : '';
 
@@ -2720,7 +2761,7 @@ function renderPlanYearCal() {
 
     // Tour ranges (all community tours)
     const tours = state.tours || [];
-    const PLAN_COLOR = '#00bcd4';
+    const PLAN_COLOR = '#d4ff3a';
     const tourRanges = tours.map((t, i) => ({
       name:  t.name,
       color: TOUR_PALETTE[i % TOUR_PALETTE.length],
@@ -2770,7 +2811,8 @@ function renderPlanYearCal() {
     <div class="cal-title">${monthName}</div>
     <button class="cal-nav-btn" id="plan-cal-next">›</button>
   </div>
-  <div class="cal-grid">
+  <div class="cal-grid cal-grid-kw">
+    <div class="cal-dow cal-kw-header"></div>
     ${['Mo','Di','Mi','Do','Fr','Sa','So'].map(d => `<div class="cal-dow">${d}</div>`).join('')}
     ${cells}
   </div>
