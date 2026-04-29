@@ -303,6 +303,58 @@ function attachEvents() {
     });
   });
 
+  /* --- Default community checkbox --- */
+  document.querySelectorAll('.community-default-cb').forEach(cb => {
+    cb.addEventListener('change', async () => {
+      const cid = cb.dataset.communityId;
+      const newDefault = cb.checked ? cid : null;
+      try {
+        await updateDefaultCommunity(newDefault);
+        // Re-render cards to update star icons and uncheck other boxes
+        render();
+        toast(newDefault ? '⭐ Standard gesetzt' : 'Standard entfernt');
+      } catch (e) { toast(e.message, 'error'); }
+    });
+  });
+
+  /* --- Site-admin drag-and-drop to reorder communities --- */
+  if (state.isSiteAdminUser) {
+    const list = document.getElementById('community-list');
+    if (list) {
+      let dragging = null;
+
+      list.addEventListener('dragstart', e => {
+        dragging = e.target.closest('.community-card');
+        if (!dragging) return;
+        dragging.classList.add('comm-dragging');
+        e.dataTransfer.effectAllowed = 'move';
+      });
+
+      list.addEventListener('dragend', async () => {
+        if (!dragging) return;
+        dragging.classList.remove('comm-dragging');
+        list.querySelectorAll('.community-card').forEach(c => c.classList.remove('comm-drag-over'));
+        const orderedIds = [...list.querySelectorAll('.community-card[data-community-id]')]
+          .map(c => c.dataset.communityId);
+        dragging = null;
+        try { await saveCommunityOrder(orderedIds); } catch(e) { toast(e.message,'error'); }
+      });
+
+      list.addEventListener('dragover', e => {
+        e.preventDefault();
+        if (!dragging) return;
+        const target = e.target.closest('.community-card');
+        if (!target || target === dragging) return;
+        const rect = target.getBoundingClientRect();
+        if (e.clientY < rect.top + rect.height / 2) {
+          target.before(dragging);
+        } else {
+          target.after(dragging);
+        }
+      });
+    }
+  }
+
   /* --- Community home: back to communities --- */
   document.getElementById('back-communities')?.addEventListener('click', () => navigateTo('communities'));
 

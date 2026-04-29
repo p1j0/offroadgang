@@ -575,7 +575,8 @@ async function loadCommunities() {
   const { data, error } = await sb
     .from('communities')
     .select('*')
-    .order('name', { ascending: true });
+    .order('sort_order', { ascending: true })
+    .order('name',       { ascending: true });
 
   // If table doesn't exist yet, show empty list gracefully
   if (error) {
@@ -643,6 +644,31 @@ async function loadCommunities() {
 
   const memberOf = (memberships || []).map(m => m.community_id);
   state.myCommunityIds = new Set([...adminOf, ...memberOf]);
+}
+
+/**
+ * Persist the new community order (site admin only).
+ * Reads order from the DOM, updates sort_order in DB.
+ * @param {string[]} orderedIds – community IDs in new order
+ */
+async function saveCommunityOrder(orderedIds) {
+  await Promise.all(orderedIds.map((id, i) =>
+    sb.from('communities').update({ sort_order: i }).eq('id', id)
+  ));
+  // Re-sort local state to match
+  const map = Object.fromEntries(state.communities.map(c => [c.id, c]));
+  state.communities = orderedIds.map(id => map[id]).filter(Boolean);
+}
+
+/**
+ * Set or clear the user's default community (auto-redirect on login).
+ * @param {string|null} communityId
+ */
+async function updateDefaultCommunity(communityId) {
+  await sb.from('profiles')
+    .update({ default_community_id: communityId || null })
+    .eq('id', state.currentUser.id);
+  state.currentUser.defaultCommunityId = communityId || null;
 }
 
 async function joinCommunity(communityId, password) {

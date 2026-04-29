@@ -1188,9 +1188,25 @@ select option       { background: var(--surface2); }
 .community-card {
   margin-bottom: 12px;
   cursor: default;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, opacity 0.15s;
 }
 .community-card:hover { border-color: var(--accent); }
+.community-card-draggable { cursor: grab; }
+.community-card-draggable:active { cursor: grabbing; }
+.comm-dragging { opacity: 0.4; border-style: dashed; }
+
+/* Drag handle grip dots */
+.community-drag-handle {
+  font-size: 13px;
+  color: var(--muted);
+  cursor: grab;
+  padding: 0;
+  flex-shrink: 0;
+  user-select: none;
+  line-height: 1;
+}
+.community-drag-handle:hover { color: var(--accent); }
+
 .community-card-inner {
   display: flex;
   align-items: center;
@@ -1198,6 +1214,46 @@ select option       { background: var(--surface2); }
   gap: 16px;
   padding: 4px 0;
 }
+
+/* Default community star checkbox */
+.community-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+  padding-top: 6px;
+  padding-right: 10px;
+  border-top: 1px solid rgba(255,255,255,0.05);
+}
+.community-default-label {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  user-select: none;
+}
+.community-default-label input[type="checkbox"] { display: none; }
+.community-default-star {
+  font-size: 13px;
+  line-height: 1;
+  vertical-align: middle;
+  color: var(--muted);
+  transition: color 0.15s;
+  position: relative;
+  top: -1px;
+}
+.community-default-text {
+  font-size: 10px;
+  line-height: 1;
+  color: var(--muted);
+  transition: color 0.15s;
+  white-space: nowrap;
+  letter-spacing: 0.04em;
+}
+.community-default-label:hover .community-default-star,
+.community-default-label:hover .community-default-text { color: var(--accent); }
+.community-default-label input:checked ~ .community-default-star { color: var(--accent); }
+.community-default-label input:checked ~ .community-default-text { color: var(--accent); }
 .community-card-name {
   font-size: 18px;
   font-weight: 700;
