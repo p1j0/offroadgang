@@ -146,7 +146,10 @@ async function navigateTo(view, params = {}) {
     }
 
     // Tear down realtime when leaving a tour
-    if (view !== 'tour') unsubscribeFromChat();
+    if (view !== 'tour') {
+      unsubscribeFromChat();
+      state.infoBannerItems = [];
+    }
 
     // Unsubscribe from community chat when leaving planning page
     if (view !== 'planning') unsubscribeFromCommunityChat();

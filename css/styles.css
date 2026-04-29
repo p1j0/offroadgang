@@ -385,6 +385,19 @@ select option       { background: var(--surface2); }
   gap: 2px;
   text-align: center;
 }
+.cal-grid-kw {
+  grid-template-columns: 18px repeat(7, 1fr);
+}
+.cal-kw-cell {
+  font-size: 8px;
+  font-weight: 600;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.7;
+}
+.cal-kw-header { /* empty top-left corner */ }
 .cal-dow {
   font-size: 10px;
   font-weight: 600;
@@ -656,6 +669,51 @@ select option       { background: var(--surface2); }
    INFO TAB
    ============================================================ */
 .info-layout { padding: 18px 20px; }
+
+/* ── Info tab "new changes" banner ── */
+.info-new-banner {
+  background: rgba(212,255,58,0.07);
+  border: 1px solid rgba(212,255,58,0.3);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 18px;
+}
+.info-new-banner-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+.info-new-banner-close {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0 2px;
+}
+.info-new-banner-close:hover { color: var(--text); }
+.info-new-banner-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.info-new-banner-list li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+}
+.info-new-banner-field { color: var(--text); }
+.info-new-banner-time  { color: var(--muted); white-space: nowrap; flex-shrink: 0; }
 
 .info-grid {
   display: grid;
@@ -1186,8 +1244,8 @@ select option       { background: var(--surface2); }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 14px;
-  font-size: 14px;
+  padding: 8px 12px;
+  font-size: 13px;
 }
 
 .poll-option-check {
@@ -1247,7 +1305,7 @@ select option       { background: var(--surface2); }
   border-radius: 12px;
   padding: 14px 12px;
   position: sticky;
-  top: 0;
+  top: calc(var(--nav-height, 56px) + var(--community-subnav-height, 0px) + 16px);
 }
 
 .ycal-header {

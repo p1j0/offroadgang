@@ -182,6 +182,19 @@ function buildEmojiPicker(pickerId) {
   picker.innerHTML = html;
 }
 
+/**
+ * Human-readable relative time string (e.g. "vor 2 Tagen").
+ * @param {Date} date
+ * @returns {string}
+ */
+function _timeAgo(date) {
+  const diff = Math.floor((Date.now() - date) / 1000);
+  if (diff < 60)   return 'gerade eben';
+  if (diff < 3600) return `vor ${Math.floor(diff / 60)} Min.`;
+  if (diff < 86400) return `vor ${Math.floor(diff / 3600)} Std.`;
+  return `vor ${Math.floor(diff / 86400)} Tag${Math.floor(diff / 86400) === 1 ? '' : 'en'}`;
+}
+
 function attachEmojiPicker(toggleId, pickerId, inputId) {
   const toggle = document.getElementById(toggleId);
   const picker = document.getElementById(pickerId);
