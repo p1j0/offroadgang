@@ -337,14 +337,27 @@ async function _loadCheckinWeather(tourId, destination, startDate, endDate, maps
       ({ latitude, longitude } = geoData.results[0]);
     }
 
-    // 2. Fetch daily forecast for tour dates
-    const weatherResp = await fetch(
-      `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&daily=temperature_2m_max,weathercode&timezone=auto&start_date=${startDate}&end_date=${endDate}`
-    );
-    const weatherData = await weatherResp.json();
-    const days  = weatherData.daily?.time        || [];
-    const codes = weatherData.daily?.weathercode  || [];
-    const temps = weatherData.daily?.temperature_2m_max || [];
+    // 2. Clamp end_date to Open-Meteo's 16-day forecast limit
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const maxDate  = new Date();
+    maxDate.setDate(maxDate.getDate() + 15);
+    const maxDateStr   = maxDate.toISOString().slice(0, 10);
+    const clampedEnd   = endDate > maxDateStr ? maxDateStr : endDate;
+    const hasTruncated = endDate > maxDateStr;
+
+    // Only fetch if tour start is within forecast window
+    const days  = [];
+    const codes = [];
+    const temps = [];
+    if (startDate <= maxDateStr) {
+      const weatherResp = await fetch(
+        `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&daily=temperature_2m_max,weathercode&timezone=auto&start_date=${startDate}&end_date=${clampedEnd}`
+      );
+      const weatherData = await weatherResp.json();
+      days.push(...(weatherData.daily?.time               || []));
+      codes.push(...(weatherData.daily?.weathercode        || []));
+      temps.push(...(weatherData.daily?.temperature_2m_max || []));
+    }
 
     // 3. Update DOM rows (still mounted — render() may not have fired again)
     const el = document.getElementById(`checkin-weather-${tourId}`);
@@ -352,10 +365,24 @@ async function _loadCheckinWeather(tourId, destination, startDate, endDate, maps
     el.querySelectorAll('.checkin-weather-day').forEach(row => {
       const date = row.dataset.date;
       const idx  = days.indexOf(date);
-      if (idx === -1) return;
-      row.querySelector('[data-wicon]').textContent  = wmoIcon(codes[idx]);
-      row.querySelector('[data-wtemp]').textContent  = `${Math.round(temps[idx])}°C`;
+      if (idx !== -1) {
+        row.querySelector('[data-wicon]').textContent = wmoIcon(codes[idx]);
+        row.querySelector('[data-wtemp]').textContent = `${Math.round(temps[idx])}°C`;
+      } else if (date > maxDateStr) {
+        // Beyond forecast window — mark clearly
+        row.querySelector('[data-wicon]').textContent = '—';
+        row.querySelector('[data-wtemp]').textContent = '';
+        row.style.opacity = '0.4';
+      }
     });
+
+    // 4. Show hint if at least one tour day is beyond the 16-day window
+    if (hasTruncated) {
+      const hint = document.createElement('div');
+      hint.className = 'checkin-weather-hint';
+      hint.textContent = '⏳ Vorhersage max. 16 Tage im Voraus verfügbar';
+      el.after(hint);
+    }
   } catch (e) {
     console.warn('[checkin weather]', e);
   }
