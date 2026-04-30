@@ -358,34 +358,55 @@ function attachEvents() {
       const sel = document.getElementById('reset-pw-select');
       const userId = sel?.value;
       if (!userId) { toast('Bitte einen User auswählen', 'error'); return; }
-      const username = sel.options[sel.selectedIndex]?.textContent.replace(' (du)', '') || userId;
+      const username = sel.options[sel.selectedIndex]?.textContent.replace(' (du)', '').trim() || userId;
       const confirmed = confirm(
-        `Passwort für „${username}" wirklich zurücksetzen?\n\n` +
-        `Es wird ein neues, zufälliges Passwort erzeugt — der alte Login funktioniert dann nicht mehr.`
+        `Reset-Mail an „${username}" senden?\n\n` +
+        `Der User erhält einen Link per E-Mail und kann damit selbst ein neues Passwort setzen.`
       );
       if (!confirmed) return;
-      setBtn('reset-pw-btn', true, 'Setze zurück…');
+
+      // Hide the override email row in case it was shown from a previous attempt
+      const emailRow = document.getElementById('reset-pw-email-row');
+      if (emailRow) emailRow.style.display = 'none';
+
+      setBtn('reset-pw-btn', true, '📧 Sende…');
       try {
-        const newPw = await adminResetPassword(userId);
-        document.getElementById('reset-pw-username').textContent = username;
-        document.getElementById('reset-pw-value').textContent    = newPw;
-        document.getElementById('reset-pw-result').style.display = 'block';
-        toast(`✓ Passwort zurückgesetzt`);
+        const result = await requestPasswordReset(username);
+        if (result.has_email === false) {
+          // No email stored — show the override input row
+          if (emailRow) {
+            emailRow.style.display = 'block';
+            // Store username on the send-override button for the second handler
+            document.getElementById('reset-pw-send-override')?.setAttribute('data-username', username);
+            document.getElementById('reset-pw-email')?.focus();
+          }
+        } else {
+          toast(`✓ Reset-Mail an ${username} gesendet`);
+        }
       } catch (e) {
         toast(e.message, 'error');
       } finally {
-        setBtn('reset-pw-btn', false);
+        setBtn('reset-pw-btn', false, '📧 Reset-Mail senden');
       }
     });
 
-    /* --- Copy reset password to clipboard --- */
-    document.getElementById('reset-pw-copy')?.addEventListener('click', () => {
-      const pw = document.getElementById('reset-pw-value')?.textContent || '';
-      if (!pw) return;
-      if (navigator.clipboard?.writeText) {
-        navigator.clipboard.writeText(pw).then(() => toast('📋 Passwort kopiert!'));
-      } else {
-        prompt('Passwort kopieren:', pw);
+    /* --- Override-email send button (admin enters email manually) --- */
+    document.getElementById('reset-pw-send-override')?.addEventListener('click', async () => {
+      const username = document.getElementById('reset-pw-send-override')?.getAttribute('data-username') || '';
+      const email    = document.getElementById('reset-pw-email')?.value.trim() || '';
+      if (!email) { toast('Bitte E-Mail-Adresse eingeben', 'error'); return; }
+      if (!username) { toast('Bitte zuerst einen User auswählen', 'error'); return; }
+
+      setBtn('reset-pw-send-override', true, '📧 Sende…');
+      try {
+        await requestPasswordReset(username, email);
+        document.getElementById('reset-pw-email-row').style.display = 'none';
+        document.getElementById('reset-pw-email').value = '';
+        toast(`✓ Reset-Mail an ${email} gesendet`);
+      } catch (e) {
+        toast(e.message, 'error');
+      } finally {
+        setBtn('reset-pw-send-override', false, '📧 Senden');
       }
     });
   }

@@ -2126,20 +2126,20 @@ function renderCommunities() {
     </div>
     <div class="info-block" style="padding:16px;margin-bottom:12px">
       <div class="info-label">🔑 Passwort zurücksetzen</div>
-      <p style="font-size:12px;color:var(--muted);margin:6px 0 12px">Setzt das Passwort eines Users zurück. Das neue Passwort wird angezeigt und kann kopiert werden — gib es dem User direkt weiter.</p>
+      <p style="font-size:12px;color:var(--muted);margin:6px 0 12px">Schickt dem User eine E-Mail mit einem Reset-Link. Der User kann damit selbst ein neues Passwort setzen.</p>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <select id="reset-pw-select" style="flex:1;min-width:160px;padding:7px 12px;font-size:13px">
           <option value="">— User auswählen —</option>
         </select>
-        <button class="btn btn-primary btn-sm" id="reset-pw-btn">🔑 Zurücksetzen</button>
+        <button class="btn btn-primary btn-sm" id="reset-pw-btn">📧 Reset-Mail senden</button>
       </div>
-      <div id="reset-pw-result" style="display:none;margin-top:12px;padding:12px;background:var(--surface2);border:1px solid var(--accent);border-radius:8px">
-        <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Neues Passwort für <strong id="reset-pw-username" style="color:var(--text)"></strong>:</div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <code id="reset-pw-value" style="flex:1;padding:8px 10px;background:var(--surface);border-radius:6px;font-family:monospace;font-size:14px;letter-spacing:0.05em;color:var(--accent);user-select:all"></code>
-          <button class="btn btn-ghost btn-sm" id="reset-pw-copy">📋 Kopieren</button>
+      <div id="reset-pw-email-row" style="display:none;margin-top:10px">
+        <div style="font-size:12px;color:var(--accent);margin-bottom:6px">⚠️ Kein E-Mail für diesen User hinterlegt – bitte Adresse eingeben:</div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input type="email" id="reset-pw-email" placeholder="E-Mail-Adresse eingeben"
+                 style="flex:1;min-width:200px;padding:7px 12px;font-size:13px;background:var(--surface);border:1px solid var(--accent);border-radius:6px;color:var(--text)" />
+          <button class="btn btn-primary btn-sm" id="reset-pw-send-override">📧 Senden</button>
         </div>
-        <div style="font-size:11px;color:var(--muted);margin-top:6px">Schicke es dem User auf einem sicheren Weg (WhatsApp, Signal). Es wird nach dem Schließen nicht erneut angezeigt.</div>
       </div>
     </div>
     <div class="info-block" style="padding:16px;border-color:var(--danger)">
