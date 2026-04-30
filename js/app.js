@@ -380,6 +380,11 @@ async function _loadCheckinWeather(tourId, destination, startDate, endDate, maps
     if (hasTruncated) {
       const hint = document.createElement('div');
       hint.className = 'checkin-weather-hint';
+      hint.style.setProperty('font-family', "'JetBrains Mono', 'SF Mono', Menlo, monospace");
+      hint.style.setProperty('font-size', '10px');
+      hint.style.setProperty('color', '#82817a');
+      hint.style.setProperty('margin-top', '6px');
+      hint.style.setProperty('letter-spacing', '0.03em');
       hint.textContent = '⏳ Vorhersage max. 16 Tage im Voraus verfügbar';
       el.after(hint);
     }
