@@ -893,6 +893,15 @@ html, body {
   letter-spacing: 0.02em;
 }
 
+/* ---------- WEATHER FORECAST HINT ---------- */
+.checkin-weather-hint {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 6px;
+  letter-spacing: 0.03em;
+}
+
 /* ---------- PLAN DATE MAPS LINK ---------- */
 .plan-date-maps-link {
   font-size: 11px;
