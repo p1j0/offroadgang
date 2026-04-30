@@ -174,22 +174,27 @@ async function navigateTo(view, params = {}) {
         await loadCommunityData(state.currentCommunityId);
         if (view === 'community-home') {
           await loadHomeData();
-          await computePlanningBadges();
-          await computeMediaBadges();
-          // Load check-ins for the next upcoming tour
+          // Determine next upcoming tour (needed for checkins + plan dates)
           const todayMidnight = new Date(); todayMidnight.setHours(0,0,0,0);
           const nextTour = (state.tours || [])
             .filter(t => new Date((t.end_date || t.date) + 'T23:59:59') >= todayMidnight)
             .sort((a,b) => new Date(a.date) - new Date(b.date))[0];
-          if (nextTour) {
-            state.tourCheckins[nextTour.id] = await loadTourCheckins(nextTour.id);
-            await loadNextTourPlanDates(nextTour.id);
-          }
+          // Run all remaining fetches in parallel — none depend on each other
+          await Promise.all([
+            computePlanningBadges(),
+            computeMediaBadges(),
+            nextTour
+              ? loadTourCheckins(nextTour.id).then(r => { state.tourCheckins[nextTour.id] = r; })
+              : Promise.resolve(),
+            nextTour
+              ? loadNextTourPlanDates(nextTour.id)
+              : Promise.resolve(),
+          ]);
         }
         if (view === 'community-media') {
-          await loadHomeData(); // needed for tours list
-          await loadCommunityMedia();
-          await computeTourMediaCounts();
+          // loadHomeData (tours list) and loadCommunityMedia are independent → parallel
+          await Promise.all([loadHomeData(), loadCommunityMedia()]);
+          await computeTourMediaCounts(); // needs state.tours from loadHomeData
           state.selectedTourMedia = null;
           markTabSeen(state.currentCommunityId, 'community-media');
           markTabSeen(state.currentCommunityId, 'tour-media');

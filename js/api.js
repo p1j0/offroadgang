@@ -703,19 +703,13 @@ async function loadCommunityData(communityId) {
   state.currentCommunity   = community;
   state.currentCommunityId = communityId;
 
-  // Load direct community members
-  const { data: members } = await sb
-    .from('community_members')
-    .select('user_id')
-    .eq('community_id', communityId);
+  // Load community members + tour IDs in parallel (independent queries)
+  const [{ data: members }, { data: tourIds }] = await Promise.all([
+    sb.from('community_members').select('user_id').eq('community_id', communityId),
+    sb.from('tours').select('id').eq('community_id', communityId),
+  ]);
 
-  // Also include all tour members within this community's tours
-  // (handles users who joined before the community system existed)
-  const { data: tourIds } = await sb
-    .from('tours')
-    .select('id')
-    .eq('community_id', communityId);
-
+  // Load tour members (needs tour IDs from above)
   let tourMemberIds = [];
   if (tourIds?.length) {
     const ids = tourIds.map(t => t.id);
@@ -806,19 +800,33 @@ async function createCommunity(name, password) {
 async function loadPlanningData() {
   const cid = state.currentCommunityId;
 
-  // Load all tours in community (for map tab - get gpx data + dates for KW)
-  const { data: tours } = await sb
-    .from('tours')
-    .select('id, name, gpx_route, date, end_date')
-    .eq('community_id', cid)
-    .not('gpx_route', 'is', null);
+  // Load tours, polls, messages and changelog all in parallel — all independent
+  const [
+    { data: tours },
+    { data: polls },
+    { data: msgs },
+    { data: log },
+  ] = await Promise.all([
+    sb.from('tours')
+      .select('id, name, gpx_route, date, end_date')
+      .eq('community_id', cid)
+      .not('gpx_route', 'is', null),
+    sb.from('community_polls')
+      .select('*')
+      .eq('community_id', cid)
+      .order('created_at', { ascending: false }),
+    sb.from('community_messages')
+      .select('*')
+      .eq('community_id', cid)
+      .order('created_at', { ascending: true }),
+    sb.from('community_changelog')
+      .select('*')
+      .eq('community_id', cid)
+      .order('created_at', { ascending: false }),
+  ]);
 
-  // Load polls with votes
-  const { data: polls } = await sb
-    .from('community_polls')
-    .select('*')
-    .eq('community_id', cid)
-    .order('created_at', { ascending: false });
+  state.communityMessages  = msgs || [];
+  state.communityChangelog = log  || [];
 
   state.communityPolls = (polls || []).map(p => ({
     ...p,
@@ -826,7 +834,7 @@ async function loadPlanningData() {
     votes: [],
   }));
 
-  // Load all votes for these polls
+  // Load votes — needs poll IDs from above
   const pollIds = state.communityPolls.map(p => p.id);
   if (pollIds.length) {
     const { data: votes } = await sb
@@ -842,22 +850,6 @@ async function loadPlanningData() {
       });
     });
   }
-
-  // Load community messages
-  const { data: msgs } = await sb
-    .from('community_messages')
-    .select('*')
-    .eq('community_id', cid)
-    .order('created_at', { ascending: true });
-  state.communityMessages = msgs || [];
-
-  // Load community changelog
-  const { data: log } = await sb
-    .from('community_changelog')
-    .select('*')
-    .eq('community_id', cid)
-    .order('created_at', { ascending: false });
-  state.communityChangelog = log || [];
 
   // Init plan map visibility (all tours visible by default)
   (tours || []).forEach(t => {
@@ -1407,11 +1399,22 @@ async function deleteUserAccount(userId) {
  * @param {string} username
  * @returns {Promise<{ok:boolean, has_email?:boolean}>}
  */
-async function requestPasswordReset(username) {
+async function requestPasswordReset(username, overrideEmail = '') {
+  const headers = { 'Content-Type': 'application/json' };
+
+  // If an override email is supplied (admin flow), attach the JWT for server-side auth check
+  if (overrideEmail) {
+    const { data: { session } } = await sb.auth.getSession();
+    if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
+  }
+
+  const body = { username };
+  if (overrideEmail) body.override_email = overrideEmail;
+
   const res = await fetch(`${SUPABASE_URL}/functions/v1/request-password-reset`, {
     method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username }),
+    headers,
+    body: JSON.stringify(body),
   });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
@@ -1433,33 +1436,6 @@ async function completePasswordReset(token, newPassword) {
   if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
 }
 
-/**
- * Reset another user's password (site admin only).
- * @param {string} userId
- * @param {string} [newPassword] - if omitted, a random one is generated
- * @returns {Promise<string>} the new password
- */
-async function adminResetPassword(userId, newPassword) {
-  const { data: { session } } = await sb.auth.getSession();
-  const token = session?.access_token;
-  if (!token) throw new Error('Nicht eingeloggt');
-
-  const body = { user_id: userId };
-  if (newPassword) body.new_password = newPassword;
-
-  const res = await fetch(`${SUPABASE_URL}/functions/v1/admin-reset-password`, {
-    method:  'POST',
-    headers: {
-      'Content-Type':  'application/json',
-      'Authorization': `Bearer ${token}`,
-    },
-    body: JSON.stringify(body),
-  });
-
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
-  return json.password;
-}
 
 /* ----------------------------------------------------------
    Push Notifications
