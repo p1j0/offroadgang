@@ -94,8 +94,12 @@ self.addEventListener('fetch', event => {
           return cached;
         }
 
-        // Kein Cache → auf Netzwerk warten
-        return networkPromise;
+        // Kein Cache → auf Netzwerk warten, bei Fehler sofort 503 zurückgeben
+        const result = await networkPromise;
+        return result || new Response(JSON.stringify({ error: 'offline', message: 'Offline – kein Cache verfügbar' }), {
+          status: 503,
+          headers: { 'Content-Type': 'application/json' },
+        });
       })
     );
     return;

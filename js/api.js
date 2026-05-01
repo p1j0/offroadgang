@@ -1009,6 +1009,8 @@ async function updatePoll(pollId, question, options, multi) {
 async function computePlanningBadges() {
   const cid = state.currentCommunityId;
   if (!cid) return;
+  // HEAD requests can't be cached → skip when offline, keep last known counts
+  if (!navigator.onLine) return;
 
   const seenChat  = getLastSeen(cid, 'plan-chat');
   const seenPolls = getLastSeen(cid, 'plan-polls');
@@ -1200,6 +1202,8 @@ async function loadTourMediaForCommunity(tourId) {
 async function computeMediaBadges() {
   const cid = state.currentCommunityId;
   if (!cid) return;
+  // HEAD requests can't be cached → skip when offline, keep last known counts
+  if (!navigator.onLine) return;
   const seenCm = getLastSeen(cid, 'community-media');
   const seenTm = getLastSeen(cid, 'tour-media');
 
