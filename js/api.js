@@ -13,6 +13,11 @@
 async function loadHomeData() {
   const cid = state.currentCommunityId;
 
+  // Offline + Daten für diese Community bereits geladen → State behalten
+  if (!navigator.onLine && state._loadedHomeForCid === cid && state.tours) {
+    return;
+  }
+
   // Load tours for this community
   const toursRes = await sb.from('tours').select('*')
     .eq('community_id', cid)
@@ -63,6 +68,7 @@ async function loadHomeData() {
   }
 
   await computeHomeBadges();
+  state._loadedHomeForCid = cid;
 }
 
 /**
@@ -475,12 +481,18 @@ async function addPlanDate(date, label, type = 'sonstiger', mapsLink = '', meeti
 }
 
 async function loadNextTourPlanDates(tourId) {
+  // Offline + bereits für diese Tour geladen → State behalten
+  if (!navigator.onLine && state._loadedPlanDatesTourId === tourId && state.tourPlanDates) {
+    return;
+  }
+
   const { data } = await sb
     .from('plan_dates')
     .select('*')
     .eq('tour_id', tourId)
     .order('date', { ascending: true });
   state.tourPlanDates = data || [];
+  state._loadedPlanDatesTourId = tourId;
 }
 
 /**
@@ -697,6 +709,11 @@ async function leaveCommunity() {
 }
 
 async function loadCommunityData(communityId) {
+  // Offline + diese Community bereits geladen → State behalten (kein Re-Fetch)
+  if (!navigator.onLine && state._loadedCommunityDataId === communityId && state.communityMembers?.length) {
+    return;
+  }
+
   const community = state.communities.find(c => c.id === communityId) ||
     (await sb.from('communities').select('*').eq('id', communityId).single()).data;
   if (!community) throw new Error('Community nicht gefunden.');
@@ -740,6 +757,7 @@ async function loadCommunityData(communityId) {
     isAdmin:   community.admin_id === id,
     isCoAdmin: (community.co_admin_ids || []).includes(id),
   }));
+  state._loadedCommunityDataId = communityId;
 }
 
 async function updateCommunity(updates) {
@@ -1137,12 +1155,19 @@ async function reorderTourMedia(orderedIds) {
 
 async function loadCommunityMedia() {
   const cid = state.currentCommunityId;
+
+  // Offline + Media bereits für diese Community geladen → State behalten
+  if (!navigator.onLine && state._loadedMediaForCid === cid && state.communityMedia) {
+    return;
+  }
+
   const { data } = await sb
     .from('community_media')
     .select('*')
     .eq('community_id', cid)
     .order('sort_order', { ascending: true });
   state.communityMedia = data || [];
+  state._loadedMediaForCid = cid;
 }
 
 async function saveCommunityMedia(entry) {
@@ -1228,6 +1253,11 @@ async function computeTourMediaCounts() {
   const tourIds = (state.tours || []).map(t => t.id);
   if (!tourIds.length) { state.tourMediaCounts = {}; state.tourMediaNew = {}; return; }
 
+  // Offline → bestehende Counts behalten (HEAD-ähnliche Queries cachen schlecht)
+  if (!navigator.onLine && state._loadedTourMediaCountsCid === state.currentCommunityId) {
+    return;
+  }
+
   const seenMedia = getLastSeen(state.currentCommunityId, 'tour-media');
 
   const [allRes, newRes] = await Promise.all([
@@ -1249,6 +1279,7 @@ async function computeTourMediaCounts() {
   (newRes.data || []).forEach(m => {
     state.tourMediaNew[m.tour_id] = (state.tourMediaNew[m.tour_id] || 0) + 1;
   });
+  state._loadedTourMediaCountsCid = state.currentCommunityId;
 }
 
 /* ----------------------------------------------------------
