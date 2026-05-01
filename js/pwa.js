@@ -258,10 +258,39 @@ function urlBase64ToUint8Array(base64String) {
 }
 
 /* ----------------------------------------------------------
+   Offline-Banner
+   ---------------------------------------------------------- */
+function _showOfflineBanner() {
+  if (document.getElementById('offline-banner')) return;
+  const banner = document.createElement('div');
+  banner.id = 'offline-banner';
+  banner.style.cssText = [
+    'position:fixed', 'bottom:72px', 'left:50%', 'transform:translateX(-50%)',
+    'background:#2a2a22', 'color:#e8c84a', 'border:1px solid #e8c84a33',
+    'border-radius:20px', 'padding:7px 16px', 'font-size:12px',
+    'font-family:"JetBrains Mono","SF Mono",Menlo,monospace',
+    'letter-spacing:0.04em', 'z-index:9999', 'pointer-events:none',
+    'box-shadow:0 2px 12px #0008', 'white-space:nowrap',
+  ].join(';');
+  banner.textContent = '📵 Offline – Daten möglicherweise nicht aktuell';
+  document.body.appendChild(banner);
+}
+
+function _hideOfflineBanner() {
+  document.getElementById('offline-banner')?.remove();
+}
+
+window.addEventListener('offline', _showOfflineBanner);
+window.addEventListener('online',  _hideOfflineBanner);
+
+/* ----------------------------------------------------------
    Init – wird von app.js aufgerufen
    ---------------------------------------------------------- */
 async function initPWA() {
   await registerServiceWorker();
+
+  // Initiales Offline-Check (z.B. App im Flugmodus geöffnet)
+  if (!navigator.onLine) _showOfflineBanner();
 
   // iOS-Banner nur einmal zeigen (nicht sofort beim ersten Load)
   setTimeout(() => {

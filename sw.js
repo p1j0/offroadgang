@@ -3,7 +3,10 @@
    Handles: offline caching + Web Push Notifications
    ============================================================ */
 
-const CACHE_NAME = 'motoroute-v8';
+const CACHE_NAME      = 'motoroute-v8';
+const API_CACHE_NAME  = 'motoroute-api-v1';
+const TILE_CACHE_NAME = 'motoroute-tiles-v1';
+const TILE_CACHE_MAX  = 500; // ~500 Tiles × ø20 KB = max ~10 MB
 
 // App-Shell: alles was offline verfügbar sein soll
 const PRECACHE = [
@@ -45,7 +48,7 @@ self.addEventListener('activate', event => {
     caches.keys().then(keys =>
       Promise.all(
         keys
-          .filter(k => k !== CACHE_NAME)
+          .filter(k => k !== CACHE_NAME && k !== API_CACHE_NAME && k !== TILE_CACHE_NAME)
           .map(k => caches.delete(k))
       )
     ).then(() => self.clients.claim())   // take control of open pages without reload-required
@@ -58,15 +61,81 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
 
-  // Supabase & externe APIs immer live abrufen
+  // Externe CDNs & nicht-cacheable Supabase-Endpunkte immer live abrufen
   if (
-    url.hostname.includes('supabase.co') ||
     url.hostname.includes('cloudinary.com') ||
     url.hostname.includes('googleapis.com') ||
     url.hostname.includes('cdnjs.cloudflare.com') ||
-    url.hostname.includes('jsdelivr.net')
+    url.hostname.includes('jsdelivr.net') ||
+    url.hostname.includes('open-meteo.com')
   ) {
     return; // Browser-Standard
+  }
+
+  // Supabase REST GET → Stale-While-Revalidate (offline-fähig)
+  if (
+    url.hostname.includes('supabase.co') &&
+    url.pathname.startsWith('/rest/v1/') &&
+    event.request.method === 'GET'
+  ) {
+    event.respondWith(
+      caches.open(API_CACHE_NAME).then(async cache => {
+        const cached = await cache.match(event.request);
+
+        // Netzwerkabruf starten (im Hintergrund oder als Hauptantwort)
+        const networkPromise = fetch(event.request).then(response => {
+          if (response.ok) cache.put(event.request, response.clone());
+          return response;
+        }).catch(() => null);
+
+        if (cached) {
+          // Cache sofort zurückgeben, Netzwerk aktualisiert im Hintergrund
+          networkPromise;
+          return cached;
+        }
+
+        // Kein Cache → auf Netzwerk warten
+        return networkPromise;
+      })
+    );
+    return;
+  }
+
+  // Alle anderen Supabase-Endpunkte (auth, functions, storage) → immer live
+  if (url.hostname.includes('supabase.co')) {
+    return; // Browser-Standard
+  }
+
+  // Karten-Tiles (OpenStreetMap) — Cache-first, Größenlimit
+  if (url.hostname.includes('tile.openstreetmap.org')) {
+    event.respondWith(
+      caches.open(TILE_CACHE_NAME).then(async cache => {
+        const cached = await cache.match(event.request);
+        if (cached) return cached;
+
+        // Tile noch nicht gecacht → laden und speichern
+        const response = await fetch(event.request);
+        if (response.ok) {
+          await cache.put(event.request, response.clone());
+
+          // Älteste Tiles entfernen wenn Limit überschritten
+          const keys = await cache.keys();
+          if (keys.length > TILE_CACHE_MAX) {
+            const toDelete = keys.slice(0, keys.length - TILE_CACHE_MAX);
+            toDelete.forEach(k => cache.delete(k));
+          }
+        }
+        return response;
+      }).catch(() => {
+        // Offline + nicht gecacht → leere aber gültige PNG-Antwort
+        // (Leaflet zeigt graue Tile statt kaputtem Bild-Icon)
+        return new Response(
+          atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='),
+          { status: 200, headers: { 'Content-Type': 'image/png' } }
+        );
+      })
+    );
+    return;
   }
 
   // App-Shell: Cache-first, Fallback auf Network
