@@ -68,3 +68,85 @@ const state = {
   /* Misc */
   preJoinId:     null,
 };
+
+/* ----------------------------------------------------------
+   State Persistence (localStorage)
+   Allows the app to survive a cold restart (mobile OS killing
+   the PWA process in the background) and continue working
+   offline with previously cached data.
+   ---------------------------------------------------------- */
+const STATE_STORAGE_KEY = 'motoroute_state_v1';
+const STATE_MAX_AGE_MS  = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+function persistState() {
+  if (!state.currentUser) return;
+  try {
+    // Convert Sets and other non-serializable values to plain types
+    const snap = {
+      ts: Date.now(),
+      currentUser:        state.currentUser,
+      currentCommunityId: state.currentCommunityId,
+      currentCommunity:   state.currentCommunity,
+      currentTourId:      state.currentTourId,
+      currentTour:        state.currentTour,
+      communities:        state.communities,
+      tours:              state.tours,
+      communityMembers:   state.communityMembers,
+      communityMedia:     state.communityMedia,
+      communityChangelog: state.communityChangelog,
+      communityPolls:     state.communityPolls,
+      communityMessages:  state.communityMessages,
+      tourPlanDates:      state.tourPlanDates,
+      profileCache:       state.profileCache,
+      memberCounts:       state.memberCounts,
+      tourMemberIds:      state.tourMemberIds,
+      tourMediaCounts:    state.tourMediaCounts,
+      tourMediaNew:       state.tourMediaNew,
+      weatherCache:       state.weatherCache,
+      myTourIds:          [...(state.myTourIds || [])],
+      myCommunityIds:     [...(state.myCommunityIds || [])],
+      tourCheckins:       Object.fromEntries(
+        Object.entries(state.tourCheckins || {}).map(([k, v]) => [k, [...(v || [])]])
+      ),
+      // SWR fast-path flags
+      _loadedCommunityDataId:    state._loadedCommunityDataId,
+      _loadedHomeForCid:         state._loadedHomeForCid,
+      _loadedMediaForCid:        state._loadedMediaForCid,
+      _loadedPlanDatesTourId:    state._loadedPlanDatesTourId,
+      _loadedTourMediaCountsCid: state._loadedTourMediaCountsCid,
+    };
+    localStorage.setItem(STATE_STORAGE_KEY, JSON.stringify(snap));
+  } catch (e) {
+    console.warn('[persistState]', e);
+  }
+}
+
+function restoreState() {
+  try {
+    const raw = localStorage.getItem(STATE_STORAGE_KEY);
+    if (!raw) return false;
+    const snap = JSON.parse(raw);
+    if (!snap || !snap.ts) return false;
+    if (Date.now() - snap.ts > STATE_MAX_AGE_MS) {
+      localStorage.removeItem(STATE_STORAGE_KEY);
+      return false;
+    }
+    // Restore fields
+    Object.assign(state, snap);
+    // Convert arrays back to Sets
+    state.myTourIds      = new Set(snap.myTourIds      || []);
+    state.myCommunityIds = new Set(snap.myCommunityIds || []);
+    state.tourCheckins   = Object.fromEntries(
+      Object.entries(snap.tourCheckins || {}).map(([k, v]) => [k, new Set(v || [])])
+    );
+    delete state.ts;
+    return true;
+  } catch (e) {
+    console.warn('[restoreState]', e);
+    return false;
+  }
+}
+
+function clearPersistedState() {
+  try { localStorage.removeItem(STATE_STORAGE_KEY); } catch (e) {}
+}

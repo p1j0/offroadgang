@@ -107,6 +107,7 @@ async function doLogin() {
  */
 async function doLogout() {
   stopHeartbeat();
+  clearPersistedState();
   try { await sb.auth.signOut(); } catch (e) { console.error('[doLogout]', e); }
 
   state.currentUser         = null;
