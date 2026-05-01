@@ -458,15 +458,33 @@ function syncStickyLayout() {
  */
 async function init() {
   window.addEventListener('resize', syncStickyLayout);
+
+  // ─── State-Persistenz: Auto-Save bei Hintergrund/Schließen ────────
+  // Wenn die App in den Hintergrund geht, State in localStorage sichern.
+  // So überlebt sie einen Kaltstart durch das Mobile-OS.
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) persistState();
+  });
+  window.addEventListener('pagehide', persistState);
+  // Auch periodisch sichern (alle 30s) für Worst-Case-Crashes
+  setInterval(persistState, 30000);
+
   // Listen for auth events — handle token refresh failures gracefully
   sb.auth.onAuthStateChange((event, session) => {
     if (event === 'TOKEN_REFRESHED') return; // all good
     if (event === 'SIGNED_OUT' || (!session && event === 'INITIAL_SESSION')) return;
-    // If token refresh failed (session becomes null unexpectedly), redirect to login
+    // If token refresh failed (session becomes null unexpectedly):
+    //   - Online: redirect to login (token actually invalid)
+    //   - Offline: keep using last known state, don't kick user out
     if (!session && state.currentUser) {
+      if (!navigator.onLine) {
+        console.warn('[auth] Session refresh failed but offline — keeping cached state');
+        return;
+      }
       console.warn('[auth] Session lost — redirecting to login');
       state.currentUser = null;
       stopHeartbeat();
+      clearPersistedState();
       toast('Sitzung abgelaufen. Bitte erneut anmelden.', 'error');
       setTimeout(() => navigateTo('auth'), 1500);
     }
@@ -495,7 +513,28 @@ async function init() {
   try {
     const { data: { session } } = await sb.auth.getSession();
 
+    // ─── Offline-Restore: gespeicherten State wiederherstellen ──────
+    // Wenn wir eine Session haben (gültiger oder abgelaufener Token in
+    // localStorage) und persistierten State vorfinden, sofort damit
+    // booten. Bei Online wird im Hintergrund frisch nachgeladen.
+    if (session && !navigator.onLine) {
+      const restored = restoreState();
+      if (restored && state.currentUser?.id === session.user.id) {
+        console.log('[init] Offline-Boot mit gespeichertem State');
+        startHeartbeat();
+        // Direkt zur passenden View — fast-path in navigateTo greift
+        const target = state.currentCommunityId ? 'community-home' : 'communities';
+        await navigateTo(target);
+        return;
+      }
+    }
+
     if (session) {
+      // Vor dem Profile-Fetch: gespeicherten State opportunistisch laden,
+      // damit SWR-Fast-Path greifen kann (sofortiges Render mit alten Daten,
+      // dann stille Aktualisierung im Hintergrund)
+      restoreState();
+
       const { data: profile } = await sb
         .from('profiles')
         .select('username, default_community_id')
