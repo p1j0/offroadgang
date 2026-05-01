@@ -2202,6 +2202,14 @@ function renderSiteInfoModal() {
         </div>
       </div>
     </div>
+    <div style="padding:10px 20px 14px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:8px">
+      <span style="font-family:var(--font-mono);font-size:10px;color:var(--muted);letter-spacing:0.04em">
+        v${typeof APP_VERSION !== 'undefined' ? APP_VERSION : '—'}
+      </span>
+      <span style="font-family:var(--font-mono);font-size:10px;color:var(--muted);letter-spacing:0.03em">
+        🔄 ${typeof BUILD_DATE !== 'undefined' ? BUILD_DATE : '—'}
+      </span>
+    </div>
   </div>
 </div>`;
 }
