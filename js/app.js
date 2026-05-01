@@ -164,6 +164,27 @@ async function navigateTo(view, params = {}) {
     // Merge any extra params into global state
     Object.assign(state, params);
 
+    // ─── OFFLINE FAST-PATH ──────────────────────────────────────────
+    // Wenn offline und State hat schon Community/Tour-Daten, alle
+    // Loader überspringen und direkt rendern. Kein Roundtrip durch
+    // Service Worker oder Supabase-Client.
+    const _isOffline = !navigator.onLine;
+    if (_isOffline) {
+      const hasCommData = (state.communities?.length || 0) > 0;
+      const hasHomeData = (state.tours?.length || 0) > 0 && state._loadedHomeForCid === state.currentCommunityId;
+      if (
+        (view === 'communities' && hasCommData) ||
+        (view === 'community-home'  && hasHomeData) ||
+        (view === 'community-media' && hasHomeData) ||
+        (view === 'planning'        && hasHomeData) ||
+        (view === 'tour'            && state.currentTour?.id === state.currentTourId)
+      ) {
+        state.view = view;
+        render();
+        return; // finally block setzt _navigating = false
+      }
+    }
+
     // Load data required for the target view
     try {
       if (view === 'communities' && state.currentUser) {
