@@ -233,3 +233,22 @@ function attachEmojiPicker(toggleId, pickerId, inputId) {
     }
   });
 }
+
+/* ----------------------------------------------------------
+   Offline Guard
+   Intercepts all write fetch calls when the device is offline.
+   Supabase JS uses window.fetch internally, so this covers
+   all database writes, edge function calls and Cloudinary
+   uploads in one place — no per-function changes needed.
+   ---------------------------------------------------------- */
+(function () {
+  const _origFetch = window.fetch;
+  window.fetch = function (resource, init) {
+    const method = ((init && init.method) || 'GET').toUpperCase();
+    if (!navigator.onLine && ['POST', 'PATCH', 'PUT', 'DELETE'].includes(method)) {
+      toast('📵 Offline – diese Aktion ist nicht möglich', 'error');
+      return Promise.reject(new Error('APP_OFFLINE'));
+    }
+    return _origFetch.apply(this, arguments);
+  };
+}());
