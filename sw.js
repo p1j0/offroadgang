@@ -3,7 +3,7 @@
    Handles: offline caching + Web Push Notifications
    ============================================================ */
 
-const CACHE_NAME      = 'motoroute-v8';
+const CACHE_NAME = 'motoroute-v8';
 const API_CACHE_NAME  = 'motoroute-api-v1';
 const TILE_CACHE_NAME = 'motoroute-tiles-v1';
 const TILE_CACHE_MAX  = 500; // ~500 Tiles × ø20 KB = max ~10 MB
