@@ -164,25 +164,30 @@ async function navigateTo(view, params = {}) {
     // Merge any extra params into global state
     Object.assign(state, params);
 
-    // ─── OFFLINE FAST-PATH ──────────────────────────────────────────
-    // Wenn offline und State hat schon Community/Tour-Daten, alle
-    // Loader überspringen und direkt rendern. Kein Roundtrip durch
-    // Service Worker oder Supabase-Client.
+    // ─── STALE-WHILE-REVALIDATE ─────────────────────────────────────
+    // Wenn State schon Daten für diese View hat:
+    //   Online  → sofort mit alten Daten rendern, dann im Hintergrund
+    //             nachladen und still neu rendern (kein sichtbares Warten)
+    //   Offline → sofort rendern und fertig (kein Netzwerk-Roundtrip)
     const _isOffline = !navigator.onLine;
-    if (_isOffline) {
-      const hasCommData = (state.communities?.length || 0) > 0;
-      const hasHomeData = (state.tours?.length || 0) > 0 && state._loadedHomeForCid === state.currentCommunityId;
-      if (
-        (view === 'communities' && hasCommData) ||
-        (view === 'community-home'  && hasHomeData) ||
-        (view === 'community-media' && hasHomeData) ||
-        (view === 'planning'        && hasHomeData) ||
-        (view === 'tour'            && state.currentTour?.id === state.currentTourId)
-      ) {
-        state.view = view;
-        render();
-        return; // finally block setzt _navigating = false
-      }
+    const _hasCommData = (state.communities?.length || 0) > 0;
+    const _hasHomeData = (state.tours?.length || 0) > 0 && state._loadedHomeForCid === state.currentCommunityId;
+    const _hasTourData = state.currentTour?.id === state.currentTourId;
+    const _canRenderNow = (
+      (view === 'communities'    && _hasCommData) ||
+      (view === 'community-home' && _hasHomeData) ||
+      (view === 'community-media'&& _hasHomeData) ||
+      (view === 'planning'       && _hasHomeData) ||
+      (view === 'tour'           && _hasTourData)
+    );
+
+    if (_canRenderNow) {
+      // Sofort mit vorhandenen Daten rendern → User sieht die Seite ohne Wartezeit
+      state.view = view;
+      render();
+      if (_isOffline) return; // Offline: kein Netzwerk → fertig
+      // Online: weiter unten werden Daten frisch geladen und danach
+      //         erneut gerendert (Änderungen erscheinen still im Hintergrund)
     }
 
     // Load data required for the target view
@@ -238,8 +243,12 @@ async function navigateTo(view, params = {}) {
       console.error('[navigateTo] data fetch error:', e);
     }
 
-    state.view = view;
-    render();
+    // Nach dem Laden neu rendern — bei SWR ist dies der "stille" Update-Render.
+    // Nur rendern wenn der User noch auf dieser View ist (nicht wegnavigiert).
+    if (state.view === view || !_canRenderNow) {
+      state.view = view;
+      render();
+    }
   } finally {
     _navigating = false;
   }
