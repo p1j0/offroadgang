@@ -340,19 +340,64 @@ async function _loadCheckinWeather(tourId, destination, startDate, endDate, maps
   if (!weatherEl) return;
 
   const wmoIcon = (code) => {
-    if (code === 0)              return '☀️';
-    if (code <= 2)               return '⛅';
-    if (code <= 3)               return '☁️';
-    if (code <= 48)              return '🌫️';
-    if (code <= 67)              return '🌧️';
-    if (code <= 77)              return '❄️';
-    if (code <= 82)              return '🌧️';
-    if (code <= 86)              return '❄️';
+    if (code === 0)  return '☀️';
+    if (code <= 2)   return '⛅';
+    if (code <= 3)   return '☁️';
+    if (code <= 48)  return '🌫️';
+    if (code <= 67)  return '🌧️';
+    if (code <= 77)  return '❄️';
+    if (code <= 82)  return '🌧️';
+    if (code <= 86)  return '❄️';
     return '⚡';
   };
 
+  // Helper: write fetched data into current DOM (called from cache and from fresh fetch)
+  const applyWeather = (days, codes, temps, hasTruncated, maxDateStr) => {
+    const el = document.getElementById(`checkin-weather-${tourId}`);
+    if (!el) return;
+    el.querySelectorAll('.checkin-weather-day').forEach(row => {
+      const date = row.dataset.date;
+      const idx  = days.indexOf(date);
+      if (idx !== -1) {
+        row.querySelector('[data-wicon]').textContent = wmoIcon(codes[idx]);
+        row.querySelector('[data-wtemp]').textContent = `${Math.round(temps[idx])}°C`;
+      } else if (date > maxDateStr) {
+        row.querySelector('[data-wicon]').textContent = '—';
+        row.querySelector('[data-wtemp]').textContent = '';
+        row.style.opacity = '0.4';
+      }
+    });
+    // Show hint only if not already present (SWR renders twice → guard against duplicates)
+    if (hasTruncated && !el.parentNode.querySelector('.checkin-weather-hint')) {
+      const hint = document.createElement('div');
+      hint.className = 'checkin-weather-hint';
+      hint.style.setProperty('font-family', "'JetBrains Mono', 'SF Mono', Menlo, monospace");
+      hint.style.setProperty('font-size', '10px');
+      hint.style.setProperty('color', '#82817a');
+      hint.style.setProperty('margin-top', '6px');
+      hint.style.setProperty('letter-spacing', '0.03em');
+      hint.textContent = '⏳ Vorhersage max. 16 Tage im Voraus verfügbar';
+      el.after(hint);
+    }
+  };
+
+  // Clamp end_date to Open-Meteo's 16-day limit (computed once, used by cache + fetch)
+  const maxDate = new Date();
+  maxDate.setDate(maxDate.getDate() + 15);
+  const maxDateStr   = maxDate.toISOString().slice(0, 10);
+  const clampedEnd   = endDate > maxDateStr ? maxDateStr : endDate;
+  const hasTruncated = endDate > maxDateStr;
+
+  // --- Cache check: if we already fetched weather for this tour today, reuse it ---
+  if (!state.weatherCache) state.weatherCache = {};
+  const cached = state.weatherCache[tourId];
+  if (cached) {
+    applyWeather(cached.days, cached.codes, cached.temps, hasTruncated, maxDateStr);
+    return; // No API call needed
+  }
+
   try {
-    // 1. Resolve coordinates — prefer Treffpunkt maps link, fall back to geocoding destination
+    // 1. Resolve coordinates — prefer Treffpunkt maps link, fall back to geocoding
     let latitude, longitude;
     const fromMap = await _extractMapCoords(mapsLink);
     if (fromMap) {
@@ -367,15 +412,7 @@ async function _loadCheckinWeather(tourId, destination, startDate, endDate, maps
       ({ latitude, longitude } = geoData.results[0]);
     }
 
-    // 2. Clamp end_date to Open-Meteo's 16-day forecast limit
-    const todayStr = new Date().toISOString().slice(0, 10);
-    const maxDate  = new Date();
-    maxDate.setDate(maxDate.getDate() + 15);
-    const maxDateStr   = maxDate.toISOString().slice(0, 10);
-    const clampedEnd   = endDate > maxDateStr ? maxDateStr : endDate;
-    const hasTruncated = endDate > maxDateStr;
-
-    // Only fetch if tour start is within forecast window
+    // 2. Fetch forecast (only if tour start is within forecast window)
     const days  = [];
     const codes = [];
     const temps = [];
@@ -389,35 +426,11 @@ async function _loadCheckinWeather(tourId, destination, startDate, endDate, maps
       temps.push(...(weatherData.daily?.temperature_2m_max || []));
     }
 
-    // 3. Update DOM rows (still mounted — render() may not have fired again)
-    const el = document.getElementById(`checkin-weather-${tourId}`);
-    if (!el) return;
-    el.querySelectorAll('.checkin-weather-day').forEach(row => {
-      const date = row.dataset.date;
-      const idx  = days.indexOf(date);
-      if (idx !== -1) {
-        row.querySelector('[data-wicon]').textContent = wmoIcon(codes[idx]);
-        row.querySelector('[data-wtemp]').textContent = `${Math.round(temps[idx])}°C`;
-      } else if (date > maxDateStr) {
-        // Beyond forecast window — mark clearly
-        row.querySelector('[data-wicon]').textContent = '—';
-        row.querySelector('[data-wtemp]').textContent = '';
-        row.style.opacity = '0.4';
-      }
-    });
+    // 3. Save to cache so SWR second-render reuses without re-fetching
+    state.weatherCache[tourId] = { days, codes, temps };
 
-    // 4. Show hint if at least one tour day is beyond the 16-day window
-    if (hasTruncated) {
-      const hint = document.createElement('div');
-      hint.className = 'checkin-weather-hint';
-      hint.style.setProperty('font-family', "'JetBrains Mono', 'SF Mono', Menlo, monospace");
-      hint.style.setProperty('font-size', '10px');
-      hint.style.setProperty('color', '#82817a');
-      hint.style.setProperty('margin-top', '6px');
-      hint.style.setProperty('letter-spacing', '0.03em');
-      hint.textContent = '⏳ Vorhersage max. 16 Tage im Voraus verfügbar';
-      el.after(hint);
-    }
+    // 4. Apply to DOM
+    applyWeather(days, codes, temps, hasTruncated, maxDateStr);
   } catch (e) {
     console.warn('[checkin weather]', e);
   }

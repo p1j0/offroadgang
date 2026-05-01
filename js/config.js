@@ -23,3 +23,7 @@ const CLOUDINARY_URL    = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/a
 
 const ALLOWED_MEDIA_TYPES = ['image/jpeg','image/png','image/webp','image/gif','video/mp4','video/quicktime','video/webm'];
 const MAX_FILE_SIZE       = 10 * 1024 * 1024; // 10 MB
+
+// Injected by build.sh on every Netlify deploy
+const APP_VERSION = 'dev';
+const BUILD_DATE  = 'lokal';
