@@ -105,6 +105,39 @@ self.addEventListener('fetch', event => {
     return;
   }
 
+  // Supabase REST Schreiboperationen → nach Erfolg betroffene Tabelle aus Cache entfernen
+  // Verhindert, dass nach z.B. Beitritt die Mitgliederliste noch alt ist.
+  if (
+    url.hostname.includes('supabase.co') &&
+    url.pathname.startsWith('/rest/v1/') &&
+    ['POST', 'PATCH', 'PUT', 'DELETE'].includes(event.request.method)
+  ) {
+    event.respondWith((async () => {
+      const response = await fetch(event.request);
+      try {
+        if (response.ok) {
+          // Tabellenname aus dem Pfad extrahieren: /rest/v1/<table>...
+          const tableMatch = url.pathname.match(/^\/rest\/v1\/([^/?]+)/);
+          const table = tableMatch ? tableMatch[1] : null;
+          if (table) {
+            const cache = await caches.open(API_CACHE_NAME);
+            const keys = await cache.keys();
+            await Promise.all(keys.map(req => {
+              const reqUrl = new URL(req.url);
+              if (reqUrl.pathname.startsWith(`/rest/v1/${table}`)) {
+                return cache.delete(req);
+              }
+            }));
+          }
+        }
+      } catch (e) {
+        // Cache-Invalidierung darf die Antwort nicht blockieren
+      }
+      return response;
+    })());
+    return;
+  }
+
   // Alle anderen Supabase-Endpunkte (auth, functions, storage) → immer live
   if (url.hostname.includes('supabase.co')) {
     return; // Browser-Standard

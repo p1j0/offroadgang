@@ -235,6 +235,10 @@ async function navigateTo(view, params = {}) {
         }
       }
       if (view === 'tour' && state.currentTourId) {
+        // Tour-Besuch markieren → entfernt das "neue Ereignisse"-Banner
+        // auf der Community-Home-Karte für diese Tour, sobald sie geöffnet wurde.
+        markTourVisited(state.currentTourId);
+        if (state.homeBadges) delete state.homeBadges[state.currentTourId];
         await loadTourData(state.currentTourId);
         await loadTourMedia();
         subscribeToChat(state.currentTourId);
