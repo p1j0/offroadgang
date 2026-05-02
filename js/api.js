@@ -80,10 +80,13 @@ async function computeHomeBadges() {
   const myTourIds = [...state.myTourIds];
   if (!myTourIds.length) return;
 
-  // For each tour, find events newer than last-seen timestamp
+  // For each tour, find events newer than last-seen timestamp.
+  // The "tour visit" timestamp acknowledges news at the home-card level
+  // even when the user didn't open the chat/changelog tab specifically.
   await Promise.all(myTourIds.map(async tourId => {
-    const seenChat = getLastSeen(tourId, 'chat');
-    const seenLog  = getLastSeen(tourId, 'changelog');
+    const lastVisit = getTourLastVisit(tourId);
+    const seenChat  = new Date(Math.max(getLastSeen(tourId, 'chat').getTime(),      lastVisit.getTime()));
+    const seenLog   = new Date(Math.max(getLastSeen(tourId, 'changelog').getTime(), lastVisit.getTime()));
 
     const [msgsRes, logRes] = await Promise.all([
       sb.from('messages')

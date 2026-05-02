@@ -149,6 +149,28 @@ function getLastSeen(tourId, tab) {
 }
 
 /**
+ * Mark a tour as visited (entered) right now. Used for home-card badges:
+ * visiting a tour acknowledges its news at the home level even if the user
+ * didn't open the specific chat/changelog tab.
+ * @param {string} tourId
+ */
+function markTourVisited(tourId) {
+  try { localStorage.setItem(`mr_visit_${tourId}`, new Date().toISOString()); } catch(e) {}
+}
+
+/**
+ * Get the Date the user last entered a tour (or epoch if never).
+ * @param {string} tourId
+ * @returns {Date}
+ */
+function getTourLastVisit(tourId) {
+  try {
+    const v = localStorage.getItem(`mr_visit_${tourId}`);
+    return v ? new Date(v) : new Date(0);
+  } catch(e) { return new Date(0); }
+}
+
+/**
  * Get ISO week number (1–53) for a given date.
  * @param {Date} d
  * @returns {number}
