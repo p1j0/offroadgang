@@ -133,6 +133,18 @@ function _seenKey(tourId, tab) {
  */
 function markTabSeen(tourId, tab) {
   try { localStorage.setItem(_seenKey(tourId, tab), new Date().toISOString()); } catch(e) {}
+
+  // Home-Karten-Badge optimistisch leeren, damit der SWR-Sofort-Render
+  // beim Zurückgehen zur Community-Home keine alte (stale) Markierung mehr zeigt.
+  // computeHomeBadges bestätigt das später nochmal mit frischen Server-Daten.
+  if (typeof state !== 'undefined' && state.homeBadges?.[tourId]) {
+    if (tab === 'chat')      state.homeBadges[tourId].chat      = 0;
+    if (tab === 'changelog') state.homeBadges[tourId].changelog = 0;
+    const b = state.homeBadges[tourId];
+    if ((b.chat || 0) === 0 && (b.changelog || 0) === 0) {
+      delete state.homeBadges[tourId];
+    }
+  }
 }
 
 /**
@@ -144,28 +156,6 @@ function markTabSeen(tourId, tab) {
 function getLastSeen(tourId, tab) {
   try {
     const v = localStorage.getItem(_seenKey(tourId, tab));
-    return v ? new Date(v) : new Date(0);
-  } catch(e) { return new Date(0); }
-}
-
-/**
- * Mark a tour as visited (entered) right now. Used for home-card badges:
- * visiting a tour acknowledges its news at the home level even if the user
- * didn't open the specific chat/changelog tab.
- * @param {string} tourId
- */
-function markTourVisited(tourId) {
-  try { localStorage.setItem(`mr_visit_${tourId}`, new Date().toISOString()); } catch(e) {}
-}
-
-/**
- * Get the Date the user last entered a tour (or epoch if never).
- * @param {string} tourId
- * @returns {Date}
- */
-function getTourLastVisit(tourId) {
-  try {
-    const v = localStorage.getItem(`mr_visit_${tourId}`);
     return v ? new Date(v) : new Date(0);
   } catch(e) { return new Date(0); }
 }
