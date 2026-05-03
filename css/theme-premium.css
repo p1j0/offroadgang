@@ -786,6 +786,13 @@ html, body {
   text-transform: uppercase;
   margin-bottom: 4px;
 }
+@keyframes checkin-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.35; }
+}
+.checkin-label--pulse {
+  animation: checkin-pulse 1.8s ease-in-out infinite;
+}
 .checkin-title {
   font-family: var(--font-display);
   font-size: 17px;
