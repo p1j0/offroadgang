@@ -595,6 +595,14 @@ function attachEvents() {
     });
   });
 
+  /* --- Check-in header → Tour öffnen --- */
+  document.querySelectorAll('[data-open-tour]').forEach(el => {
+    el.addEventListener('click', () => {
+      const tourId = el.dataset.openTour;
+      if (tourId) navigateTo('tour', { currentTourId: tourId, currentTab: 'overview' });
+    });
+  });
+
   /* --- Check-in weather forecast (async, community-home view) --- */
   if (state.view === 'community-home') {
     const nextTour = (state.tours || [])
