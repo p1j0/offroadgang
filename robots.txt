@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://offroadtours.netlify.app/sitemap.xml
