@@ -184,10 +184,9 @@ function renderResetPassword() {
 
 function renderNav() {
   const username = state.currentUser?.username || '';
-  const _parts = username ? username.trim().split(/\s+/) : [];
-  const initials = _parts.length
-    ? (_parts[0][0] + (_parts[1]?.[0] || _parts[0][1] || '')).toUpperCase().slice(0, 2)
-    : '?';
+  // Use the community-wide collision-aware initials so the nav avatar
+  // matches what other users see on the rest of the app.
+  const initials = state.currentUser?.id ? getInitials(state.currentUser.id) : '?';
   return `
 <nav class="nav">
   <div class="nav-logo" id="nav-logo" title="Zur Startseite">
@@ -453,15 +452,7 @@ function renderTourCard(tour, locked) {
     ? distanceTxt.replace(/\s*km\s*$/i, '').trim()
     : '—';
 
-  // Avatar initials helper
-  const initials = (name) => {
-    if (!name) return '??';
-    const parts = name.trim().split(/\s+/);
-    return (parts[0][0] + (parts[1]?.[0] || parts[0][1] || '')).toUpperCase().slice(0,2);
-  };
-  const adminInitials = initials(adminName);
-
-  // Real member initials (excluding admin)
+  // Real member IDs (excluding admin)
   const memberUserIds = (state.tourMemberIds?.[tour.id] || [])
     .filter(uid => uid !== tour.admin_id);
 
@@ -470,10 +461,12 @@ function renderTourCard(tour, locked) {
   const visibleMemberIds = memberUserIds.slice(0, MAX_AVATARS - 1);
   const overflowCount = Math.max(0, memberUserIds.length - visibleMemberIds.length);
 
-  let avatarStack = `<span class="tour-avatar tour-avatar-admin" title="${esc(adminName)}">${adminInitials}</span>`;
+  // Initials are computed community-wide via getInitials() →
+  // Mario = MR, Manuel = MN, regardless of which tour they appear in.
+  let avatarStack = `<span class="tour-avatar tour-avatar-admin" title="${esc(adminName)}">${getInitials(tour.admin_id)}</span>`;
   for (const uid of visibleMemberIds) {
     const name = state.profileCache[uid] || '?';
-    avatarStack += `<span class="tour-avatar tour-avatar-member" title="${esc(name)}">${initials(name)}</span>`;
+    avatarStack += `<span class="tour-avatar tour-avatar-member" title="${esc(name)}">${getInitials(uid)}</span>`;
   }
   if (overflowCount > 0) {
     avatarStack += `<span class="tour-avatar tour-avatar-more">+${overflowCount}</span>`;
@@ -1329,14 +1322,12 @@ function renderTourOverview(tour) {
   // ── PARTICIPANTS CARD ─────────────────────────────────────────────────────
   const members    = state.tourMembers.slice(0, 10);
   const extraCount = Math.max(0, state.tourMembers.length - members.length);
-  const memberIds      = members.map(m => m.user_id);
-  const memberInitials = buildInitialsMap(memberIds);
   const participantsBody = `
     <div class="tov-avatars">
       ${members.map(m => `
         <div class="tov-avatar" title="${esc(m.username)}"
              style="background:var(--accent);color:#000">
-          ${memberInitials[m.user_id] || (m.username||'?')[0].toUpperCase()}
+          ${getInitials(m.user_id)}
         </div>`).join('')}
       ${extraCount > 0
         ? `<div class="tov-avatar" style="background:var(--surface2);color:var(--muted);font-size:10px;border:1px solid var(--border)">+${extraCount}</div>`
@@ -1580,7 +1571,7 @@ function renderParticipantsTab() {
 
       return `
     <div class="participant-item">
-      <div class="participant-avatar" style="${(isCreator||isCoAdmin)?'background:var(--accent)':''}">${(m.username||'?')[0].toUpperCase()}</div>
+      <div class="participant-avatar" style="${(isCreator||isCoAdmin)?'background:var(--accent)':''}">${getInitials(m.user_id)}</div>
       <div style="flex:1;min-width:0">
         <div style="font-weight:500">${esc(m.username)}</div>
         <div style="font-size:12px;color:${roleColor}">${roleLabel}</div>
@@ -2289,9 +2280,8 @@ function renderCommunityHome() {
     const userId     = state.currentUser?.id;
     const tourId     = nextTour.id;
 
-    // Collision-aware initials (shared helper in utils.js)
-    const _initialsMap   = buildInitialsMap(allIds);
-    const avatarInitials = (id) => _initialsMap[id] || '?';
+    // Community-wide initials (consistent across all tours/views)
+    const avatarInitials = (id) => getInitials(id);
 
     // Read per-user check-in state from Supabase (cached in state.tourCheckins)
     const checkinSet = state.tourCheckins?.[tourId] || new Set();
@@ -2713,16 +2703,22 @@ function renderPollCard(poll, isAdmin) {
     // Who voted for this option — shown as blue avatars
     const voterEntries = poll.votes.filter(v => (v.option_ids || []).includes(opt.id));
     const voterIds     = voterEntries.map(v => v.user_id);
-    // Ensure usernames are in profileCache (votes carry username directly)
-    voterEntries.forEach(v => { if (v.user_id && v.username) state.profileCache[v.user_id] = v.username; });
-    const voterInitials = buildInitialsMap(voterIds);
+    // Ensure usernames are in profileCache (votes carry username directly).
+    // If we add a new user, invalidate the cached initials map so the next
+    // getInitials() call sees the updated profile set.
+    voterEntries.forEach(v => {
+      if (v.user_id && v.username && state.profileCache[v.user_id] !== v.username) {
+        state.profileCache[v.user_id] = v.username;
+        state._initialsMap = null;
+      }
+    });
     const votersHtml = voterIds.length
       ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:5px;padding:0 26px 10px">
            ${voterIds.map(uid => `<span title="${esc(state.profileCache[uid]||'')}"
              style="width:26px;height:26px;border-radius:50%;background:var(--accent);color:#000;
                     font-size:9px;font-weight:700;display:inline-flex;align-items:center;
                     justify-content:center;flex-shrink:0;letter-spacing:0.03em">
-             ${esc(voterInitials[uid]||'?')}</span>`).join('')}
+             ${esc(getInitials(uid))}</span>`).join('')}
          </div>`
       : '';
 

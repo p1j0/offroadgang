@@ -44,6 +44,29 @@ function buildInitialsMap(ids) {
 }
 
 /**
+ * Get collision-aware initials for a single user, computed against
+ * ALL known users in state.profileCache. This ensures consistency:
+ * Mario stays "MR" and Manuel stays "MN" everywhere — independent
+ * of which tour, poll or member list they appear in.
+ *
+ * The map is cached and rebuilt only when profileCache size changes
+ * (i.e. when new users have been loaded).
+ *
+ * @param {string} userId
+ * @returns {string} two-letter initials, uppercase
+ */
+function getInitials(userId) {
+  const allIds = Object.keys(state.profileCache || {});
+  if (!state._initialsMap || state._initialsMapSize !== allIds.length) {
+    state._initialsMap     = buildInitialsMap(allIds);
+    state._initialsMapSize = allIds.length;
+  }
+  return state._initialsMap[userId]
+      || (state.profileCache?.[userId] || '?')[0]?.toUpperCase()
+      || '?';
+}
+
+/**
  * Show a temporary toast notification.
  * @param {string} msg
  * @param {string} [type=''] – '' (accent) | 'error'
