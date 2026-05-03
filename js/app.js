@@ -388,10 +388,12 @@ async function _loadCheckinWeather(tourId, destination, startDate, endDate, maps
   const clampedEnd   = endDate > maxDateStr ? maxDateStr : endDate;
   const hasTruncated = endDate > maxDateStr;
 
-  // --- Cache check: if we already fetched weather for this tour today, reuse it ---
+  // --- Cache check: reuse only if fetched on the same calendar day ---
+  // (The 16-day window shifts daily; a cache from yesterday may miss the last day.)
   if (!state.weatherCache) state.weatherCache = {};
+  const today  = new Date().toISOString().slice(0, 10);
   const cached = state.weatherCache[tourId];
-  if (cached) {
+  if (cached && cached.fetchDate === today) {
     applyWeather(cached.days, cached.codes, cached.temps, hasTruncated, maxDateStr);
     return; // No API call needed
   }
@@ -427,7 +429,7 @@ async function _loadCheckinWeather(tourId, destination, startDate, endDate, maps
     }
 
     // 3. Save to cache so SWR second-render reuses without re-fetching
-    state.weatherCache[tourId] = { days, codes, temps };
+    state.weatherCache[tourId] = { days, codes, temps, fetchDate: today };
 
     // 4. Apply to DOM
     applyWeather(days, codes, temps, hasTruncated, maxDateStr);
