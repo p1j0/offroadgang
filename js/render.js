@@ -2324,7 +2324,7 @@ function renderCommunityHome() {
     <div class="checkin-box" data-checkin-tour="${tourId}">
       <div class="checkin-header">
         <div class="checkin-header-nav checkin-header-info" data-open-tour="${tourId}" title="Tour öffnen">
-          <div class="checkin-label">● ${countdown} · NÄCHSTE TOUR</div>
+          <div class="checkin-label${diffDays <= 10 ? ' checkin-label--pulse' : ''}">● ${countdown} · NÄCHSTE TOUR</div>
           <div class="checkin-title">${esc(nextTour.name)}</div>
           <div class="checkin-meta">${dateStr}${nextTour.destination ? ' · ' + esc(nextTour.destination) : ''}</div>
         </div>
