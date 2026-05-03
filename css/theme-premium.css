@@ -751,8 +751,8 @@ html, body {
 
 /* ---------- CHECK-IN BOX ---------- */
 .checkin-box {
-  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
-  border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--border));
+  background: #1e2712;    /* ≈ 12% lime (#d4ff3a) über surface (#131318) */
+  border: 1px solid rgba(212,255,58,0.22);
   border-left: 3px solid var(--accent);
   border-radius: var(--radius-lg);
   padding: 14px 16px;
@@ -774,7 +774,7 @@ html, body {
   transition: background 0.15s;
 }
 .checkin-header-nav:hover {
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  background: rgba(212,255,58,0.08);
 }
 .checkin-header-info { min-width: 0; flex: 1 1 auto; }
 .checkin-label {

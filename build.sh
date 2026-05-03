@@ -12,12 +12,12 @@ echo "Cache-busting with hash: $HASH  |  Build: $BUILD_DATE"
 
 # --- index.html: version-stamp js/ AND css/ refs --------------------------
 # Strip any existing ?v=... first so reruns stay idempotent
-sed -i 's|\(js/[a-z]*\.js\)?v=[^"]*"|\1"|g'  index.html
-sed -i 's|\(css/[a-z]*\.css\)?v=[^"]*"|\1"|g' index.html
+sed -i 's|\(js/[a-z][a-z0-9-]*\.js\)?v=[^"]*"|\1"|g'  index.html
+sed -i 's|\(css/[a-z][a-z0-9-]*\.css\)?v=[^"]*"|\1"|g' index.html
 
 # Then add fresh ?v=
-sed -i "s|\(js/[a-z]*\.js\)\"|\1?v=${HASH}\"|g"  index.html
-sed -i "s|\(css/[a-z]*\.css\)\"|\1?v=${HASH}\"|g" index.html
+sed -i "s|\(js/[a-z][a-z0-9-]*\.js\)\"|\1?v=${HASH}\"|g"  index.html
+sed -i "s|\(css/[a-z][a-z0-9-]*\.css\)\"|\1?v=${HASH}\"|g" index.html
 
 # --- sw.js: bump CACHE_NAME so each deploy invalidates old SW cache ------
 sed -i "s|^const CACHE_NAME = .*|const CACHE_NAME = 'motoroute-${HASH}';|" sw.js
