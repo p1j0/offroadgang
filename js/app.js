@@ -388,15 +388,24 @@ async function _loadCheckinWeather(tourId, destination, startDate, endDate, maps
   const clampedEnd   = endDate > maxDateStr ? maxDateStr : endDate;
   const hasTruncated = endDate > maxDateStr;
 
-  // --- Cache check: reuse only if fetched on the same calendar day ---
-  // (The 16-day window shifts daily; a cache from yesterday may miss the last day.)
+  // --- Cache check: show cached data immediately, refresh online after 1 hour ---
   if (!state.weatherCache) state.weatherCache = {};
-  const today  = new Date().toISOString().slice(0, 10);
+  const WEATHER_CACHE_MAX_AGE_MS = 60 * 60 * 1000;
+  const now = Date.now();
+  const today = new Date(now).toISOString().slice(0, 10);
+  const cacheKey = [destination || '', startDate || '', endDate || '', mapsLink || ''].join('|');
   const cached = state.weatherCache[tourId];
-  if (cached && cached.fetchDate === today) {
-    applyWeather(cached.days, cached.codes, cached.temps, hasTruncated, maxDateStr);
-    return; // No API call needed
+  const cachedFetchedAt = cached?.fetchedAt
+    || (cached?.fetchDate ? Date.parse(`${cached.fetchDate}T00:00:00`) : 0);
+  const cacheMatches = cached && (!cached.cacheKey || cached.cacheKey === cacheKey);
+  const hasFreshCache = cacheMatches && cachedFetchedAt && (now - cachedFetchedAt < WEATHER_CACHE_MAX_AGE_MS);
+  const isOnline = navigator.onLine !== false;
+
+  if (cacheMatches) {
+    applyWeather(cached.days || [], cached.codes || [], cached.temps || [], hasTruncated, maxDateStr);
+    if (hasFreshCache || !isOnline) return;
   }
+  if (!isOnline) return;
 
   try {
     // 1. Resolve coordinates — prefer Treffpunkt maps link, fall back to geocoding
@@ -420,7 +429,8 @@ async function _loadCheckinWeather(tourId, destination, startDate, endDate, maps
     const temps = [];
     if (startDate <= maxDateStr) {
       const weatherResp = await fetch(
-        `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&daily=temperature_2m_max,weathercode&timezone=auto&start_date=${startDate}&end_date=${clampedEnd}`
+        `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&daily=temperature_2m_max,weathercode&timezone=auto&start_date=${startDate}&end_date=${clampedEnd}`,
+        { cache: 'no-store' }
       );
       const weatherData = await weatherResp.json();
       days.push(...(weatherData.daily?.time               || []));
@@ -429,7 +439,8 @@ async function _loadCheckinWeather(tourId, destination, startDate, endDate, maps
     }
 
     // 3. Save to cache so SWR second-render reuses without re-fetching
-    state.weatherCache[tourId] = { days, codes, temps, fetchDate: today };
+    state.weatherCache[tourId] = { days, codes, temps, fetchDate: today, fetchedAt: Date.now(), cacheKey };
+    if (typeof persistState === 'function') persistState();
 
     // 4. Apply to DOM
     applyWeather(days, codes, temps, hasTruncated, maxDateStr);
