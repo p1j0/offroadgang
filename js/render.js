@@ -2269,8 +2269,11 @@ function renderCommunityHome() {
       return `${wd} ${day}. ${mon}`;
     };
     const dateStr = tEnd ? `${fmtShort(tStart)} – ${fmtShort(tEnd)}` : fmtShort(tStart);
-    const now = new Date();
-    const diffDays = Math.ceil((tStart - now) / 86400000);
+    // Kalendertagvergleich (Mitternacht zu Mitternacht) — verhindert dass der
+    // Countdown bis mittags auf dem alten Wert bleibt.
+    const todayMidnightCI = new Date(); todayMidnightCI.setHours(0, 0, 0, 0);
+    const tourMidnight    = new Date(nextTour.date + 'T00:00:00');
+    const diffDays = Math.round((tourMidnight - todayMidnightCI) / 86400000);
     const countdown = diffDays <= 0 ? 'HEUTE' : diffDays === 1 ? 'IN 1 TAG' : `IN ${diffDays} TAGEN`;
 
     const memberIds = (state.tourMemberIds?.[nextTour.id] || []);
