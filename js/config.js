@@ -5,10 +5,49 @@
 const SUPABASE_URL  = 'https://kkoeeyqxubtcqvonckss.supabase.co';
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtrb2VleXF4dWJ0Y3F2b25ja3NzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ2MjU4NjAsImV4cCI6MjA5MDIwMTg2MH0.tBW2YV-FeLP9BXIBwjBfybuAd4ZET0uZ3rIOsI2iXT4';
 
-const { createClient } = window.supabase;
+function createOfflineSupabaseClient() {
+  const offlineResult = () => Promise.resolve({
+    data: null,
+    error: new Error('Supabase client unavailable while offline'),
+    count: null,
+  });
+
+  const query = new Proxy({}, {
+    get(_target, prop) {
+      if (prop === 'then') return (resolve) => offlineResult().then(resolve);
+      if (prop === 'catch') return (reject) => offlineResult().catch(reject);
+      if (prop === 'finally') return (cb) => offlineResult().finally(cb);
+      return () => query;
+    },
+  });
+
+  const channel = {
+    on() { return channel; },
+    subscribe() { return channel; },
+    unsubscribe() { return Promise.resolve(); },
+  };
+
+  return {
+    auth: {
+      getSession: () => Promise.resolve({ data: { session: null }, error: null }),
+      onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
+      signOut: () => Promise.resolve({ error: null }),
+      signUp: () => offlineResult(),
+      signInWithPassword: () => offlineResult(),
+      updateUser: () => offlineResult(),
+    },
+    from: () => query,
+    channel: () => channel,
+    removeChannel: () => Promise.resolve(),
+  };
+}
+
+const createClient = window.supabase?.createClient;
 
 /** Global Supabase client – used by api.js and auth.js */
-const sb = createClient(SUPABASE_URL, SUPABASE_ANON);
+const sb = createClient
+  ? createClient(SUPABASE_URL, SUPABASE_ANON)
+  : createOfflineSupabaseClient();
 
 /**
  * VAPID Public Key für Web Push Notifications.
