@@ -248,6 +248,7 @@ async function navigateTo(view, params = {}) {
     if (state.view === view || !_canRenderNow) {
       state.view = view;
       render();
+      persistState();
     }
   } finally {
     _navigating = false;
@@ -461,6 +462,13 @@ function syncStickyLayout() {
   });
 }
 
+function _withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), ms)),
+  ]);
+}
+
 /* ----------------------------------------------------------
    Boot
    ---------------------------------------------------------- */
@@ -523,41 +531,50 @@ async function init() {
     return;
   }
 
-  // iOS/PWA cold start while offline: do not wait for Supabase auth first.
-  // getSession() can stall without network, which leaves the app on MOTOROUTE...
-  // even though a usable persisted state exists in localStorage.
-  if (!navigator.onLine) {
-    const restored = restoreState();
-    if (restored && state.currentUser) {
-      console.log('[init] Offline-Boot mit gespeichertem State');
-      startHeartbeat();
-      const target = state.currentCommunityId ? 'community-home' : 'communities';
-      await navigateTo(target);
-      return;
-    }
-
+  // iOS/PWA cold start: render persisted state before any Supabase call.
+  // CDN/auth/network calls can stall while offline or captive; cached UI should
+  // still become visible immediately.
+  const restoredAtBoot = restoreState() && !!state.currentUser;
+  if (restoredAtBoot) {
+    console.log('[init] Boot mit gespeichertem State');
+    state.view = state.currentCommunityId ? 'community-home' : 'communities';
+    render();
+    if (!navigator.onLine) return;
+  } else if (!navigator.onLine) {
     state.authMode = 'login';
-    state.authErr  = 'Offline – keine gespeicherten Daten gefunden.';
+    state.authErr  = 'Offline - keine gespeicherten Daten gefunden.';
     state.view     = 'auth';
     render();
     return;
   }
 
   try {
-    const { data: { session } } = await sb.auth.getSession();
+    const { data: { session } } = await _withTimeout(sb.auth.getSession(), 3500);
+
+    if (!session && restoredAtBoot) return;
+    if (!session) {
+      state.authMode = 'login';
+      state.view     = 'auth';
+      render();
+      return;
+    }
 
     if (session) {
       // Vor dem Profile-Fetch: gespeicherten State opportunistisch laden,
       // damit SWR-Fast-Path greifen kann (sofortiges Render mit alten Daten,
       // dann stille Aktualisierung im Hintergrund)
-      restoreState();
+      if (!restoredAtBoot) restoreState();
 
-      const { data: profile } = await sb
-        .from('profiles')
-        .select('username, default_community_id')
-        .eq('id', session.user.id)
-        .single();
+      const { data: profile } = await _withTimeout(
+        sb
+          .from('profiles')
+          .select('username, default_community_id')
+          .eq('id', session.user.id)
+          .single(),
+        3500
+      );
 
+      if (!profile && restoredAtBoot) return;
       if (profile) {
         state.currentUser = {
           id: session.user.id,
@@ -585,6 +602,12 @@ async function init() {
     }
   } catch (e) {
     console.error('[init] session check failed:', e);
+    if (restoredAtBoot) return;
+    state.authMode = 'login';
+    state.authErr  = navigator.onLine ? 'Verbindung fehlgeschlagen. Bitte später erneut versuchen.' : 'Offline - keine gespeicherten Daten gefunden.';
+    state.view     = 'auth';
+    render();
+    return;
   }
 
   // No valid session → auth screen (preJoinId already saved above)
