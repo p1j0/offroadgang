@@ -475,21 +475,14 @@ function renderTourCard(tour, locked) {
   const memberUserIds = (state.tourMemberIds?.[tour.id] || [])
     .filter(uid => uid !== tour.admin_id);
 
-  // Adaptive avatar stack: admin first, then up to MAX_AVATARS-1 real members
-  const MAX_AVATARS = 5;
-  const visibleMemberIds = memberUserIds.slice(0, MAX_AVATARS - 1);
-  const overflowCount = Math.max(0, memberUserIds.length - visibleMemberIds.length);
-
   // Initials are computed community-wide via getInitials() →
   // Mario = MR, Manuel = MN, regardless of which tour they appear in.
-  let avatarStack = `<span class="tour-avatar tour-avatar-admin" title="${esc(adminName)}">${getInitials(tour.admin_id)}</span>`;
-  for (const uid of visibleMemberIds) {
+  let avatarStack = `<span class="tour-avatar tour-avatar-admin" data-tour-avatar-item title="${esc(adminName)}">${getInitials(tour.admin_id)}</span>`;
+  for (const uid of memberUserIds) {
     const name = state.profileCache[uid] || '?';
-    avatarStack += `<span class="tour-avatar tour-avatar-member" title="${esc(name)}">${getInitials(uid)}</span>`;
+    avatarStack += `<span class="tour-avatar tour-avatar-member" data-tour-avatar-item title="${esc(name)}">${getInitials(uid)}</span>`;
   }
-  if (overflowCount > 0) {
-    avatarStack += `<span class="tour-avatar tour-avatar-more">+${overflowCount}</span>`;
-  }
+  avatarStack += '<span class="tour-avatar tour-avatar-more tour-avatar-hidden" data-tour-avatar-more></span>';
 
   const kmPct = distanceClean !== '—' ? Math.min(100, Math.round((parseFloat(distanceClean) / 500) * 100)) : 35;
   const stripeColor = isMine ? 'var(--accent)' : 'var(--orange)';
@@ -593,7 +586,7 @@ function renderTourCard(tour, locked) {
     <div class="tour-card-date">${dateDisplay}</div>
     <div class="tour-card-actions">
       ${badgesHtml}
-      <div class="tour-card-avatars">${avatarStack}</div>
+      <div class="tour-card-avatars" data-tour-avatar-stack>${avatarStack}</div>
       <button class="btn-copy-link" data-copy-id="${tour.id}" title="Einladungslink kopieren" aria-label="Link kopieren">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
       </button>
