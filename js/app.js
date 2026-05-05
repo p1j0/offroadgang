@@ -313,6 +313,51 @@ function _canForegroundRefresh() {
   return ['communities', 'community-home', 'planning', 'community-media', 'tour'].includes(state.view);
 }
 
+function fitTourCardAvatars() {
+  document.querySelectorAll('[data-tour-avatar-stack]').forEach(stack => {
+    const actions = stack.closest('.tour-card-actions');
+    const footer = stack.closest('.tour-card-footer');
+    if (!actions || !footer) return;
+
+    const items = [...stack.querySelectorAll('[data-tour-avatar-item]')];
+    const more = stack.querySelector('[data-tour-avatar-more]');
+    if (!items.length || !more) return;
+
+    const footerStyle = getComputedStyle(footer);
+    const footerContentWidth = footer.getBoundingClientRect().width
+      - parseFloat(footerStyle.paddingLeft || 0)
+      - parseFloat(footerStyle.paddingRight || 0);
+    const actionsGap = parseFloat(getComputedStyle(actions).columnGap || getComputedStyle(actions).gap || 0) || 0;
+    const minDateWidth = 78;
+    const maxActionsWidth = Math.max(48, footerContentWidth - minDateWidth - actionsGap);
+
+    const applyVisibleCount = (count) => {
+      items.forEach((item, index) => {
+        item.classList.toggle('tour-avatar-hidden', index >= count);
+      });
+      const hiddenCount = items.length - count;
+      more.classList.toggle('tour-avatar-hidden', hiddenCount <= 0);
+      more.textContent = hiddenCount > 0 ? `+${hiddenCount}` : '';
+      more.title = hiddenCount > 0 ? `${hiddenCount} weitere Rider` : '';
+    };
+
+    const actionsWidthForCurrentState = () => {
+      const visibleChildren = [...actions.children].filter(child => {
+        if (child === stack) return true;
+        return getComputedStyle(child).display !== 'none' && !child.classList.contains('tour-avatar-hidden');
+      });
+      const childWidth = visibleChildren.reduce((sum, child) => sum + child.getBoundingClientRect().width, 0);
+      return childWidth + Math.max(0, visibleChildren.length - 1) * actionsGap;
+    };
+
+    for (let count = items.length; count >= 1; count--) {
+      applyVisibleCount(count);
+      if (actionsWidthForCurrentState() <= maxActionsWidth) return;
+    }
+    applyVisibleCount(1);
+  });
+}
+
 async function refreshCurrentView({ force = false } = {}) {
   if (!_canForegroundRefresh()) return;
   const now = Date.now();
@@ -383,6 +428,7 @@ function render() {
     app.innerHTML = html;
     attachEvents();
     syncStickyLayout();
+    requestAnimationFrame(fitTourCardAvatars);
   } catch (e) {
     console.error('[render] error:', e);
     app.innerHTML = `<div style="padding:40px;color:#e04444;font-family:monospace">
@@ -571,7 +617,10 @@ function _withTimeout(promise, ms) {
  * Checks for an existing Supabase session and routes accordingly.
  */
 async function init() {
-  window.addEventListener('resize', syncStickyLayout);
+  window.addEventListener('resize', () => {
+    syncStickyLayout();
+    fitTourCardAvatars();
+  });
 
   // ─── State-Persistenz: Auto-Save bei Hintergrund/Schließen ────────
   // Wenn die App in den Hintergrund geht, State in localStorage sichern.
