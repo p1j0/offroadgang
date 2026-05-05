@@ -3,6 +3,25 @@
    Depends on: state.js (state), utils.js (esc, daysInMonth)
    ============================================================ */
 
+function formatBuildDateForBerlin(value) {
+  if (!value || value === 'lokal') return value || '—';
+
+  const utcMatch = String(value).match(/^(\d{2})\.(\d{2})\.(\d{4})\s+(\d{2}):(\d{2})\s+UTC$/);
+  if (!utcMatch) return value;
+
+  const [, day, month, year, hour, minute] = utcMatch;
+  const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute)));
+  return date.toLocaleString('de-DE', {
+    timeZone: 'Europe/Berlin',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  });
+}
+
 /* ----------------------------------------------------------
    Auth screen
    ---------------------------------------------------------- */
@@ -2198,7 +2217,7 @@ function renderSiteInfoModal() {
         v${typeof APP_VERSION !== 'undefined' ? APP_VERSION : '—'}
       </span>
       <span style="font-family:var(--font-mono);font-size:10px;color:var(--muted);letter-spacing:0.03em">
-        🔄 ${typeof BUILD_DATE !== 'undefined' ? BUILD_DATE : '—'}
+        🔄 ${typeof BUILD_DATE !== 'undefined' ? formatBuildDateForBerlin(BUILD_DATE) : '—'}
       </span>
     </div>
   </div>
