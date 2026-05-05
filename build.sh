@@ -7,7 +7,7 @@
 set -e
 
 HASH=$(git rev-parse --short HEAD 2>/dev/null || date +%s)
-BUILD_DATE=$(date -u +"%d.%m.%Y %H:%M UTC")
+BUILD_DATE=$(TZ=Europe/Berlin date +"%d.%m.%Y %H:%M %Z")
 echo "Cache-busting with hash: $HASH  |  Build: $BUILD_DATE"
 
 # --- index.html: version-stamp js/ AND css/ refs --------------------------
