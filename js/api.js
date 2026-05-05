@@ -31,6 +31,7 @@ async function loadHomeData() {
     state.memberCounts = {};
     state.tourMemberIds = {};
     state.homeBadges   = {};
+    state._loadedHomeForCid = cid;
     return;
   }
 

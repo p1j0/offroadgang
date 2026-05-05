@@ -92,7 +92,7 @@ function startHeartbeat() {
   isSiteAdmin().then(v => { state.isSiteAdminUser = v; }).catch(() => {});
 
   const ping = () => {
-    if (state.currentUser) {
+    if (state.currentUser && navigator.onLine) {
       sb.from('profiles')
         .update({ last_seen_at: new Date().toISOString() })
         .eq('id', state.currentUser.id)
@@ -523,24 +523,28 @@ async function init() {
     return;
   }
 
+  // iOS/PWA cold start while offline: do not wait for Supabase auth first.
+  // getSession() can stall without network, which leaves the app on MOTOROUTE...
+  // even though a usable persisted state exists in localStorage.
+  if (!navigator.onLine) {
+    const restored = restoreState();
+    if (restored && state.currentUser) {
+      console.log('[init] Offline-Boot mit gespeichertem State');
+      startHeartbeat();
+      const target = state.currentCommunityId ? 'community-home' : 'communities';
+      await navigateTo(target);
+      return;
+    }
+
+    state.authMode = 'login';
+    state.authErr  = 'Offline – keine gespeicherten Daten gefunden.';
+    state.view     = 'auth';
+    render();
+    return;
+  }
+
   try {
     const { data: { session } } = await sb.auth.getSession();
-
-    // ─── Offline-Restore: gespeicherten State wiederherstellen ──────
-    // Wenn wir eine Session haben (gültiger oder abgelaufener Token in
-    // localStorage) und persistierten State vorfinden, sofort damit
-    // booten. Bei Online wird im Hintergrund frisch nachgeladen.
-    if (session && !navigator.onLine) {
-      const restored = restoreState();
-      if (restored && state.currentUser?.id === session.user.id) {
-        console.log('[init] Offline-Boot mit gespeichertem State');
-        startHeartbeat();
-        // Direkt zur passenden View — fast-path in navigateTo greift
-        const target = state.currentCommunityId ? 'community-home' : 'communities';
-        await navigateTo(target);
-        return;
-      }
-    }
 
     if (session) {
       // Vor dem Profile-Fetch: gespeicherten State opportunistisch laden,

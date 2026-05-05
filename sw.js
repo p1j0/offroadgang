@@ -72,7 +72,10 @@ self.addEventListener('fetch', event => {
     return; // Browser-Standard
   }
 
-  // Supabase REST GET → Stale-While-Revalidate (offline-fähig)
+  // Supabase REST GET → Network-first mit Cache-Fallback.
+  // Die App rendert bereits vorher den persistierten State. Wenn sie online
+  // frisch nachlädt, muss der awaited Fetch deshalb echte Live-Daten liefern;
+  // stale-first würde Änderungen oft erst beim zweiten/dritten Reload zeigen.
   if (
     url.hostname.includes('supabase.co') &&
     url.pathname.startsWith('/rest/v1/') &&
@@ -80,26 +83,18 @@ self.addEventListener('fetch', event => {
   ) {
     event.respondWith(
       caches.open(API_CACHE_NAME).then(async cache => {
-        const cached = await cache.match(event.request);
-
-        // Netzwerkabruf starten (im Hintergrund oder als Hauptantwort)
-        const networkPromise = fetch(event.request).then(response => {
+        try {
+          const response = await fetch(event.request);
           if (response.ok) cache.put(event.request, response.clone());
           return response;
-        }).catch(() => null);
-
-        if (cached) {
-          // Cache sofort zurückgeben, Netzwerk aktualisiert im Hintergrund
-          networkPromise;
-          return cached;
+        } catch (e) {
+          const cached = await cache.match(event.request);
+          if (cached) return cached;
+          return new Response(JSON.stringify({ error: 'offline', message: 'Offline – kein Cache verfügbar' }), {
+            status: 503,
+            headers: { 'Content-Type': 'application/json' },
+          });
         }
-
-        // Kein Cache → auf Netzwerk warten, bei Fehler sofort 503 zurückgeben
-        const result = await networkPromise;
-        return result || new Response(JSON.stringify({ error: 'offline', message: 'Offline – kein Cache verfügbar' }), {
-          status: 503,
-          headers: { 'Content-Type': 'application/json' },
-        });
       })
     );
     return;
