@@ -2182,6 +2182,12 @@ select option       { background: var(--surface2); }
   border-top: 1px solid var(--border);
   margin: 20px 0;
 }
+.site-info-updated {
+  margin-top: 28px;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: right;
+}
 
 /* Edit mode — split editor + live preview */
 .site-info-edit-area {

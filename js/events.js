@@ -2528,6 +2528,26 @@ function _renderSiteInfoView(key) {
   } else {
     el.textContent = md;
   }
+
+  const updatedAt = _siteContent?.[key]?.updated_at;
+  if (updatedAt) {
+    const stamp = document.createElement('div');
+    stamp.className = 'site-info-updated';
+    stamp.textContent = `Zuletzt aktualisiert: ${_formatSiteInfoDate(updatedAt)}`;
+    el.appendChild(stamp);
+  }
+}
+
+function _formatSiteInfoDate(value) {
+  return new Date(value).toLocaleString('de-DE', {
+    timeZone: 'Europe/Berlin',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  });
 }
 
 function updateSiteInfoPreview() {

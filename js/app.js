@@ -131,6 +131,61 @@ function isCurrentUserAdmin() {
 
 let _navigating = false;
 
+async function _loadViewData(view) {
+  if (view === 'communities' && state.currentUser) {
+    await loadCommunities();
+    state.isSiteAdminUser = await isSiteAdmin();
+  }
+
+  if ((view === 'community-home' || view === 'planning' || view === 'community-media') && state.currentCommunityId) {
+    await loadCommunityData(state.currentCommunityId);
+
+    if (view === 'community-home') {
+      await loadHomeData();
+      // Determine next upcoming tour (needed for checkins + plan dates)
+      const todayMidnight = new Date(); todayMidnight.setHours(0,0,0,0);
+      const nextTour = (state.tours || [])
+        .filter(t => new Date((t.end_date || t.date) + 'T23:59:59') >= todayMidnight)
+        .sort((a,b) => new Date(a.date) - new Date(b.date))[0];
+      // Run all remaining fetches in parallel — none depend on each other
+      await Promise.all([
+        computePlanningBadges(),
+        computeMediaBadges(),
+        nextTour
+          ? loadTourCheckins(nextTour.id).then(r => { state.tourCheckins[nextTour.id] = r; })
+          : Promise.resolve(),
+        nextTour
+          ? loadNextTourPlanDates(nextTour.id)
+          : Promise.resolve(),
+      ]);
+    }
+
+    if (view === 'community-media') {
+      // loadHomeData (tours list) and loadCommunityMedia are independent → parallel
+      await Promise.all([loadHomeData(), loadCommunityMedia()]);
+      await computeTourMediaCounts(); // needs state.tours from loadHomeData
+      state.selectedTourMedia = null;
+      markTabSeen(state.currentCommunityId, 'community-media');
+      markTabSeen(state.currentCommunityId, 'tour-media');
+      state.mediaBadges = { community: 0, tours: 0 };
+    }
+
+    if (view === 'planning') {
+      await loadPlanningData();
+      markTabSeen(state.currentCommunityId, 'plan-chat');
+      markTabSeen(state.currentCommunityId, 'plan-polls');
+      state.planningBadges = { chat: 0, polls: 0 };
+      subscribeToCommunityChat(state.currentCommunityId);
+    }
+  }
+
+  if (view === 'tour' && state.currentTourId) {
+    await loadTourData(state.currentTourId);
+    await loadTourMedia();
+    subscribeToChat(state.currentTourId);
+  }
+}
+
 async function navigateTo(view, params = {}) {
   // Guard against concurrent calls (double-click, stacked event listeners, etc.)
   if (_navigating) return;
@@ -192,53 +247,7 @@ async function navigateTo(view, params = {}) {
 
     // Load data required for the target view
     try {
-      if (view === 'communities' && state.currentUser) {
-        await loadCommunities();
-        state.isSiteAdminUser = await isSiteAdmin();
-      }
-      if ((view === 'community-home' || view === 'planning' || view === 'community-media') && state.currentCommunityId) {
-        await loadCommunityData(state.currentCommunityId);
-        if (view === 'community-home') {
-          await loadHomeData();
-          // Determine next upcoming tour (needed for checkins + plan dates)
-          const todayMidnight = new Date(); todayMidnight.setHours(0,0,0,0);
-          const nextTour = (state.tours || [])
-            .filter(t => new Date((t.end_date || t.date) + 'T23:59:59') >= todayMidnight)
-            .sort((a,b) => new Date(a.date) - new Date(b.date))[0];
-          // Run all remaining fetches in parallel — none depend on each other
-          await Promise.all([
-            computePlanningBadges(),
-            computeMediaBadges(),
-            nextTour
-              ? loadTourCheckins(nextTour.id).then(r => { state.tourCheckins[nextTour.id] = r; })
-              : Promise.resolve(),
-            nextTour
-              ? loadNextTourPlanDates(nextTour.id)
-              : Promise.resolve(),
-          ]);
-        }
-        if (view === 'community-media') {
-          // loadHomeData (tours list) and loadCommunityMedia are independent → parallel
-          await Promise.all([loadHomeData(), loadCommunityMedia()]);
-          await computeTourMediaCounts(); // needs state.tours from loadHomeData
-          state.selectedTourMedia = null;
-          markTabSeen(state.currentCommunityId, 'community-media');
-          markTabSeen(state.currentCommunityId, 'tour-media');
-          state.mediaBadges = { community: 0, tours: 0 };
-        }
-        if (view === 'planning') {
-          await loadPlanningData();
-          markTabSeen(state.currentCommunityId, 'plan-chat');
-          markTabSeen(state.currentCommunityId, 'plan-polls');
-          state.planningBadges = { chat: 0, polls: 0 };
-          subscribeToCommunityChat(state.currentCommunityId);
-        }
-      }
-      if (view === 'tour' && state.currentTourId) {
-        await loadTourData(state.currentTourId);
-        await loadTourMedia();
-        subscribeToChat(state.currentTourId);
-      }
+      await _loadViewData(view);
     } catch (e) {
       console.error('[navigateTo] data fetch error:', e);
     }
@@ -253,6 +262,90 @@ async function navigateTo(view, params = {}) {
   } finally {
     _navigating = false;
   }
+}
+
+/* ----------------------------------------------------------
+   Foreground refresh
+   ---------------------------------------------------------- */
+
+const FOREGROUND_REFRESH_MS = 60 * 1000;
+let _foregroundRefreshTimer = null;
+let _lastForegroundRefreshAt = 0;
+let _foregroundRefreshRunning = false;
+
+function _isInteractiveElementActive() {
+  const el = document.activeElement;
+  if (!el || el === document.body) return false;
+  return !!el.closest('input, textarea, select, [contenteditable="true"]');
+}
+
+function _hasVisibleBlockingUi() {
+  const selectors = [
+    '.modal-overlay',
+    '.tet-modal-overlay',
+    '#media-lightbox',
+    '#poll-edit-overlay',
+    '#poll-create-form',
+    '#media-yt-form',
+    '#cm-yt-form',
+    '#community-request-form',
+  ];
+
+  return selectors.some(selector => {
+    return [...document.querySelectorAll(selector)].some(el => {
+      const style = getComputedStyle(el);
+      const rect = el.getBoundingClientRect();
+      return style.display !== 'none'
+        && style.visibility !== 'hidden'
+        && rect.width > 0
+        && rect.height > 0;
+    });
+  });
+}
+
+function _canForegroundRefresh() {
+  if (!state.currentUser || !navigator.onLine) return false;
+  if (document.visibilityState && document.visibilityState !== 'visible') return false;
+  if (_navigating || _foregroundRefreshRunning) return false;
+  if (_isInteractiveElementActive() || _hasVisibleBlockingUi()) return false;
+  if (state.view === 'tour' && state.currentTab === 'map') return false;
+  if (state.view === 'planning' && state.planningTab === 'map') return false;
+  return ['communities', 'community-home', 'planning', 'community-media', 'tour'].includes(state.view);
+}
+
+async function refreshCurrentView({ force = false } = {}) {
+  if (!_canForegroundRefresh()) return;
+  const now = Date.now();
+  if (!force && now - _lastForegroundRefreshAt < FOREGROUND_REFRESH_MS) return;
+
+  _foregroundRefreshRunning = true;
+  _lastForegroundRefreshAt = now;
+  const view = state.view;
+
+  try {
+    await _loadViewData(view);
+    if (state.view !== view || !_canForegroundRefresh()) return;
+    render();
+    persistState();
+  } catch (e) {
+    console.warn('[foreground refresh]', e);
+  } finally {
+    _foregroundRefreshRunning = false;
+  }
+}
+
+function startForegroundRefresh() {
+  if (_foregroundRefreshTimer) return;
+
+  _foregroundRefreshTimer = setInterval(() => {
+    refreshCurrentView();
+  }, FOREGROUND_REFRESH_MS);
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') refreshCurrentView({ force: true });
+  });
+  window.addEventListener('online', () => refreshCurrentView({ force: true }));
+  window.addEventListener('focus', () => refreshCurrentView({ force: true }));
 }
 
 /* ----------------------------------------------------------
@@ -489,6 +582,7 @@ async function init() {
   window.addEventListener('pagehide', persistState);
   // Auch periodisch sichern (alle 30s) für Worst-Case-Crashes
   setInterval(persistState, 30000);
+  startForegroundRefresh();
 
   // Listen for auth events — handle token refresh failures gracefully
   sb.auth.onAuthStateChange((event, session) => {
