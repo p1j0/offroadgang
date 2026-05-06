@@ -611,8 +611,10 @@ function attachEvents() {
         return new Date(end + 'T23:59:59') >= new Date();
       })
       .sort((a, b) => new Date(a.date) - new Date(b.date))[0];
-    const treffpunktLink = (state.tourPlanDates || []).find(pd => pd.type === 'treffpunkt' && pd.maps_link)?.maps_link;
-    if (nextTour?.destination || treffpunktLink) {
+    const treffpunktLink = nextTour
+      ? (state.tourPlanDates || []).find(pd => pd.type === 'treffpunkt' && pd.maps_link)?.maps_link
+      : null;
+    if (nextTour && (nextTour.destination || treffpunktLink)) {
       _loadCheckinWeather(nextTour.id, nextTour.destination, nextTour.date, nextTour.end_date || nextTour.date, treffpunktLink);
     }
   }
