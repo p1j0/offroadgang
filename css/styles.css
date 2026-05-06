@@ -841,7 +841,7 @@ select option       { background: var(--surface2); }
 
 /* ---- Sidebar ---- */
 .map-sidebar {
-  width: 256px;
+  width: 320px;
   flex-shrink: 0;
   background: var(--surface);
   border-left: 1px solid var(--border);
@@ -904,6 +904,31 @@ select option       { background: var(--surface2); }
   color: var(--muted);
   flex-shrink: 0;
   white-space: nowrap;
+}
+
+@media (min-width: 721px) {
+  .map-sidebar-track {
+    display: grid;
+    grid-template-columns: 11px minmax(0, 1fr);
+    align-items: start;
+    column-gap: 9px;
+    row-gap: 2px;
+  }
+
+  .map-sidebar-track .map-sidebar-dot {
+    grid-row: 1 / span 2;
+    margin-top: 4px;
+  }
+
+  .map-sidebar-track-name,
+  .map-sidebar-track .map-sidebar-count {
+    grid-column: 2;
+  }
+
+  .map-sidebar-track .map-sidebar-count {
+    white-space: normal;
+    line-height: 1.35;
+  }
 }
 
 .map-sidebar-reset {

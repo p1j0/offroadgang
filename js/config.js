@@ -37,6 +37,9 @@ function createOfflineSupabaseClient() {
       updateUser: () => offlineResult(),
     },
     from: () => query,
+    functions: {
+      invoke: () => offlineResult(),
+    },
     channel: () => channel,
     removeChannel: () => Promise.resolve(),
   };
