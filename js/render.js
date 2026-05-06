@@ -2223,6 +2223,7 @@ function renderSiteInfoModal() {
 
 function renderCommunityHome() {
   const community = state.currentCommunity;
+  const tours = Array.isArray(state.tours) ? state.tours : [];
   const isAdmin   = community && (
     community.admin_id === state.currentUser.id ||
     (community.co_admin_ids || []).includes(state.currentUser.id)
@@ -2238,10 +2239,10 @@ function renderCommunityHome() {
   };
   const tourStartDate = (t) => new Date(t.date + 'T12:00:00');
 
-  const upcoming = state.tours
+  const upcoming = tours
     .filter(t => tourEndDate(t) >= todayMidnight)
     .sort((a, b) => tourStartDate(a) - tourStartDate(b)); // earliest first
-  const past = state.tours
+  const past = tours
     .filter(t => tourEndDate(t) < todayMidnight)
     .sort((a, b) => tourStartDate(b) - tourStartDate(a)); // most recent first
 
@@ -2259,7 +2260,7 @@ function renderCommunityHome() {
       <button class="tour-filter-tab${filter === 'past'     ? ' active' : ''}" onclick="window._setTourFilter('past')">Vergangen</button>
     </div>`;
 
-  const toursCardsHtml = state.tours.length === 0
+  const toursCardsHtml = tours.length === 0
     ? `<div style="text-align:center;padding:60px 20px;color:var(--muted)">
         <div style="font-size:48px;margin-bottom:16px">🏍️</div>
         <div style="font-size:18px;font-weight:600;margin-bottom:8px">Noch keine Touren</div>
