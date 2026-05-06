@@ -1129,12 +1129,14 @@ function attachMapEvents() {
     }
 
     try {
-      await saveGPX(data);
+      toast('Route wird gespeichert, Offroad-Anteil wird berechnet…');
+      const result = await saveGPX(data, text);
       const summary = [
         data.tracks.length    ? `${data.tracks.length} Track${data.tracks.length !== 1 ? 's' : ''}` : '',
         data.waypoints.length ? `${data.waypoints.length} Wegpunkt${data.waypoints.length !== 1 ? 'e' : ''}` : '',
       ].filter(Boolean).join(' · ');
-      toast(`✓ Gespeichert: ${summary} — Distanz im Seitenmenü auswählen`);
+      const offRoad = formatOffRoadPercentage(result?.surfaceAnalysis?.total);
+      toast(`✓ Gespeichert: ${summary}${offRoad ? ` · ${offRoad}` : ' · Offroad-Analyse später erneut versuchen'}`);
       _refreshMapTab();
     } catch (e) { toast(e.message, 'error'); }
   });
@@ -1325,11 +1327,13 @@ function attachInfoEvents() {
     // Distance from dropdown (if present)
     const distSource = document.getElementById('dist-source')?.value;
     let dist = '';
+    let surfaceDisplay = null;
     if (distSource) {
       const gpxData = normalizeGPXRoute(state.currentTour?.gpx_route);
       if (distSource === 'total' && gpxData)       dist = calculateTotalDistance(gpxData);
       else if (distSource.startsWith('track:') && gpxData) dist = calculateTrackDistance(gpxData, parseInt(distSource.split(':')[1]));
       else if (distSource === 'manual') dist = (document.getElementById('dist-manual')?.value || '').trim();
+      surfaceDisplay = buildSurfaceDisplay(state.currentTour, distSource);
     }
 
     const updates = {
@@ -1339,6 +1343,7 @@ function attachInfoEvents() {
       destination: (document.getElementById('edit-dest')?.value || '').trim(),
       description: (document.getElementById('edit-desc')?.value || '').trim(),
       ...(dist ? { distance: dist } : {}),
+      ...(surfaceDisplay ? { surface_display: surfaceDisplay } : {}),
     };
     try {
       await updateTourInfo(updates);
@@ -1347,6 +1352,7 @@ function attachInfoEvents() {
       const hd = document.getElementById('hdr-dest'); if (hd) hd.textContent = updates.destination || 'Kein Ziel';
       const id = document.getElementById('info-dest'); if (id) id.textContent = updates.destination || '—';
       if (dist) { const hdi = document.getElementById('hdr-dist'); if (hdi) hdi.textContent = dist; }
+      _refreshInfoTab();
     } catch (e) { toast(e.message, 'error'); }
   });
 

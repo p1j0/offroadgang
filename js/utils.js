@@ -12,6 +12,58 @@ function esc(s) {
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+function getSurfaceAnalysis(tour) {
+  const analysis = tour?.surface_analysis;
+  return analysis && typeof analysis === 'object' ? analysis : null;
+}
+
+function getTrackSurfaceBreakdown(tour, trackIndex) {
+  const tracks = getSurfaceAnalysis(tour)?.tracks;
+  if (!Array.isArray(tracks)) return null;
+  return tracks.find(t => Number(t.trackNumber) === trackIndex + 1)?.breakdown || null;
+}
+
+function getSelectedSurfaceBreakdown(tour) {
+  return tour?.surface_display?.breakdown || getSurfaceAnalysis(tour)?.total || null;
+}
+
+function buildSurfaceDisplay(tour, source) {
+  const analysis = getSurfaceAnalysis(tour);
+  if (!analysis?.total) return null;
+
+  if (source?.startsWith('track:')) {
+    const trackIndex = parseInt(source.split(':')[1], 10);
+    const track = Array.isArray(analysis.tracks)
+      ? analysis.tracks.find(t => Number(t.trackNumber) === trackIndex + 1)
+      : null;
+    return {
+      source,
+      label: track?.trackName || `Track ${trackIndex + 1}`,
+      breakdown: track?.breakdown || analysis.total,
+    };
+  }
+
+  return {
+    source: source === 'manual' ? 'manual' : 'total',
+    label: source === 'manual' ? 'Manuell / Gesamt' : 'Gesamt',
+    breakdown: analysis.total,
+  };
+}
+
+function formatOffRoadPercentage(breakdown) {
+  const value = Number(breakdown?.offRoadPercentageOfKnownSurface);
+  if (!Number.isFinite(value)) return '';
+  return `${value.toLocaleString('de-DE', { maximumFractionDigits: 1 })}% Offroad`;
+}
+
+function formatSurfaceDistance(kilometers) {
+  const value = Number(kilometers);
+  if (!Number.isFinite(value) || value <= 0) return '';
+  return value >= 10
+    ? `${Math.round(value).toLocaleString('de-DE')} km`
+    : `${value.toLocaleString('de-DE', { maximumFractionDigits: 1 })} km`;
+}
+
 /**
  * Build a collision-aware initials map for a list of user IDs.
  * Uses 1st + 2nd char, escalating to 1st + 3rd, 4th, … when two users share the same result.

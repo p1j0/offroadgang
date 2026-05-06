@@ -470,6 +470,7 @@ function renderTourCard(tour, locked) {
   const distanceClean = distanceTxt && distanceTxt !== '—'
     ? distanceTxt.replace(/\s*km\s*$/i, '').trim()
     : '—';
+  const offRoadTxt = formatOffRoadPercentage(getSelectedSurfaceBreakdown(tour)).replace(/\s*Offroad$/i, '');
 
   // Real member IDs (excluding admin)
   const memberUserIds = (state.tourMemberIds?.[tour.id] || [])
@@ -579,6 +580,7 @@ function renderTourCard(tour, locked) {
     <div class="tour-card-sub">${esc(tour.destination || 'Kein Ziel')}</div>
     <div class="tour-card-stats">
       <span class="tour-card-stat"><span class="tour-card-stat-dot">●</span> <strong>${distanceClean}</strong>${distanceClean !== '—' ? '<span class="tour-card-stat-unit"> KM</span>' : ''}</span>
+      ${offRoadTxt ? `<span class="tour-card-stat tour-card-stat-muted"><strong>${esc(offRoadTxt)}</strong><span class="tour-card-stat-unit"> OFFROAD</span></span>` : ''}
       <span class="tour-card-stat tour-card-stat-muted"><strong>${memberCount}</strong><span class="tour-card-stat-unit"> RIDER</span></span>
     </div>
   </div>
@@ -1286,6 +1288,7 @@ function renderTourOverview(tour) {
     { l: 'Datum',    v: dateStr },
     tour.destination ? { l: 'Ziel',     v: tour.destination } : null,
     tour.distance    ? { l: 'Distanz',  v: `${tour.distance} km` } : null,
+    getSelectedSurfaceBreakdown(tour) ? { l: 'Offroad', v: formatOffRoadPercentage(getSelectedSurfaceBreakdown(tour)) } : null,
     { l: 'Admin',    v: state.profileCache[tour.admin_id] || '—' },
   ].filter(Boolean);
 
@@ -1428,10 +1431,12 @@ function renderMapTab(tour) {
       const tracksHtml = gpxData.tracks.map((t, i) => {
         const color = t.color || TRACK_COLORS[i % TRACK_COLORS.length];
         const dist = calculateTrackDistance(gpxData, i);
-        return `<div class="map-sidebar-item" data-track-idx="${i}" title="${esc(t.name)}">
+        const offRoad = formatOffRoadPercentage(getTrackSurfaceBreakdown(tour, i));
+        const meta = [dist || '—', offRoad].filter(Boolean).join(' · ');
+        return `<div class="map-sidebar-item map-sidebar-track" data-track-idx="${i}" title="${esc(t.name)}">
           <span class="map-sidebar-dot" style="background:${color}"></span>
-          <span class="map-sidebar-label">${esc(t.name)}</span>
-          <span class="map-sidebar-count">${dist || '—'}</span>
+          <span class="map-sidebar-label map-sidebar-track-name">${esc(t.name)}</span>
+          <span class="map-sidebar-count">${esc(meta)}</span>
         </div>`;
       }).join('');
       sidebarHtml += `<div class="map-sidebar-section">
@@ -1610,22 +1615,24 @@ function renderDistanceSelector(tour) {
     return '<p style="font-size:12px;color:var(--muted);margin-bottom:4px">Noch keine GPX-Route hochgeladen.</p>';
   }
   const totalDist = calculateTotalDistance(gpxData);
+  const currentSource = tour.surface_display?.source || 'total';
   const trackOpts = gpxData.tracks.map((t, i) => {
     const d = calculateTrackDistance(gpxData, i);
-    return '<option value="track:' + i + '">Track: ' + esc(t.name) + (d ? ' (' + d + ')' : '') + '</option>';
+    const value = 'track:' + i;
+    return '<option value="' + value + '"' + (currentSource === value ? ' selected' : '') + '>Track: ' + esc(t.name) + (d ? ' (' + d + ')' : '') + '</option>';
   }).join('');
   const opts =
-    '<option value="total">' + (totalDist ? 'Gesamtdistanz (' + totalDist + ')' : 'Gesamtdistanz') + '</option>' +
+    '<option value="total"' + (currentSource === 'total' ? ' selected' : '') + '>' + (totalDist ? 'Gesamtdistanz (' + totalDist + ')' : 'Gesamtdistanz') + '</option>' +
     trackOpts +
-    '<option value="manual">Manuell eingeben</option>';
+    '<option value="manual"' + (currentSource === 'manual' ? ' selected' : '') + '>Manuell eingeben</option>';
   return [
     '<div class="form-group" style="margin-bottom:8px">',
     '  <label>Quelle</label>',
     '  <select id="dist-source">' + opts + '</select>',
     '</div>',
-    '<div id="dist-manual-wrap" style="display:none" class="form-group">',
+    '<div id="dist-manual-wrap" style="' + (currentSource === 'manual' ? '' : 'display:none') + '" class="form-group">',
     '  <label>Manuelle Eingabe</label>',
-    '  <input type="text" id="dist-manual" placeholder="z.B. 350 km" />',
+    '  <input type="text" id="dist-manual" placeholder="z.B. 350 km" value="' + esc(currentSource === 'manual' ? tour.distance || '' : '') + '" />',
     '</div>',
   ].join('');
 }
@@ -1683,6 +1690,15 @@ function renderInfoTab(tour) {
           <div class="info-block">
             <div class="info-label">Distanz <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted);font-size:10px">— automatisch aus GPX</span></div>
             <div id="info-dist">${esc(tour.distance || '—')}</div>
+          </div>
+          <div class="info-block">
+            <div class="info-label">Offroad-Anteil <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted);font-size:10px">— automatisch aus GPX</span></div>
+            <div id="info-offroad">${esc(formatOffRoadPercentage(getSelectedSurfaceBreakdown(tour)) || '—')}</div>
+            ${getSelectedSurfaceBreakdown(tour) ? `
+              <div style="font-size:12px;color:var(--muted);margin-top:4px">
+                ${esc(formatSurfaceDistance(getSelectedSurfaceBreakdown(tour).unpavedKilometers) || '0 km')} unbefestigt von ${esc(formatSurfaceDistance(getSelectedSurfaceBreakdown(tour).totalKilometers) || '0 km')} analysiert
+                ${tour.surface_display?.label ? ` · ${esc(tour.surface_display.label)}` : ''}
+              </div>` : ''}
           </div>
           <div class="info-block">
             <div class="info-label">Admin</div>

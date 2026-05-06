@@ -309,6 +309,8 @@ const FIELD_LABELS = {
   destination: 'Ziel / Region',
   description: 'Beschreibung',
   distance:    'Distanz',
+  surface_analysis: 'Offroad-Anteil',
+  surface_display: 'Offroad-Anteil',
 };
 
 /**
@@ -323,7 +325,7 @@ async function updateTourInfo(updates) {
   if (error) throw new Error(error.message);
 
   // Log every changed field
-  const logPromises = Object.entries(updates).map(([key, newVal]) => {
+  const logPromises = Object.entries(updates).filter(([key]) => key !== 'surface_display').map(([key, newVal]) => {
     const oldVal = state.currentTour?.[key];
     const label  = FIELD_LABELS[key] || key;
     return logChange(label, oldVal, newVal);
@@ -516,14 +518,24 @@ async function deletePlanDate(id) {
  * Persist a GPX route (array of [lat, lon] pairs) to the DB.
  * @param {Array} route
  */
-async function saveGPX(route) {
+async function saveGPX(route, gpxText = '') {
   const { error } = await sb
     .from('tours')
-    .update({ gpx_route: route })
+    .update({
+      gpx_route: route,
+      surface_analysis: null,
+      surface_display: null,
+      surface_analysis_updated_at: null,
+    })
     .eq('id', state.currentTourId);
   if (error) throw new Error(error.message);
   const hadRoute = !!state.currentTour?.gpx_route;
-  if (state.currentTour) state.currentTour.gpx_route = route;
+  if (state.currentTour) {
+    state.currentTour.gpx_route = route;
+    state.currentTour.surface_analysis = null;
+    state.currentTour.surface_display = null;
+    state.currentTour.surface_analysis_updated_at = null;
+  }
   const tracks = route?.tracks?.length || 0;
   const wpts   = route?.waypoints?.length || 0;
   await logChange('Route', hadRoute ? 'Vorherige Route' : '', `${tracks} Track(s), ${wpts} Wegpunkt(e)`);
@@ -535,6 +547,50 @@ async function saveGPX(route) {
     '',
     `${tourName}: ${tracks} Track(s), ${wpts} Wegpunkt(e)`
   );
+
+  if (gpxText && tracks > 0) {
+    try {
+      const analysis = await analyzeGPXSurface(gpxText);
+      const analyzedAt = new Date().toISOString();
+      const surfaceDisplay = { source: 'total', label: 'Gesamt', breakdown: analysis.total };
+      const updateRes = await sb
+        .from('tours')
+        .update({
+          surface_analysis: analysis,
+          surface_display: surfaceDisplay,
+          surface_analysis_updated_at: analyzedAt,
+        })
+        .eq('id', state.currentTourId);
+      if (updateRes.error) throw new Error(updateRes.error.message);
+      if (state.currentTour) {
+        state.currentTour.surface_analysis = analysis;
+        state.currentTour.surface_display = surfaceDisplay;
+        state.currentTour.surface_analysis_updated_at = analyzedAt;
+      }
+      await logChange('Offroad-Anteil', '', formatOffRoadPercentage(analysis.total) || 'Berechnet');
+      return { surfaceAnalysis: analysis };
+    } catch (e) {
+      console.warn('[gpx surface analysis]', e);
+      return { surfaceAnalysis: null, surfaceAnalysisError: e };
+    }
+  }
+
+  return { surfaceAnalysis: null };
+}
+
+async function analyzeGPXSurface(gpxText) {
+  const { data, error } = await sb.functions.invoke('analyze-gpx-surface', {
+    body: {
+      gpx: gpxText,
+      costing: 'bicycle',
+      maxKilometersPerRequest: 80,
+      requestDelayMillis: 1100,
+    },
+  });
+
+  if (error) throw new Error(error.message || 'Offroad-Analyse fehlgeschlagen');
+  if (data?.error) throw new Error(data.error);
+  return data;
 }
 
 /**
@@ -543,10 +599,20 @@ async function saveGPX(route) {
 async function deleteGPX() {
   const { error } = await sb
     .from('tours')
-    .update({ gpx_route: null })
+    .update({
+      gpx_route: null,
+      surface_analysis: null,
+      surface_display: null,
+      surface_analysis_updated_at: null,
+    })
     .eq('id', state.currentTourId);
   if (error) throw new Error(error.message);
-  if (state.currentTour) state.currentTour.gpx_route = null;
+  if (state.currentTour) {
+    state.currentTour.gpx_route = null;
+    state.currentTour.surface_analysis = null;
+    state.currentTour.surface_display = null;
+    state.currentTour.surface_analysis_updated_at = null;
+  }
   await logChange('Route', 'Route vorhanden', 'Gelöscht');
 }
 
@@ -827,7 +893,7 @@ async function loadPlanningData() {
     { data: log },
   ] = await Promise.all([
     sb.from('tours')
-      .select('id, name, gpx_route, date, end_date')
+      .select('id, name, gpx_route, surface_analysis, date, end_date')
       .eq('community_id', cid)
       .not('gpx_route', 'is', null),
     sb.from('community_polls')
