@@ -209,6 +209,10 @@ function _seenCacheKey(scopeId, seenKey, userId = _seenUserId()) {
   return `${userId || 'anon'}\u0001${scopeId || ''}\u0001${seenKey || ''}`;
 }
 
+function _seenPendingKey(scopeId, seenKey, userId = _seenUserId()) {
+  return `mr_seen_pending_${userId}_${scopeId}_${seenKey}`;
+}
+
 function _legacySeenKey(scopeId, seenKey) {
   return `mr_seen_${scopeId}_${seenKey}`;
 }
@@ -287,6 +291,9 @@ function migrateLegacySeenStateForCurrentUser() {
  */
 function markTabSeen(scopeId, seenKey, seenAt = new Date().toISOString()) {
   try { localStorage.setItem(_seenKey(scopeId, seenKey), seenAt); } catch(e) {}
+  try {
+    localStorage.setItem(_seenPendingKey(scopeId, seenKey), JSON.stringify({ seenAt, ts: Date.now() }));
+  } catch(e) {}
 
   if (typeof state !== 'undefined') {
     if (!state.seenState) state.seenState = {};
@@ -324,10 +331,12 @@ function getLastSeen(scopeId, seenKey) {
   const values = [];
   const cached = state?.seenState?.[_seenCacheKey(scopeId, seenKey)];
   if (cached) values.push(cached);
-  try {
-    const local = localStorage.getItem(_seenKey(scopeId, seenKey));
-    if (local) values.push(local);
-  } catch(e) {}
+  if (!navigator.onLine) {
+    try {
+      const local = localStorage.getItem(_seenKey(scopeId, seenKey));
+      if (local) values.push(local);
+    } catch(e) {}
+  }
 
   const newest = values
     .map(v => new Date(v))
