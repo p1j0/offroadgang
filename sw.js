@@ -228,6 +228,21 @@ self.addEventListener('message', event => {
   if (event.data?.type === 'SKIP_WAITING') {
     self.skipWaiting();
   }
+
+  // Cache-Invalidierung für eine bestimmte Tabelle — wird von der App vor
+  // einem frischen Tour-Fetch aufgerufen, damit stale Daten nicht gezeigt werden.
+  if (event.data?.type === 'INVALIDATE_TABLE') {
+    const table = event.data.table;
+    const port  = event.ports?.[0];
+    caches.open(API_CACHE_NAME).then(async cache => {
+      const keys = await cache.keys();
+      await Promise.all(keys.map(req => {
+        const reqUrl = new URL(req.url);
+        if (reqUrl.pathname.startsWith(`/rest/v1/${table}`)) return cache.delete(req);
+      }));
+      port?.postMessage('done');
+    });
+  }
 });
 
 /* ----------------------------------------------------------

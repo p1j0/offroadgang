@@ -39,15 +39,38 @@ function _cachedRouteFields(tourId) {
   return sources.find(t => t?.id === tourId && t.gpx_route) || null;
 }
 
+/**
+ * Lightweight fingerprint of route_metadata.
+ * Ändert sich wenn ein neuer GPX hochgeladen oder gelöscht wurde.
+ */
+function _routeFingerprint(rm) {
+  if (!rm) return '';
+  return `${rm.trackCount || 0}:${rm.waypointCount || 0}:${rm.totalDistance || 0}`;
+}
+
 function _preserveCachedRoute(tour) {
   const cached = _cachedRouteFields(tour?.id);
   if (!tour || !cached) return tour;
+
+  // Wenn sich route_metadata verändert hat, ist der gecachte gpx_route veraltet.
+  // In diesem Fall wird gpx_route nicht übernommen → Karte zeigt Preview aus
+  // route_metadata.preview, voller GPX wird erst beim Zoom-Button neu geladen.
+  const newFp    = _routeFingerprint(tour.route_metadata);
+  const cachedFp = _routeFingerprint(cached.route_metadata);
+  const gpxStale = newFp !== cachedFp;
+
+  if (gpxStale) {
+    // Als veraltet markieren damit loadGPX den SW-Cache umgeht
+    state._staleGpxTourIds = state._staleGpxTourIds || new Set();
+    state._staleGpxTourIds.add(tour.id);
+  }
+
   return {
     ...tour,
-    gpx_route: cached.gpx_route,
-    route_metadata: tour.route_metadata || cached.route_metadata,
-    surface_analysis: tour.surface_analysis || cached.surface_analysis,
-    surface_display: tour.surface_display || cached.surface_display,
+    gpx_route:       gpxStale ? null : cached.gpx_route,
+    route_metadata:  tour.route_metadata || cached.route_metadata,
+    surface_analysis: gpxStale ? null : (tour.surface_analysis || cached.surface_analysis),
+    surface_display:  gpxStale ? null : (tour.surface_display  || cached.surface_display),
   };
 }
 
@@ -659,7 +682,26 @@ async function kickTourMember(userId) {
   if (error) throw new Error(error.message);
   const username = state.profileCache[userId] || userId;
   await logChange('Teilnehmer entfernt', username, '');
+
+  // Update local state immediately so re-renders don't flicker the member back in
   state.tourMembers = state.tourMembers.filter(m => m.user_id !== userId);
+
+  // Also remove from tourMemberIds so home-screen counts stay correct
+  const tid = state.currentTourId;
+  if (state.tourMemberIds?.[tid]) {
+    state.tourMemberIds[tid] = state.tourMemberIds[tid].filter(id => id !== userId);
+  }
+  if (state.memberCounts?.[tid] && state.memberCounts[tid] > 0) {
+    state.memberCounts[tid]--;
+  }
+
+  // Explicitly invalidate the SW API cache for tour_members so that the
+  // SWR re-fetch in navigateTo doesn't load the stale cached GET response
+  // that still contains the kicked member (belt-and-suspenders alongside
+  // the SW write-handler that should already do this on DELETE).
+  if (typeof _invalidateSWTable === 'function') {
+    await _invalidateSWTable('tour_members');
+  }
 }
 
 /* ----------------------------------------------------------
@@ -1232,6 +1274,16 @@ async function loadTourRouteGeometry(tourId) {
 async function ensureCurrentTourRouteLoaded() {
   if (!state.currentTourId) return null;
   if (state.currentTour?.gpx_route) return state.currentTour.gpx_route;
+
+  // Wenn der GPX für diese Tour als veraltet markiert ist (route_metadata hat sich
+  // geändert seit dem letzten gecachten GPX-Load), SW-Cache zuerst leeren damit
+  // frische Daten vom Netzwerk geladen werden — kein Egress für normale Aufrufe.
+  const isStale = state._staleGpxTourIds?.has(state.currentTourId);
+  if (isStale && typeof _invalidateSWTable === 'function') {
+    await _invalidateSWTable('tours');
+    state._staleGpxTourIds.delete(state.currentTourId);
+  }
+
   const data = await loadTourRouteGeometry(state.currentTourId);
   return data?.gpx_route || null;
 }

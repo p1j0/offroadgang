@@ -131,6 +131,26 @@ function isCurrentUserAdmin() {
 
 let _navigating = false;
 
+/**
+ * Leert alle SW-Cache-Einträge für eine Supabase-Tabelle.
+ * Wird vor einem frischen Tour-Fetch aufgerufen, damit veraltete Daten
+ * nicht angezeigt werden. Gibt ein Promise zurück, das aufgelöst wird
+ * sobald der SW den Cache geleert hat (oder sofort wenn kein SW aktiv).
+ */
+function _invalidateSWTable(table) {
+  return new Promise(resolve => {
+    if (!navigator.serviceWorker?.controller) { resolve(); return; }
+    const mc = new MessageChannel();
+    mc.port1.onmessage = () => resolve();
+    navigator.serviceWorker.controller.postMessage(
+      { type: 'INVALIDATE_TABLE', table },
+      [mc.port2]
+    );
+    // Fallback: nach 300ms auflösen, falls SW nicht antwortet
+    setTimeout(resolve, 300);
+  });
+}
+
 async function _loadViewData(view) {
   if (view === 'communities' && state.currentUser) {
     await loadCommunities();
