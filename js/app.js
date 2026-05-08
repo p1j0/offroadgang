@@ -1328,10 +1328,24 @@ async function init() {
     }
 
     if (session) {
+      if (restoredAtBoot && state.currentUser?.id && state.currentUser.id !== session.user.id) {
+        clearPersistedState();
+        state.currentCommunityId = null;
+        state.currentCommunity = null;
+        state.currentTourId = null;
+        state.currentTour = null;
+        state.tours = [];
+        state.myTourIds = new Set();
+        state.communityPolls = [];
+        state.communityMessages = [];
+        state.communityChangelog = [];
+        state.seenState = {};
+      }
+
       // Vor dem Profile-Fetch: gespeicherten State opportunistisch laden,
       // damit SWR-Fast-Path greifen kann (sofortiges Render mit alten Daten,
       // dann stille Aktualisierung im Hintergrund)
-      if (!restoredAtBoot) restoreState();
+      if (!restoredAtBoot) restoreState(session.user.id);
 
       const { data: profile } = await _withTimeout(
         sb
@@ -1350,7 +1364,7 @@ async function init() {
           defaultCommunityId: profile.default_community_id || null,
         };
         state.profileCache[session.user.id] = profile.username;
-        migrateLegacySeenStateForCurrentUser();
+        await migrateLegacySeenStateForCurrentUser();
         startHeartbeat();
 
         if (joinId) {

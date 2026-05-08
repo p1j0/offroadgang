@@ -36,7 +36,7 @@ function _cacheSeenStateRow(row) {
 }
 
 function _seenLoadCacheKey(ids) {
-  return ids.slice().sort().join('\u0001');
+  return `${state.currentUser?.id || 'anon'}\u0002${ids.slice().sort().join('\u0001')}`;
 }
 
 const SEEN_STATE_CACHE_MS = 15 * 1000;

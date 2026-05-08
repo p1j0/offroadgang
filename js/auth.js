@@ -50,7 +50,7 @@ async function doRegister() {
 
     state.currentUser = { id: data.user.id, username };
     state.profileCache[data.user.id] = username;
-    migrateLegacySeenStateForCurrentUser();
+    await migrateLegacySeenStateForCurrentUser();
     startHeartbeat();
     await navigateTo('communities');
   } catch (e) {
@@ -90,7 +90,7 @@ async function doLogin() {
       defaultCommunityId: profile?.default_community_id || null,
     };
     state.profileCache[data.user.id] = state.currentUser.username;
-    migrateLegacySeenStateForCurrentUser();
+    await migrateLegacySeenStateForCurrentUser();
     startHeartbeat();
     if (profile?.default_community_id) {
       await navigateTo('community-home', { currentCommunityId: profile.default_community_id });
