@@ -77,7 +77,7 @@ const state = {
    offline with previously cached data.
    ---------------------------------------------------------- */
 const STATE_STORAGE_KEY = 'motoroute_state_v1';
-const STATE_SCHEMA_VERSION = 3;
+const STATE_SCHEMA_VERSION = 5;
 const STATE_APP_VERSION = (typeof APP_VERSION !== 'undefined' && APP_VERSION) ? APP_VERSION : 'dev';
 const STATE_MAX_AGE_MS  = 7 * 24 * 60 * 60 * 1000; // 7 days
 
@@ -117,6 +117,7 @@ function persistState() {
       // SWR fast-path flags
       _loadedCommunityDataId:    state._loadedCommunityDataId,
       _loadedHomeForCid:         state._loadedHomeForCid,
+      _loadedPlanningForCid:     state._loadedPlanningForCid,
       _loadedMediaForCid:        state._loadedMediaForCid,
       _loadedPlanDatesTourId:    state._loadedPlanDatesTourId,
       _loadedTourMediaCountsCid: state._loadedTourMediaCountsCid,
