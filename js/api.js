@@ -659,7 +659,7 @@ async function kickTourMember(userId) {
   if (error) throw new Error(error.message);
   const username = state.profileCache[userId] || userId;
   await logChange('Teilnehmer entfernt', username, '');
-  state.tourMembers = state.tourMembers.filter(m => m.id !== userId);
+  state.tourMembers = state.tourMembers.filter(m => m.user_id !== userId);
 }
 
 /* ----------------------------------------------------------
