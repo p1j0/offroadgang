@@ -77,7 +77,7 @@ const state = {
    offline with previously cached data.
    ---------------------------------------------------------- */
 const STATE_STORAGE_KEY = 'motoroute_state_v1';
-const STATE_SCHEMA_VERSION = 5;
+const STATE_SCHEMA_VERSION = 6;
 const STATE_APP_VERSION = (typeof APP_VERSION !== 'undefined' && APP_VERSION) ? APP_VERSION : 'dev';
 const STATE_MAX_AGE_MS  = 7 * 24 * 60 * 60 * 1000; // 7 days
 

@@ -791,6 +791,7 @@ function attachEvents() {
       const tab = card.dataset.goTab;
       if (!tab) return;
       state.currentTab = tab;
+      if (tab === 'map')       await ensureCurrentTourRouteLoaded();
       if (tab === 'chat')      await loadMessages();
       if (tab === 'changelog') await loadChangelog();
       if (tab === 'info' && state.tabBadges.info?.length) {
@@ -807,6 +808,7 @@ function attachEvents() {
   document.querySelectorAll('.tab-btn:not(.plan-tab-btn)').forEach(btn => {
     btn.addEventListener('click', async () => {
       state.currentTab = btn.dataset.tab;
+      if (state.currentTab === 'map')       await ensureCurrentTourRouteLoaded();
       if (state.currentTab === 'chat')      await loadMessages();
       if (state.currentTab === 'changelog') await loadChangelog();
 
@@ -857,6 +859,7 @@ function afterTabRender() {
         const tab = card.dataset.goTab;
         if (!tab) return;
         state.currentTab = tab;
+        if (tab === 'map')       await ensureCurrentTourRouteLoaded();
         if (tab === 'chat')      await loadMessages();
         if (tab === 'changelog') await loadChangelog();
         if (tab === 'info' && state.tabBadges.info?.length) {
@@ -874,9 +877,13 @@ function afterTabRender() {
   }
   if (state.currentTab === 'map') {
     setTimeout(() => {
-      initMap(state.currentTour);
-      attachMapEvents();
-      attachSidebarEvents();
+      ensureCurrentTourRouteLoaded().then(() => {
+        const tc = document.getElementById('tab-content');
+        if (tc && state.currentTour && state.currentTab === 'map') tc.innerHTML = renderTab(state.currentTour);
+        initMap(state.currentTour);
+        attachMapEvents();
+        attachSidebarEvents();
+      });
     }, 80);
   }
   if (state.currentTab === 'chat') {
@@ -934,7 +941,8 @@ function _initOverviewMap() {
     window._tovMapInstance = null;
   }
 
-  const gpxData = normalizeGPXRoute(state.currentTour?.gpx_route);
+  const gpxData = normalizeGPXRoute(state.currentTour?.gpx_route)
+    || (typeof routeMetadataToPreviewRoute === 'function' ? routeMetadataToPreviewRoute(state.currentTour?.route_metadata) : null);
   if (!gpxData?.tracks?.length) return;
 
   const map = L.map(container, {
@@ -1178,7 +1186,8 @@ function attachMapEvents() {
     }
   });
 
-  document.getElementById('gpx-dl')?.addEventListener('click', () => {
+  document.getElementById('gpx-dl')?.addEventListener('click', async () => {
+    await ensureCurrentTourRouteLoaded();
     downloadGPX(state.currentTour);
   });
 
@@ -1802,7 +1811,8 @@ function _initPlanMap() {
   const allBounds = [];
 
   tours.forEach(t => {
-    const gpx = normalizeGPXRoute(t.gpx_route);
+    const gpx = normalizeGPXRoute(t.gpx_route)
+      || (typeof routeMetadataToPreviewRoute === 'function' ? routeMetadataToPreviewRoute(t.route_metadata) : null);
     if (!gpx?.tracks?.length) return;
     const visible = state.planMapVisible[t.id] !== false;
 
