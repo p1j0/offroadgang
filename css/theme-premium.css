@@ -947,6 +947,7 @@ html, body {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 16px;
   margin-bottom: 18px;
 }
@@ -955,6 +956,12 @@ html, body {
   font-size: 28px;
   letter-spacing: 1px;
   margin: 0;
+}
+.tour-weather-title-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
 }
 .tour-weather-select-wrap {
   display: flex;
@@ -1196,6 +1203,12 @@ html, body {
   display: flex;
   align-items: flex-end;
   gap: 8px;
+}
+@media (max-width: 600px) {
+  .tour-weather-controls,
+  .tour-weather-select-wrap {
+    width: 100%;
+  }
 }
 .rain-radar-overlay {
   position: fixed;
