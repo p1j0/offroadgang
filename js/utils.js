@@ -218,7 +218,7 @@ function _legacySeenKey(scopeId, seenKey) {
 }
 
 const LEGACY_SEEN_OWNER_KEY = 'mr_seen_legacy_owner_v1';
-const LEGACY_SEEN_MIGRATED_PREFIX = 'mr_seen_legacy_migrated_v1_';
+const LEGACY_SEEN_MIGRATED_PREFIX = 'mr_seen_legacy_migrated_v2_';
 const LEGACY_SEEN_KEYS = [
   'community-media',
   'tour-media',
@@ -243,56 +243,69 @@ function _parseLegacySeenStorageKey(storageKey) {
   return null;
 }
 
-function migrateLegacySeenStateForCurrentUser() {
+async function migrateLegacySeenStateForCurrentUser() {
   const userId = _seenUserId();
   if (!userId || userId === 'anon') return;
   if (state?._legacySeenMigratedForUser === userId) return;
-  state._legacySeenMigratedForUser = userId;
+  if (state?._legacySeenMigrationPromise) return state._legacySeenMigrationPromise;
 
-  const migratedKey = LEGACY_SEEN_MIGRATED_PREFIX + userId;
-  try {
-    if (localStorage.getItem(migratedKey) === '1') return;
-  } catch(e) {}
-
-  let owner = null;
-  try { owner = localStorage.getItem(LEGACY_SEEN_OWNER_KEY); } catch(e) {}
-  if (!owner) {
+  state._legacySeenMigrationPromise = (async () => {
+    const migratedKey = LEGACY_SEEN_MIGRATED_PREFIX + userId;
     try {
-      const hasLegacyKeys = Object.keys(localStorage).some(k => !!_parseLegacySeenStorageKey(k));
-      if (!hasLegacyKeys) return;
-      localStorage.setItem(LEGACY_SEEN_OWNER_KEY, userId);
-      owner = userId;
-    } catch(e) { return; }
-  }
-  if (owner !== userId) return;
-
-  const rowsToSave = [];
-  for (const storageKey of Object.keys(localStorage)) {
-    const parsed = _parseLegacySeenStorageKey(storageKey);
-    if (!parsed) continue;
-    let seenAt = '';
-    try { seenAt = localStorage.getItem(storageKey) || ''; } catch(e) {}
-    if (!Number.isFinite(new Date(seenAt).getTime())) continue;
-
-    const userKey = _seenKey(parsed.scopeId, parsed.seenKey, userId);
-    try {
-      if (!localStorage.getItem(userKey)) localStorage.setItem(userKey, seenAt);
+      if (localStorage.getItem(migratedKey) === '1') {
+        state._legacySeenMigratedForUser = userId;
+        return;
+      }
     } catch(e) {}
 
-    if (!state.seenState) state.seenState = {};
-    const cacheKey = _seenCacheKey(parsed.scopeId, parsed.seenKey, userId);
-    if (!state.seenState[cacheKey]) state.seenState[cacheKey] = seenAt;
+    let owner = null;
+    try { owner = localStorage.getItem(LEGACY_SEEN_OWNER_KEY); } catch(e) {}
+    if (!owner) {
+      try {
+        const hasLegacyKeys = Object.keys(localStorage).some(k => !!_parseLegacySeenStorageKey(k));
+        if (!hasLegacyKeys) {
+          localStorage.setItem(migratedKey, '1');
+          state._legacySeenMigratedForUser = userId;
+          return;
+        }
+        localStorage.setItem(LEGACY_SEEN_OWNER_KEY, userId);
+        owner = userId;
+      } catch(e) { return; }
+    }
+    if (owner !== userId) return;
 
-    rowsToSave.push({ scopeId: parsed.scopeId, seenKey: parsed.seenKey, seenAt });
-  }
+    const rowsToSave = [];
+    for (const storageKey of Object.keys(localStorage)) {
+      const parsed = _parseLegacySeenStorageKey(storageKey);
+      if (!parsed) continue;
+      let seenAt = '';
+      try { seenAt = localStorage.getItem(storageKey) || ''; } catch(e) {}
+      if (!Number.isFinite(new Date(seenAt).getTime())) continue;
 
-  try { localStorage.setItem(migratedKey, '1'); } catch(e) {}
+      const userKey = _seenKey(parsed.scopeId, parsed.seenKey, userId);
+      try {
+        if (!localStorage.getItem(userKey)) localStorage.setItem(userKey, seenAt);
+      } catch(e) {}
 
-  if (typeof saveSeenStatesBulk === 'function' && rowsToSave.length) {
-    saveSeenStatesBulk(rowsToSave).catch(e => {
-      console.warn('[seen_state] legacy migration failed:', e.message || e);
-    });
-  }
+      if (!state.seenState) state.seenState = {};
+      const cacheKey = _seenCacheKey(parsed.scopeId, parsed.seenKey, userId);
+      if (!state.seenState[cacheKey]) state.seenState[cacheKey] = seenAt;
+
+      rowsToSave.push({ scopeId: parsed.scopeId, seenKey: parsed.seenKey, seenAt });
+    }
+
+    if (typeof saveSeenStatesBulk === 'function' && rowsToSave.length) {
+      await saveSeenStatesBulk(rowsToSave);
+    }
+    try { localStorage.setItem(migratedKey, '1'); } catch(e) {}
+    state._legacySeenMigratedForUser = userId;
+  })().catch(e => {
+    console.warn('[seen_state] legacy migration failed:', e.message || e);
+  }).finally(() => {
+    state._legacySeenMigrationPromise = null;
+  });
+
+  return state._legacySeenMigrationPromise;
 }
 
 /**
