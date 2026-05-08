@@ -978,7 +978,9 @@ function renderCalWidget() {
    ---------------------------------------------------------- */
 
 function renderChangelogTab() {
-  const entries = state.tourChangelog;
+  const entries = typeof _dedupeLogEntries === 'function'
+    ? _dedupeLogEntries(state.tourChangelog)
+    : state.tourChangelog;
 
   if (!entries.length) {
     return `<div class="tab-scroll"><div style="padding:40px;text-align:center;color:var(--muted)">
