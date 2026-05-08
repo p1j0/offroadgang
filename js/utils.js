@@ -218,6 +218,7 @@ function _legacySeenKey(scopeId, seenKey) {
 }
 
 const LEGACY_SEEN_OWNER_KEY = 'mr_seen_legacy_owner_v1';
+const LEGACY_SEEN_MIGRATED_PREFIX = 'mr_seen_legacy_migrated_v1_';
 const LEGACY_SEEN_KEYS = [
   'community-media',
   'tour-media',
@@ -245,6 +246,13 @@ function _parseLegacySeenStorageKey(storageKey) {
 function migrateLegacySeenStateForCurrentUser() {
   const userId = _seenUserId();
   if (!userId || userId === 'anon') return;
+  if (state?._legacySeenMigratedForUser === userId) return;
+  state._legacySeenMigratedForUser = userId;
+
+  const migratedKey = LEGACY_SEEN_MIGRATED_PREFIX + userId;
+  try {
+    if (localStorage.getItem(migratedKey) === '1') return;
+  } catch(e) {}
 
   let owner = null;
   try { owner = localStorage.getItem(LEGACY_SEEN_OWNER_KEY); } catch(e) {}
@@ -258,6 +266,7 @@ function migrateLegacySeenStateForCurrentUser() {
   }
   if (owner !== userId) return;
 
+  const rowsToSave = [];
   for (const storageKey of Object.keys(localStorage)) {
     const parsed = _parseLegacySeenStorageKey(storageKey);
     if (!parsed) continue;
@@ -274,11 +283,15 @@ function migrateLegacySeenStateForCurrentUser() {
     const cacheKey = _seenCacheKey(parsed.scopeId, parsed.seenKey, userId);
     if (!state.seenState[cacheKey]) state.seenState[cacheKey] = seenAt;
 
-    if (typeof saveSeenState === 'function') {
-      saveSeenState(parsed.scopeId, parsed.seenKey, seenAt).catch(e => {
-        console.warn('[seen_state] legacy migration failed:', e.message || e);
-      });
-    }
+    rowsToSave.push({ scopeId: parsed.scopeId, seenKey: parsed.seenKey, seenAt });
+  }
+
+  try { localStorage.setItem(migratedKey, '1'); } catch(e) {}
+
+  if (typeof saveSeenStatesBulk === 'function' && rowsToSave.length) {
+    saveSeenStatesBulk(rowsToSave).catch(e => {
+      console.warn('[seen_state] legacy migration failed:', e.message || e);
+    });
   }
 }
 

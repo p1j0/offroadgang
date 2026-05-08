@@ -35,29 +35,47 @@ function _cacheSeenStateRow(row) {
   try { localStorage.setItem(localKey, valueIso); } catch(e) {}
 }
 
+function _seenLoadCacheKey(ids) {
+  return ids.slice().sort().join('\u0001');
+}
+
+const SEEN_STATE_CACHE_MS = 15 * 1000;
+const _seenStateLoadCache = new Map();
+const _seenStateLoadInflight = new Map();
+
 async function loadSeenStates(scopeIds) {
   if (!state.currentUser || !navigator.onLine) return;
-  if (typeof migrateLegacySeenStateForCurrentUser === 'function') {
-    migrateLegacySeenStateForCurrentUser();
-  }
   const ids = [...new Set((Array.isArray(scopeIds) ? scopeIds : [scopeIds]).filter(Boolean).map(String))];
   if (!ids.length) return;
+  const cacheKey = _seenLoadCacheKey(ids);
+  const now = Date.now();
+  const cachedAt = _seenStateLoadCache.get(cacheKey) || 0;
+  if (now - cachedAt < SEEN_STATE_CACHE_MS) return;
+  if (_seenStateLoadInflight.has(cacheKey)) return _seenStateLoadInflight.get(cacheKey);
 
-  const { data, error } = await sb
-    .from('user_seen_state')
-    .select('user_id,scope_id,seen_key,seen_at')
-    .eq('user_id', state.currentUser.id)
-    .in('scope_id', ids);
+  const loadPromise = (async () => {
+    const { data, error } = await sb
+      .from('user_seen_state')
+      .select('user_id,scope_id,seen_key,seen_at')
+      .eq('user_id', state.currentUser.id)
+      .in('scope_id', ids);
 
-  if (error) {
-    console.warn('[seen_state] load failed:', error.message);
-    return;
-  }
-  const returned = new Set((data || []).map(row => `${row.scope_id}\u0001${row.seen_key}`));
-  (data || []).forEach(_cacheSeenStateRow);
-  for (const scopeId of ids) {
-    _clearMissingServerSeenRows(scopeId, returned);
-  }
+    if (error) {
+      console.warn('[seen_state] load failed:', error.message);
+      return;
+    }
+    const returned = new Set((data || []).map(row => `${row.scope_id}\u0001${row.seen_key}`));
+    (data || []).forEach(_cacheSeenStateRow);
+    for (const scopeId of ids) {
+      _clearMissingServerSeenRows(scopeId, returned);
+    }
+    _seenStateLoadCache.set(cacheKey, Date.now());
+  })().finally(() => {
+    _seenStateLoadInflight.delete(cacheKey);
+  });
+
+  _seenStateLoadInflight.set(cacheKey, loadPromise);
+  return loadPromise;
 }
 
 async function saveSeenState(scopeId, seenKey, seenAt = new Date().toISOString()) {
@@ -77,6 +95,40 @@ async function saveSeenState(scopeId, seenKey, seenAt = new Date().toISOString()
   if (error) throw new Error(error.message);
   try { localStorage.removeItem(_seenPendingKey(scopeId, seenKey)); } catch(e) {}
   _cacheSeenStateRow(row);
+  _invalidateSeenStateLoadCache([scopeId]);
+}
+
+async function saveSeenStatesBulk(items = []) {
+  if (!state.currentUser || !navigator.onLine || !items.length) return;
+  const newestByKey = new Map();
+  for (const item of items) {
+    if (!item?.scopeId || !item?.seenKey || !item?.seenAt) continue;
+    const key = `${item.scopeId}\u0001${item.seenKey}`;
+    const prev = newestByKey.get(key);
+    if (!prev || new Date(item.seenAt) > new Date(prev.seenAt)) newestByKey.set(key, item);
+  }
+  const rows = [...newestByKey.values()].map(item => ({
+    user_id: state.currentUser.id,
+    scope_id: String(item.scopeId),
+    seen_key: String(item.seenKey),
+    seen_at: item.seenAt,
+    updated_at: new Date().toISOString(),
+  }));
+  if (!rows.length) return;
+  const { error } = await sb
+    .from('user_seen_state')
+    .upsert(rows, { onConflict: 'user_id,scope_id,seen_key' });
+  if (error) throw new Error(error.message);
+  rows.forEach(_cacheSeenStateRow);
+  _invalidateSeenStateLoadCache(rows.map(row => row.scope_id));
+}
+
+function _invalidateSeenStateLoadCache(scopeIds = []) {
+  const ids = new Set((Array.isArray(scopeIds) ? scopeIds : [scopeIds]).map(String));
+  for (const key of [..._seenStateLoadCache.keys()]) {
+    const parts = key.split('\u0001');
+    if (parts.some(part => ids.has(part))) _seenStateLoadCache.delete(key);
+  }
 }
 
 function _clearMissingServerSeenRows(scopeId, returned) {
@@ -162,7 +214,6 @@ async function loadHomeData() {
     (profs || []).forEach(p => { state.profileCache[p.id] = p.username; });
   }
 
-  await loadSeenStates([...state.myTourIds]);
   await computeHomeBadges();
   state._loadedHomeForCid = cid;
 }
