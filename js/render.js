@@ -1194,7 +1194,10 @@ function renderWeatherTab(tour) {
   return `<div class="tab-scroll">
     <div class="tour-weather-layout">
       <div class="tour-weather-head">
-        <h2>Wetter</h2>
+        <div class="tour-weather-title-block">
+          <h2>Wetter</h2>
+          <button class="btn btn-primary btn-sm" id="tour-weather-radar">Regenradar</button>
+        </div>
         <div class="tour-weather-controls">
           <label class="tour-weather-select-wrap">
             <span>Wetter für</span>
@@ -1202,7 +1205,6 @@ function renderWeatherTab(tour) {
               ${options.map(o => `<option value="${esc(o.value)}" ${selected?.value === o.value ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}
             </select>
           </label>
-          <button class="btn btn-primary btn-sm" id="tour-weather-radar">Regenradar</button>
         </div>
       </div>
       <div id="tour-weather-body">
