@@ -344,7 +344,8 @@ function initMap(tour) {
     maxZoom: 19,
   }).addTo(mapInstance);
 
-  const data = normalizeGPXRoute(tour.gpx_route);
+  const data = normalizeGPXRoute(tour.gpx_route)
+    || (typeof routeMetadataToPreviewRoute === 'function' ? routeMetadataToPreviewRoute(tour.route_metadata) : null);
   if (data) drawGPX(data);
 }
 

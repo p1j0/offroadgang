@@ -1470,11 +1470,15 @@ function renderTourOverview(tour) {
    ---------------------------------------------------------- */
 
 function renderMapTab(tour) {
-  const gpxData = normalizeGPXRoute(tour.gpx_route);
+  const isPreview = !tour.gpx_route && !!tour.route_metadata;
+  const gpxData = normalizeGPXRoute(tour.gpx_route)
+    || (typeof routeMetadataToPreviewRoute === 'function' ? routeMetadataToPreviewRoute(tour.route_metadata) : null);
   const isAdmin = isCurrentUserAdmin();
   const hasTracks = gpxData?.tracks?.length > 0;
-  const hasWaypoints = gpxData?.waypoints?.length > 0;
+  const hasWaypoints = !isPreview && gpxData?.waypoints?.length > 0;
   const hasAny = hasTracks || hasWaypoints;
+  const trackCount = tour.route_metadata?.trackCount || gpxData?.tracks?.length || 0;
+  const waypointCount = tour.route_metadata?.waypointCount || gpxData?.waypoints?.length || 0;
 
   // Build sidebar track list
   let sidebarHtml = '';
@@ -1492,7 +1496,7 @@ function renderMapTab(tour) {
         </div>`;
       }).join('');
       sidebarHtml += `<div class="map-sidebar-section">
-        <div class="map-sidebar-title">Tracks (${gpxData.tracks.length})</div>
+        <div class="map-sidebar-title">Tracks (${trackCount})${isPreview ? '<span style="color:var(--muted);font-size:10px;margin-left:6px">Preview</span>' : ''}</div>
         ${tracksHtml}
         <div class="map-sidebar-item map-sidebar-reset" id="reset-highlight" style="margin-top:6px">
           <span style="font-size:13px">↩</span>
@@ -1515,6 +1519,12 @@ function renderMapTab(tour) {
           <button id="toggle-waypoints" class="map-sidebar-toggle" title="Wegpunkte ein-/ausblenden">👁 Alle</button>
         </div>
         ${wpsHtml}
+      </div>`;
+    }
+    if (isPreview && waypointCount > 0) {
+      sidebarHtml += `<div class="map-sidebar-section">
+        <div class="map-sidebar-title">Wegpunkte (${waypointCount})</div>
+        <div class="map-sidebar-empty">Wegpunkte werden beim Reinzoomen geladen.</div>
       </div>`;
     }
 
@@ -1551,8 +1561,8 @@ function renderMapTab(tour) {
     </div>
     <div class="map-info">
       ${hasAny
-        ? `<span>📍 ${gpxData.tracks.length} Track${gpxData.tracks.length !== 1 ? 's' : ''}</span>
-           ${hasWaypoints ? `<span>🚩 ${gpxData.waypoints.length} Wegpunkt${gpxData.waypoints.length !== 1 ? 'e' : ''}</span>` : ''}`
+        ? `<span>📍 ${trackCount} Track${trackCount !== 1 ? 's' : ''}${isPreview ? ' · Preview' : ''}</span>
+           ${waypointCount ? `<span>🚩 ${waypointCount} Wegpunkt${waypointCount !== 1 ? 'e' : ''}${isPreview ? ' · bei Zoom' : ''}</span>` : ''}`
         : `<span>${isAdmin ? 'Keine Route — GPX-Datei hochladen' : 'Admin hat noch keine Route hochgeladen'}</span>`}
     </div>
   </div>
