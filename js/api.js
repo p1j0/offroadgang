@@ -11,8 +11,28 @@ function _cacheSeenStateRow(row) {
   if (!row?.scope_id || !row?.seen_key || !row?.seen_at) return;
   if (!state.seenState) state.seenState = {};
   const userId = row.user_id || state.currentUser?.id;
-  state.seenState[_seenCacheKey(row.scope_id, row.seen_key, userId)] = row.seen_at;
-  try { localStorage.setItem(_seenKey(row.scope_id, row.seen_key, userId), row.seen_at); } catch(e) {}
+  const cacheKey = _seenCacheKey(row.scope_id, row.seen_key, userId);
+  const localKey = _seenKey(row.scope_id, row.seen_key, userId);
+  const serverDate = new Date(row.seen_at);
+  if (!Number.isFinite(serverDate.getTime())) return;
+
+  let value = serverDate;
+  try {
+    const pendingRaw = localStorage.getItem(_seenPendingKey(row.scope_id, row.seen_key, userId));
+    const pending = pendingRaw ? JSON.parse(pendingRaw) : null;
+    const pendingDate = new Date(pending?.seenAt || '');
+    const pendingAgeMs = Date.now() - Number(pending?.ts || 0);
+    if (Number.isFinite(pendingDate.getTime())
+      && pendingAgeMs >= 0
+      && pendingAgeMs < 30 * 1000
+      && pendingDate > serverDate) {
+      value = pendingDate;
+    }
+  } catch(e) {}
+
+  const valueIso = value.toISOString();
+  state.seenState[cacheKey] = valueIso;
+  try { localStorage.setItem(localKey, valueIso); } catch(e) {}
 }
 
 async function loadSeenStates(scopeIds) {
@@ -33,11 +53,17 @@ async function loadSeenStates(scopeIds) {
     console.warn('[seen_state] load failed:', error.message);
     return;
   }
+  const returned = new Set((data || []).map(row => `${row.scope_id}\u0001${row.seen_key}`));
   (data || []).forEach(_cacheSeenStateRow);
+  for (const scopeId of ids) {
+    _clearMissingServerSeenRows(scopeId, returned);
+  }
 }
 
 async function saveSeenState(scopeId, seenKey, seenAt = new Date().toISOString()) {
   if (!state.currentUser || !navigator.onLine || !scopeId || !seenKey) return;
+  const currentSeen = getLastSeen(scopeId, seenKey);
+  if (currentSeen > new Date(seenAt)) seenAt = currentSeen.toISOString();
   const row = {
     user_id: state.currentUser.id,
     scope_id: String(scopeId),
@@ -49,6 +75,26 @@ async function saveSeenState(scopeId, seenKey, seenAt = new Date().toISOString()
     .from('user_seen_state')
     .upsert(row, { onConflict: 'user_id,scope_id,seen_key' });
   if (error) throw new Error(error.message);
+  try { localStorage.removeItem(_seenPendingKey(scopeId, seenKey)); } catch(e) {}
+  _cacheSeenStateRow(row);
+}
+
+function _clearMissingServerSeenRows(scopeId, returned) {
+  const userId = state.currentUser?.id;
+  if (!userId) return;
+  for (const seenKey of LEGACY_SEEN_KEYS) {
+    if (returned.has(`${scopeId}\u0001${seenKey}`)) continue;
+    let keepPending = false;
+    try {
+      const pendingRaw = localStorage.getItem(_seenPendingKey(scopeId, seenKey, userId));
+      const pending = pendingRaw ? JSON.parse(pendingRaw) : null;
+      const pendingAgeMs = Date.now() - Number(pending?.ts || 0);
+      keepPending = pendingAgeMs >= 0 && pendingAgeMs < 30 * 1000;
+    } catch(e) {}
+    if (keepPending) continue;
+    delete state.seenState?.[_seenCacheKey(scopeId, seenKey, userId)];
+    try { localStorage.removeItem(_seenKey(scopeId, seenKey, userId)); } catch(e) {}
+  }
 }
 
 /* ----------------------------------------------------------
