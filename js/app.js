@@ -1299,15 +1299,15 @@ async function init() {
     return;
   }
 
-  // iOS/PWA cold start: render persisted state before any Supabase call.
-  // CDN/auth/network calls can stall while offline or captive; cached UI should
-  // still become visible immediately.
+  // iOS/PWA cold start: persisted state is only rendered before auth when
+  // offline. Online we wait for Supabase session/profile first; otherwise an
+  // installed PWA can briefly expose stale cross-version state after updates.
   const restoredAtBoot = restoreState() && !!state.currentUser;
-  if (restoredAtBoot) {
+  if (restoredAtBoot && !navigator.onLine) {
     console.log('[init] Boot mit gespeichertem State');
     state.view = state.currentCommunityId ? 'community-home' : 'communities';
     render();
-    if (!navigator.onLine) return;
+    return;
   } else if (!navigator.onLine) {
     state.authMode = 'login';
     state.authErr  = 'Offline - keine gespeicherten Daten gefunden.';
@@ -1319,8 +1319,9 @@ async function init() {
   try {
     const { data: { session } } = await _withTimeout(sb.auth.getSession(), 3500);
 
-    if (!session && restoredAtBoot) return;
     if (!session) {
+      clearPersistedState();
+      state.currentUser = null;
       state.authMode = 'login';
       state.view     = 'auth';
       render();
@@ -1345,7 +1346,7 @@ async function init() {
       // Vor dem Profile-Fetch: gespeicherten State opportunistisch laden,
       // damit SWR-Fast-Path greifen kann (sofortiges Render mit alten Daten,
       // dann stille Aktualisierung im Hintergrund)
-      if (!restoredAtBoot) restoreState(session.user.id);
+      if (!restoredAtBoot || state.currentUser?.id !== session.user.id) restoreState(session.user.id);
 
       const { data: profile } = await _withTimeout(
         sb
@@ -1356,7 +1357,6 @@ async function init() {
         3500
       );
 
-      if (!profile && restoredAtBoot) return;
       if (profile) {
         state.currentUser = {
           id: session.user.id,
@@ -1385,7 +1385,12 @@ async function init() {
     }
   } catch (e) {
     console.error('[init] session check failed:', e);
-    if (restoredAtBoot) return;
+    if (restoredAtBoot) {
+      state.view = state.currentCommunityId ? 'community-home' : 'communities';
+      render();
+      toast('Verbindung fehlgeschlagen. Zeige gespeicherte Daten.', 'error');
+      return;
+    }
     state.authMode = 'login';
     state.authErr  = navigator.onLine ? 'Verbindung fehlgeschlagen. Bitte später erneut versuchen.' : 'Offline - keine gespeicherten Daten gefunden.';
     state.view     = 'auth';
