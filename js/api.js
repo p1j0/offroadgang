@@ -272,10 +272,14 @@ async function loadHomeData() {
 
   state.myTourIds = new Set([...memberIds, ...adminIds]);
 
-  // Build per-tour member id list AND counts in one pass
+  // Build per-tour member id list AND counts in one pass.
+  // Respect any pending local kicks so the home screen avatar stack
+  // doesn't flicker the removed member back in while the DB catch-up races.
   state.memberCounts  = {};
   state.tourMemberIds = {};
   (memberCountsRes.data || []).forEach(m => {
+    const kickedHere = state._kickedMembers?.[m.tour_id];
+    if (kickedHere?.has(m.user_id)) return; // still pending → skip
     state.memberCounts[m.tour_id] = (state.memberCounts[m.tour_id] || 0) + 1;
     if (!state.tourMemberIds[m.tour_id]) state.tourMemberIds[m.tour_id] = [];
     state.tourMemberIds[m.tour_id].push(m.user_id);
@@ -363,22 +367,35 @@ async function loadTourData(tourId) {
     (profs || []).forEach(p => { state.profileCache[p.id] = p.username; });
   }
 
-  // Build sorted member list: admin first, then others
-  const adminId = state.currentTour?.admin_id;
+  // Build sorted member list: admin first, then others.
+  // Apply any pending local kicks so a concurrent or delayed loadTourData
+  // can't race-overwrite a just-kicked member back into the list.
+  const adminId  = state.currentTour?.admin_id;
+  const kickedIds = state._kickedMembers?.[tourId] || new Set();
+
   state.tourMembers = [
-    ...(adminId ? [{
+    ...(adminId && !kickedIds.has(adminId) ? [{
       user_id:  adminId,
       username: state.profileCache[adminId] || 'Admin',
       isAdmin:  true,
     }] : []),
     ...(membersRes.data || [])
-      .filter(m => m.user_id !== adminId)
+      .filter(m => m.user_id !== adminId && !kickedIds.has(m.user_id))
       .map(m => ({
         user_id:  m.user_id,
         username: state.profileCache[m.user_id] || 'Unbekannt',
         isAdmin:  false,
       })),
   ];
+
+  // Once DB confirms a kicked member is truly gone, remove them from the pending set
+  if (state._kickedMembers?.[tourId]) {
+    state._kickedMembers[tourId].forEach(id => {
+      if (!(membersRes.data || []).some(m => m.user_id === id)) {
+        state._kickedMembers[tourId].delete(id);
+      }
+    });
+  }
 
   if (state.currentTour?.date) {
     state.tourCalMonth = new Date(state.currentTour.date + 'T12:00:00');
@@ -682,6 +699,13 @@ async function kickTourMember(userId) {
   if (error) throw new Error(error.message);
   const username = state.profileCache[userId] || userId;
   await logChange('Teilnehmer entfernt', username, '');
+
+  // Register in pending-kick map so that any concurrent loadTourData call
+  // (triggered by the initial navigateTo SWR background fetch) cannot
+  // race-overwrite this kick back into the members list.
+  state._kickedMembers = state._kickedMembers || {};
+  state._kickedMembers[state.currentTourId] = state._kickedMembers[state.currentTourId] || new Set();
+  state._kickedMembers[state.currentTourId].add(userId);
 
   // Update local state immediately so re-renders don't flicker the member back in
   state.tourMembers = state.tourMembers.filter(m => m.user_id !== userId);
