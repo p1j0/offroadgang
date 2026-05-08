@@ -614,8 +614,8 @@ function attachEvents() {
     const treffpunktLink = nextTour
       ? (state.tourPlanDates || []).find(pd => pd.type === 'treffpunkt' && pd.maps_link)?.maps_link
       : null;
-    if (nextTour && (nextTour.destination || treffpunktLink)) {
-      _loadCheckinWeather(nextTour.id, nextTour.destination, nextTour.date, nextTour.end_date || nextTour.date, treffpunktLink);
+    if (nextTour && (nextTour.destination || treffpunktLink || nextTour.gpx_route)) {
+      _loadCheckinWeather(nextTour.id, nextTour.destination, nextTour.date, nextTour.end_date || nextTour.date, treffpunktLink, nextTour);
     }
   }
 
@@ -870,6 +870,7 @@ function afterTabRender() {
       });
     });
     setTimeout(() => _initOverviewMap(), 80);
+    setTimeout(() => loadOverviewWeatherCard(), 80);
   }
   if (state.currentTab === 'map') {
     setTimeout(() => {
@@ -898,12 +899,26 @@ function afterTabRender() {
   if (state.currentTab === 'info') {
     attachInfoEvents();
   }
+  if (state.currentTab === 'weather') {
+    attachWeatherTabEvents();
+    loadTourWeatherTab();
+  }
   if (state.currentTab === 'media') {
     attachMediaEvents();
   }
   if (state.currentTab === 'participants') {
     attachParticipantEvents();
   }
+}
+
+function attachWeatherTabEvents() {
+  document.getElementById('tour-weather-location')?.addEventListener('change', e => {
+    setStoredWeatherChoice(state.currentTourId, e.target.value);
+    loadTourWeatherTab();
+  });
+  document.getElementById('tour-weather-radar')?.addEventListener('click', () => {
+    openRainRadarModal();
+  });
 }
 
 /**
@@ -964,6 +979,7 @@ function _refreshTabBar() {
     { id: 'map',          label: 'Karte' },
     { id: 'chat',         label: 'Chat' },
     { id: 'media',        label: 'Media' },
+    { id: 'weather',      label: 'Wetter' },
     { id: 'participants', label: 'Teilnehmer' },
     { id: 'info',         label: 'Info' },
     { id: 'changelog',    label: 'Log' },
@@ -2418,17 +2434,54 @@ function _refreshCommunityMediaMain() {
 let _siteContent = null;     // { info: {key,content,...}, changelog: {...} }
 let _siteCurrentTab = 'info';
 let _siteEditing = false;
+let _siteChangelogAutoCheckDone = false;
+let _siteChangelogAutoCheckRunning = false;
+let _siteChangelogPendingSeenAt = null;
 
-async function openSiteInfoModal() {
+function _isNewerSiteContentUpdate(updatedAt, seenDate) {
+  if (!updatedAt) return false;
+  const updatedMs = new Date(updatedAt).getTime();
+  const seenMs = seenDate instanceof Date ? seenDate.getTime() : 0;
+  return Number.isFinite(updatedMs) && Number.isFinite(seenMs) && updatedMs > seenMs;
+}
+
+async function maybeOpenSiteChangelogPopup() {
+  if (_siteChangelogAutoCheckDone || _siteChangelogAutoCheckRunning) return;
+  if (!state.currentUser || !navigator.onLine) return;
+  if (['auth', 'loading', 'forgot-password', 'reset-password'].includes(state.view)) return;
+  if (document.getElementById('site-info-overlay')?.style.display === 'flex') return;
+  if ((typeof _navigating !== 'undefined' && _navigating)
+    || (typeof _foregroundRefreshRunning !== 'undefined' && _foregroundRefreshRunning)) {
+    return;
+  }
+
+  _siteChangelogAutoCheckRunning = true;
+  _siteChangelogAutoCheckDone = true;
+
+  try {
+    if (typeof loadSeenStates === 'function') await loadSeenStates(['site']);
+    const content = await loadSiteContent();
+    const changelog = content?.changelog;
+    if (!_isNewerSiteContentUpdate(changelog?.updated_at, getLastSeen('site', 'changelog'))) return;
+    await openSiteInfoModal({ initialTab: 'changelog', initialContent: content, markSeenOnClose: true });
+  } catch (e) {
+    console.warn('[site_changelog_popup]', e.message || e);
+  } finally {
+    _siteChangelogAutoCheckRunning = false;
+  }
+}
+
+async function openSiteInfoModal(options = {}) {
   const overlay = document.getElementById('site-info-overlay');
   if (!overlay) return;
+  const initialTab = options.initialTab === 'info' ? 'info' : 'changelog';
   overlay.style.display = 'flex';
   document.body.style.overflow = 'hidden';
 
   // Reset to view mode + changelog tab (most likely what user is looking for)
   _siteEditing = false;
-  _siteCurrentTab = 'changelog';
-  _setSiteInfoTabUI('changelog');
+  _siteCurrentTab = initialTab;
+  _setSiteInfoTabUI(initialTab);
   _setSiteInfoModeUI('view');
 
   // Load (with placeholder while loading)
@@ -2437,13 +2490,20 @@ async function openSiteInfoModal() {
     if (el) el.innerHTML = '<div style="color:var(--muted);padding:20px">Lädt…</div>';
   }
   try {
-    _siteContent = await loadSiteContent();
+    _siteContent = options.initialContent || await loadSiteContent();
   } catch (e) {
     toast('Inhalte konnten nicht geladen werden', 'error');
     _siteContent = {};
   }
   _renderSiteInfoView('info');
   _renderSiteInfoView('changelog');
+  if (_siteContent?.changelog?.updated_at) {
+    if (options.markSeenOnClose) {
+      _siteChangelogPendingSeenAt = _siteContent.changelog.updated_at;
+    } else {
+      markTabSeen('site', 'changelog', _siteContent.changelog.updated_at);
+    }
+  }
 }
 
 function closeSiteInfoModal() {
@@ -2459,6 +2519,10 @@ function closeSiteInfoModal() {
   }
   overlay.style.display = 'none';
   document.body.style.overflow = '';
+  if (_siteChangelogPendingSeenAt) {
+    markTabSeen('site', 'changelog', _siteChangelogPendingSeenAt);
+    _siteChangelogPendingSeenAt = null;
+  }
   _siteEditing = false;
 }
 

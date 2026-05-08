@@ -1122,6 +1122,7 @@ function renderTour() {
     { id: 'map',          label: 'Karte' },
     { id: 'chat',         label: 'Chat' },
     { id: 'media',        label: 'Media' },
+    { id: 'weather',      label: 'Wetter' },
     { id: 'participants', label: 'Teilnehmer' },
     { id: 'info',         label: 'Info' },
     { id: 'changelog',    label: 'Log' },
@@ -1169,11 +1170,46 @@ function renderTab(tour) {
     case 'map':          return renderMapTab(tour);
     case 'chat':         return renderChatTab();
     case 'media':        return renderMediaTab();
+    case 'weather':      return renderWeatherTab(tour);
     case 'participants': return renderParticipantsTab();
     case 'info':         return renderInfoTab(tour);
     case 'changelog':    return renderChangelogTab();
     default: return '';
   }
+}
+
+function renderWeatherTab(tour) {
+  const options = typeof getTourWeatherOptions === 'function' ? getTourWeatherOptions(tour) : [];
+  const selected = typeof getSelectedWeatherChoice === 'function' ? getSelectedWeatherChoice(tour) : options[0];
+
+  if (!options.length) {
+    return `<div class="tab-scroll">
+      <div class="tour-weather-layout">
+        <h2>Wetter</h2>
+        <div class="weather-empty">Keine Wetterposition verfügbar. Lege einen Treffpunkt mit Maps-Link an oder lade eine GPX-Route hoch.</div>
+      </div>
+    </div>`;
+  }
+
+  return `<div class="tab-scroll">
+    <div class="tour-weather-layout">
+      <div class="tour-weather-head">
+        <h2>Wetter</h2>
+        <div class="tour-weather-controls">
+          <label class="tour-weather-select-wrap">
+            <span>Wetter für</span>
+            <select id="tour-weather-location">
+              ${options.map(o => `<option value="${esc(o.value)}" ${selected?.value === o.value ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}
+            </select>
+          </label>
+          <button class="btn btn-primary btn-sm" id="tour-weather-radar">Regenradar</button>
+        </div>
+      </div>
+      <div id="tour-weather-body">
+        <div class="weather-loading">Wetter wird geladen…</div>
+      </div>
+    </div>
+  </div>`;
 }
 
 /* ----------------------------------------------------------
@@ -1364,6 +1400,13 @@ function renderTourOverview(tour) {
       }).join('')
     : '<div class="tov-empty-hint">Keine Einträge</div>';
 
+  const weatherChoice = typeof getSelectedWeatherChoice === 'function' ? getSelectedWeatherChoice(tour) : null;
+  const weatherBody = weatherChoice
+    ? `<div class="tov-weather-body" id="tov-weather-${tour.id}">
+         <div class="tov-empty-hint">Wetter wird geladen…</div>
+       </div>`
+    : '<div class="tov-empty-hint">Kein Wetterpunkt verfügbar</div>';
+
   // ── LAYOUT ────────────────────────────────────────────────────────────────
   return `
 <div class="tab-scroll">
@@ -1400,6 +1443,10 @@ function renderTourOverview(tour) {
       <div class="tov-card tov-card-mini" data-go-tab="media">
         <div class="tov-card-eyebrow">MEDIA ${badge('media')}</div>
         ${mediaBody}
+      </div>
+      <div class="tov-card tov-card-mini" data-go-tab="weather">
+        <div class="tov-card-eyebrow">WETTER</div>
+        ${weatherBody}
       </div>
       <div class="tov-card tov-card-mini" data-go-tab="participants">
         <div class="tov-card-eyebrow">TEILNEHMER</div>
@@ -2346,6 +2393,8 @@ function renderCommunityHome() {
         <span class="checkin-wd-label">${label}</span>
         <span class="checkin-wd-icon" data-wicon="${iso}">N/A</span>
         <span class="checkin-wd-temp" data-wtemp="${iso}"></span>
+        <span class="checkin-wd-rainprob" data-wrainprob="${iso}"></span>
+        <span class="checkin-wd-rain" data-wrain="${iso}"></span>
       </div>`;
     }).join('');
 
@@ -2398,6 +2447,7 @@ function renderCommunityHome() {
       <div class="checkin-section">
         <div class="checkin-section-hdr">
           <span class="checkin-section-lbl">WETTERVORHERSAGE</span>
+          <span class="checkin-weather-confidence" id="checkin-weather-confidence-${tourId}">SICHERHEIT —</span>
         </div>
         <div class="checkin-weather-rows" id="checkin-weather-${tourId}">${weatherRows}</div>
       </div>` : ''}
