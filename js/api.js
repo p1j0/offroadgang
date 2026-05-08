@@ -29,6 +29,32 @@ const TOUR_MESSAGE_SELECT = 'id,tour_id,user_id,username,text,created_at';
 const TOUR_CHANGELOG_SELECT = 'id,tour_id,user_id,username,field,old_value,new_value,created_at';
 const TOUR_INITIAL_LIMIT = 50;
 
+function _cachedRouteFields(tourId) {
+  if (!tourId) return null;
+  const sources = [
+    state.currentTour,
+    ...(state.tours || []),
+    ...(state.communityToursGpx || []),
+  ];
+  return sources.find(t => t?.id === tourId && t.gpx_route) || null;
+}
+
+function _preserveCachedRoute(tour) {
+  const cached = _cachedRouteFields(tour?.id);
+  if (!tour || !cached) return tour;
+  return {
+    ...tour,
+    gpx_route: cached.gpx_route,
+    route_metadata: tour.route_metadata || cached.route_metadata,
+    surface_analysis: tour.surface_analysis || cached.surface_analysis,
+    surface_display: tour.surface_display || cached.surface_display,
+  };
+}
+
+function _preserveCachedRoutes(tours) {
+  return (tours || []).map(_preserveCachedRoute);
+}
+
 /* ----------------------------------------------------------
    User seen-state (badges / banners)
    ---------------------------------------------------------- */
@@ -196,7 +222,7 @@ async function loadHomeData() {
     .eq('community_id', cid)
     .order('date', { ascending: true });
 
-  state.tours = toursRes.data || [];
+  state.tours = _preserveCachedRoutes(toursRes.data || []);
   if (!state.calMonth) state.calMonth = new Date();
 
   if (!state.tours.length) {
@@ -297,7 +323,7 @@ async function loadTourData(tourId) {
     sb.from('change_log').select(TOUR_CHANGELOG_SELECT).eq('tour_id', tourId).order('created_at', { ascending: false }).limit(TOUR_INITIAL_LIMIT),
   ]);
 
-  state.currentTour    = tourRes.data;
+  state.currentTour    = _preserveCachedRoute(tourRes.data);
   state.tourMessages   = (msgsRes.data || []).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
   state.tourPlanDates  = datesRes.data     || [];
   state.tourChangelog  = changelogRes.data || [];
@@ -1137,7 +1163,7 @@ async function loadPlanningData() {
       .order('created_at', { ascending: false }),
   ]);
 
-  state.tours = tours || [];
+  state.tours = _preserveCachedRoutes(tours || []);
   state._loadedPlanningForCid = cid;
 
   state.communityMessages  = msgs || [];
@@ -1181,7 +1207,7 @@ async function loadPlanningMapRoutes() {
     .not('route_metadata', 'is', null)
     .order('date', { ascending: true });
 
-  state.communityToursGpx = data || [];
+  state.communityToursGpx = _preserveCachedRoutes(data || []);
   state._loadedPlanMapRoutesCid = cid;
   state.communityToursGpx.forEach(t => {
     if (state.planMapVisible[t.id] === undefined) state.planMapVisible[t.id] = true;
@@ -1198,6 +1224,7 @@ async function loadTourRouteGeometry(tourId) {
 
   const mergeRouteFields = t => t?.id === tourId ? { ...t, ...data } : t;
   state.tours = (state.tours || []).map(mergeRouteFields);
+  state.communityToursGpx = (state.communityToursGpx || []).map(mergeRouteFields);
   if (state.currentTour?.id === tourId) Object.assign(state.currentTour, data);
   return data;
 }

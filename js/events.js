@@ -791,7 +791,6 @@ function attachEvents() {
       const tab = card.dataset.goTab;
       if (!tab) return;
       state.currentTab = tab;
-      if (tab === 'map')       await ensureCurrentTourRouteLoaded();
       if (tab === 'chat')      await loadMessages();
       if (tab === 'changelog') await loadChangelog();
       if (tab === 'info' && state.tabBadges.info?.length) {
@@ -808,7 +807,6 @@ function attachEvents() {
   document.querySelectorAll('.tab-btn:not(.plan-tab-btn)').forEach(btn => {
     btn.addEventListener('click', async () => {
       state.currentTab = btn.dataset.tab;
-      if (state.currentTab === 'map')       await ensureCurrentTourRouteLoaded();
       if (state.currentTab === 'chat')      await loadMessages();
       if (state.currentTab === 'changelog') await loadChangelog();
 
@@ -859,7 +857,6 @@ function afterTabRender() {
         const tab = card.dataset.goTab;
         if (!tab) return;
         state.currentTab = tab;
-        if (tab === 'map')       await ensureCurrentTourRouteLoaded();
         if (tab === 'chat')      await loadMessages();
         if (tab === 'changelog') await loadChangelog();
         if (tab === 'info' && state.tabBadges.info?.length) {
@@ -877,13 +874,10 @@ function afterTabRender() {
   }
   if (state.currentTab === 'map') {
     setTimeout(() => {
-      ensureCurrentTourRouteLoaded().then(() => {
-        const tc = document.getElementById('tab-content');
-        if (tc && state.currentTour && state.currentTab === 'map') tc.innerHTML = renderTab(state.currentTour);
-        initMap(state.currentTour);
-        attachMapEvents();
-        attachSidebarEvents();
-      });
+      initMap(state.currentTour);
+      attachMapEvents();
+      attachSidebarEvents();
+      attachLazyFullRouteOnZoom();
     }, 80);
   }
   if (state.currentTab === 'chat') {
@@ -1206,6 +1200,46 @@ function attachMapEvents() {
       if (btn) delete btn.dataset.busy;
     }
   });
+}
+
+function attachLazyFullRouteOnZoom() {
+  if (!mapInstance || state.currentTour?.gpx_route || !state.currentTour?.route_metadata) return;
+  if (mapInstance._motorouteLazyRouteAttached) return;
+  const activeMap = mapInstance;
+  activeMap._motorouteLazyRouteAttached = true;
+  activeMap._motorouteZoomStart = activeMap.getZoom?.() || 0;
+  activeMap.on('zoomstart', () => {
+    activeMap._motorouteZoomStart = activeMap.getZoom?.() || 0;
+  });
+
+  const loadFullRoute = async () => {
+    if (mapInstance !== activeMap) return;
+    if (state.currentTour?.gpx_route || activeMap._motorouteFullRouteLoading) return;
+    if ((activeMap.getZoom?.() || 0) <= (activeMap._motorouteZoomStart || 0)) return;
+    activeMap._motorouteFullRouteLoading = true;
+    const restoreCenter = activeMap.getCenter?.();
+    const restoreZoom = activeMap.getZoom?.();
+    try {
+      await ensureCurrentTourRouteLoaded();
+      if (!state.currentTour?.gpx_route || state.currentTab !== 'map') return;
+      const tc = document.getElementById('tab-content');
+      if (tc) tc.innerHTML = renderTab(state.currentTour);
+      setTimeout(() => {
+        initMap(state.currentTour);
+        if (restoreCenter && Number.isFinite(restoreZoom)) {
+          mapInstance?.setView(restoreCenter, restoreZoom, { animate: false });
+        }
+        attachMapEvents();
+        attachSidebarEvents();
+      }, 40);
+    } catch (e) {
+      console.warn('[map lazy gpx]', e);
+      toast('Volle Route konnte nicht geladen werden.', 'error');
+      activeMap._motorouteFullRouteLoading = false;
+    }
+  };
+
+  activeMap.on('zoomend', loadFullRoute);
 }
 
 /* ----------------------------------------------------------
@@ -1784,8 +1818,9 @@ function attachPlanningContentEvents() {
 
 let _planMapInstance = null;
 let _planMapLayers   = [];
+const PLAN_FULL_ROUTE_ZOOM = 11;
 
-function _initPlanMap() {
+function _initPlanMap(restoreView = null) {
   const el = document.getElementById('plan-map');
   if (!el) return;
 
@@ -1840,6 +1875,10 @@ function _initPlanMap() {
     const combined = allBounds.reduce((acc, b) => acc.extend(b));
     _planMapInstance.fitBounds(combined, { padding: [30, 30] });
   }
+  if (restoreView?.center && Number.isFinite(restoreView.zoom)) {
+    _planMapInstance.setView(restoreView.center, restoreView.zoom, { animate: false });
+  }
+  attachLazyPlanRoutesOnZoom();
 }
 
 function _updatePlanMapLayers() {
@@ -1854,6 +1893,48 @@ function _updatePlanMapLayers() {
     }
   });
   _planMapInstance?.invalidateSize();
+}
+
+function attachLazyPlanRoutesOnZoom() {
+  if (!_planMapInstance) return;
+  if (_planMapInstance._motorouteLazyRouteAttached) return;
+
+  const activeMap = _planMapInstance;
+  activeMap._motorouteLazyRouteAttached = true;
+  activeMap._motorouteZoomStart = activeMap.getZoom?.() || 0;
+  activeMap.on('zoomstart', () => {
+    activeMap._motorouteZoomStart = activeMap.getZoom?.() || 0;
+  });
+
+  const loadVisibleFullRoutes = async () => {
+    if (_planMapInstance !== activeMap) return;
+    if (activeMap._motorouteFullRouteLoading) return;
+    if ((activeMap.getZoom?.() || 0) <= (activeMap._motorouteZoomStart || 0)) return;
+    if ((activeMap.getZoom?.() || 0) < PLAN_FULL_ROUTE_ZOOM) return;
+
+    const routeIds = (state.communityToursGpx || [])
+      .filter(t => state.planMapVisible[t.id] !== false)
+      .filter(t => !t.gpx_route && t.route_metadata)
+      .map(t => t.id);
+    if (!routeIds.length) return;
+
+    activeMap._motorouteFullRouteLoading = true;
+    const restoreView = {
+      center: activeMap.getCenter?.(),
+      zoom: activeMap.getZoom?.(),
+    };
+    try {
+      await Promise.all(routeIds.map(id => loadTourRouteGeometry(id)));
+      if (state.view !== 'planning' || state.planningTab !== 'map') return;
+      _initPlanMap(restoreView);
+    } catch (e) {
+      console.warn('[plan map lazy gpx]', e);
+      toast('Volle Routen konnten nicht geladen werden.', 'error');
+      activeMap._motorouteFullRouteLoading = false;
+    }
+  };
+
+  activeMap.on('zoomend', loadVisibleFullRoutes);
 }
 
 function _scrollPlanChat() {
