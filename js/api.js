@@ -19,6 +19,16 @@ const TOUR_LIST_SELECT = [
   'created_at',
 ].join(',');
 
+const TOUR_DETAIL_SELECT = [
+  TOUR_LIST_SELECT,
+  'surface_analysis',
+  'surface_analysis_updated_at',
+].join(',');
+
+const TOUR_MESSAGE_SELECT = 'id,tour_id,user_id,username,text,created_at';
+const TOUR_CHANGELOG_SELECT = 'id,tour_id,user_id,username,field,old_value,new_value,created_at';
+const TOUR_INITIAL_LIMIT = 50;
+
 /* ----------------------------------------------------------
    User seen-state (badges / banners)
    ---------------------------------------------------------- */
@@ -245,30 +255,28 @@ async function computeHomeBadges() {
   if (!myTourIds.length) return;
   await loadSeenStates(myTourIds);
 
-  // For each tour, find events newer than last-seen timestamp
-  await Promise.all(myTourIds.map(async tourId => {
-    const seenChat = getLastSeen(tourId, 'chat');
-    const seenLog  = getLastSeen(tourId, 'changelog');
+  const chatSeen = {};
+  const changelogSeen = {};
+  myTourIds.forEach(tourId => {
+    chatSeen[tourId] = getLastSeen(tourId, 'chat').toISOString();
+    changelogSeen[tourId] = getLastSeen(tourId, 'changelog').toISOString();
+  });
 
-    const [msgsRes, logRes] = await Promise.all([
-      sb.from('messages')
-        .select('id', { count: 'exact', head: true })
-        .eq('tour_id', tourId)
-        .neq('user_id', state.currentUser.id)
-        .gt('created_at', seenChat.toISOString()),
-      sb.from('change_log')
-        .select('id', { count: 'exact', head: true })
-        .eq('tour_id', tourId)
-        .neq('user_id', state.currentUser.id)
-        .gt('created_at', seenLog.toISOString()),
-    ]);
+  const { data, error } = await sb.rpc('get_home_badges', {
+    p_tour_ids: myTourIds,
+    p_chat_seen: chatSeen,
+    p_changelog_seen: changelogSeen,
+  });
+  if (error) {
+    console.warn('[home badges]', error.message);
+    return;
+  }
 
-    const chat      = msgsRes.count || 0;
-    const changelog = logRes.count  || 0;
-    if (chat > 0 || changelog > 0) {
-      state.homeBadges[tourId] = { chat, changelog };
-    }
-  }));
+  (data || []).forEach(row => {
+    const chat = Number(row.chat_count || 0);
+    const changelog = Number(row.changelog_count || 0);
+    if (chat > 0 || changelog > 0) state.homeBadges[row.tour_id] = { chat, changelog };
+  });
 }
 
 /* ----------------------------------------------------------
@@ -282,15 +290,15 @@ async function computeHomeBadges() {
  */
 async function loadTourData(tourId) {
   const [tourRes, membersRes, msgsRes, datesRes, changelogRes] = await Promise.all([
-    sb.from('tours').select('*').eq('id', tourId).single(),
+    sb.from('tours').select(TOUR_DETAIL_SELECT).eq('id', tourId).single(),
     sb.from('tour_members').select('user_id').eq('tour_id', tourId),
-    sb.from('messages').select('*').eq('tour_id', tourId).order('created_at', { ascending: true }),
+    sb.from('messages').select(TOUR_MESSAGE_SELECT).eq('tour_id', tourId).order('created_at', { ascending: false }).limit(TOUR_INITIAL_LIMIT),
     sb.from('plan_dates').select('*').eq('tour_id', tourId).order('date', { ascending: true }),
-    sb.from('change_log').select('*').eq('tour_id', tourId).order('created_at', { ascending: false }),
+    sb.from('change_log').select(TOUR_CHANGELOG_SELECT).eq('tour_id', tourId).order('created_at', { ascending: false }).limit(TOUR_INITIAL_LIMIT),
   ]);
 
   state.currentTour    = tourRes.data;
-  state.tourMessages   = msgsRes.data      || [];
+  state.tourMessages   = (msgsRes.data || []).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
   state.tourPlanDates  = datesRes.data     || [];
   state.tourChangelog  = changelogRes.data || [];
 
@@ -406,9 +414,10 @@ function _dedupeLogEntries(entries, windowMs = 2 * 60 * 1000) {
 async function loadChangelog() {
   const { data } = await sb
     .from('change_log')
-    .select('*')
+    .select(TOUR_CHANGELOG_SELECT)
     .eq('tour_id', state.currentTourId)
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .limit(TOUR_INITIAL_LIMIT);
   state.tourChangelog = data || [];
 }
 
@@ -460,10 +469,11 @@ async function logChange(field, oldValue, newValue) {
 async function loadMessages() {
   const { data } = await sb
     .from('messages')
-    .select('*')
+    .select(TOUR_MESSAGE_SELECT)
     .eq('tour_id', state.currentTourId)
-    .order('created_at', { ascending: true });
-  state.tourMessages = data || [];
+    .order('created_at', { ascending: false })
+    .limit(TOUR_INITIAL_LIMIT);
+  state.tourMessages = (data || []).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
 }
 
 /* ----------------------------------------------------------
@@ -1166,9 +1176,9 @@ async function loadPlanningMapRoutes() {
   if (state._loadedPlanMapRoutesCid === cid && state.communityToursGpx?.length) return;
 
   const { data } = await sb.from('tours')
-    .select('id, name, gpx_route, route_metadata, date, end_date')
+    .select('id, name, route_metadata, date, end_date')
     .eq('community_id', cid)
-    .not('gpx_route', 'is', null)
+    .not('route_metadata', 'is', null)
     .order('date', { ascending: true });
 
   state.communityToursGpx = data || [];
@@ -1190,6 +1200,13 @@ async function loadTourRouteGeometry(tourId) {
   state.tours = (state.tours || []).map(mergeRouteFields);
   if (state.currentTour?.id === tourId) Object.assign(state.currentTour, data);
   return data;
+}
+
+async function ensureCurrentTourRouteLoaded() {
+  if (!state.currentTourId) return null;
+  if (state.currentTour?.gpx_route) return state.currentTour.gpx_route;
+  const data = await loadTourRouteGeometry(state.currentTourId);
+  return data?.gpx_route || null;
 }
 
 /**

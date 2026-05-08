@@ -1287,7 +1287,8 @@ function _overviewTrackSVG(gpxData) {
 
 function renderTourOverview(tour) {
   const isAdmin  = isCurrentUserAdmin();
-  const gpxData  = normalizeGPXRoute(tour.gpx_route);
+  const gpxData  = normalizeGPXRoute(tour.gpx_route)
+    || (typeof routeMetadataToPreviewRoute === 'function' ? routeMetadataToPreviewRoute(tour.route_metadata) : null);
   const trackSVG = _overviewTrackSVG(gpxData);
 
   // helper: badge bubble for a tab id
@@ -1299,8 +1300,8 @@ function renderTourOverview(tour) {
   };
 
   // ── MAP CARD ─────────────────────────────────────────────────────────────
-  const trackCount = gpxData?.tracks?.length || 0;
-  const wpCount    = gpxData?.waypoints?.length || 0;
+  const trackCount = tour.route_metadata?.trackCount || gpxData?.tracks?.length || 0;
+  const wpCount    = tour.route_metadata?.waypointCount || gpxData?.waypoints?.length || 0;
 
   const mapBody = (gpxData?.tracks?.length)
     ? `<div id="tov-mini-map" class="tov-map-leaflet"></div>

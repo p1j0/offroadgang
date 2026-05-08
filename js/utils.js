@@ -141,6 +141,7 @@ function buildRouteMetadata(gpxRoute) {
       start: routePointAtFraction(points, 0),
       middle: routePointAtFraction(points, 0.5),
       end: routePointAtFraction(points, 1),
+      preview: buildRoutePreviewPoints(points, 120),
     };
   }).filter(t => t.pointCount > 0);
 
@@ -148,12 +149,44 @@ function buildRouteMetadata(gpxRoute) {
     && Number.isFinite(bounds.maxLat) && Number.isFinite(bounds.maxLon);
 
   return {
-    version: 1,
+    version: 2,
     trackCount: tracks.length,
     waypointCount: (gpx.waypoints || []).length,
     bounds: hasBounds ? bounds : null,
     tracks,
   };
+}
+
+function buildRoutePreviewPoints(points, maxPoints = 120) {
+  const pts = (points || []).map(_routePointToLatLon).filter(Boolean);
+  if (pts.length <= maxPoints) return pts;
+  const lastIdx = pts.length - 1;
+  const step = lastIdx / (maxPoints - 1);
+  const preview = [];
+  for (let i = 0; i < maxPoints; i++) {
+    const idx = Math.round(i * step);
+    const p = pts[Math.min(lastIdx, idx)];
+    if (!preview.length || preview[preview.length - 1].lat !== p.lat || preview[preview.length - 1].lon !== p.lon) {
+      preview.push(p);
+    }
+  }
+  return preview;
+}
+
+function routeMetadataToPreviewRoute(routeMetadata) {
+  const tracks = (routeMetadata?.tracks || []).map((track, index) => {
+    const points = (track.preview || [])
+      .map(_routePointToLatLon)
+      .filter(Boolean)
+      .map(p => [p.lat, p.lon]);
+    return {
+      name: track.name || `Track ${index + 1}`,
+      color: track.color || null,
+      points,
+    };
+  }).filter(t => t.points.length > 0);
+  if (!tracks.length) return null;
+  return { tracks, waypoints: [] };
 }
 
 /**

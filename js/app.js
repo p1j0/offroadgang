@@ -975,7 +975,8 @@ async function openRainRadarModal() {
     }).addTo(map);
 
     const boundsPoints = [[resolved.latitude, resolved.longitude]];
-    const gpxData = normalizeGPXRoute(tour.gpx_route);
+    const gpxData = normalizeGPXRoute(tour.gpx_route)
+      || (typeof routeMetadataToPreviewRoute === 'function' ? routeMetadataToPreviewRoute(tour.route_metadata) : null);
     (gpxData?.tracks || []).forEach((track, idx) => {
       const pts = (track.points || []).filter(p => Number.isFinite(p?.[0]) && Number.isFinite(p?.[1]));
       if (!pts.length) return;
