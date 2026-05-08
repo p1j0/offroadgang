@@ -64,6 +64,98 @@ function formatSurfaceDistance(kilometers) {
     : `${value.toLocaleString('de-DE', { maximumFractionDigits: 1 })} km`;
 }
 
+function _routePointToLatLon(point) {
+  if (!point) return null;
+  const lat = Number(Array.isArray(point) ? point[0] : point.lat);
+  const lon = Number(Array.isArray(point) ? point[1] : (point.lon ?? point.lng));
+  return Number.isFinite(lat) && Number.isFinite(lon) ? { lat, lon } : null;
+}
+
+function _routeHaversine(a, b) {
+  const pa = _routePointToLatLon(a);
+  const pb = _routePointToLatLon(b);
+  if (!pa || !pb) return 0;
+  const R = 6371;
+  const dLat = (pb.lat - pa.lat) * Math.PI / 180;
+  const dLon = (pb.lon - pa.lon) * Math.PI / 180;
+  const la1 = pa.lat * Math.PI / 180;
+  const la2 = pb.lat * Math.PI / 180;
+  const h = Math.sin(dLat / 2) ** 2
+    + Math.cos(la1) * Math.cos(la2) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+}
+
+function routePointAtFraction(points, fraction) {
+  const pts = (points || []).map(_routePointToLatLon).filter(Boolean);
+  if (!pts.length) return null;
+  if (fraction <= 0 || pts.length === 1) return pts[0];
+  if (fraction >= 1) return pts[pts.length - 1];
+
+  const distances = [];
+  let total = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const d = _routeHaversine(pts[i - 1], pts[i]);
+    distances.push(d);
+    total += d;
+  }
+  if (!total) return pts[Math.floor(pts.length * fraction)] || pts[0];
+
+  const target = total * fraction;
+  let walked = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const segment = distances[i - 1];
+    if (walked + segment >= target) {
+      const ratio = segment ? (target - walked) / segment : 0;
+      const a = pts[i - 1];
+      const b = pts[i];
+      return {
+        lat: a.lat + (b.lat - a.lat) * ratio,
+        lon: a.lon + (b.lon - a.lon) * ratio,
+      };
+    }
+    walked += segment;
+  }
+  return pts[pts.length - 1];
+}
+
+function buildRouteMetadata(gpxRoute) {
+  const gpx = typeof normalizeGPXRoute === 'function'
+    ? normalizeGPXRoute(gpxRoute)
+    : gpxRoute;
+  if (!gpx) return null;
+
+  const bounds = { minLat: Infinity, minLon: Infinity, maxLat: -Infinity, maxLon: -Infinity };
+  const tracks = (gpx.tracks || []).map((track, index) => {
+    const points = (track.points || []).map(_routePointToLatLon).filter(Boolean);
+    points.forEach(p => {
+      bounds.minLat = Math.min(bounds.minLat, p.lat);
+      bounds.minLon = Math.min(bounds.minLon, p.lon);
+      bounds.maxLat = Math.max(bounds.maxLat, p.lat);
+      bounds.maxLon = Math.max(bounds.maxLon, p.lon);
+    });
+    return {
+      index,
+      name: track.name || `Track ${index + 1}`,
+      color: track.color || null,
+      pointCount: points.length,
+      start: routePointAtFraction(points, 0),
+      middle: routePointAtFraction(points, 0.5),
+      end: routePointAtFraction(points, 1),
+    };
+  }).filter(t => t.pointCount > 0);
+
+  const hasBounds = Number.isFinite(bounds.minLat) && Number.isFinite(bounds.minLon)
+    && Number.isFinite(bounds.maxLat) && Number.isFinite(bounds.maxLon);
+
+  return {
+    version: 1,
+    trackCount: tracks.length,
+    waypointCount: (gpx.waypoints || []).length,
+    bounds: hasBounds ? bounds : null,
+    tracks,
+  };
+}
+
 /**
  * Build a collision-aware initials map for a list of user IDs.
  * Uses 1st + 2nd char, escalating to 1st + 3rd, 4th, … when two users share the same result.

@@ -3,6 +3,22 @@
    Depends on: config.js (sb), state.js (state)
    ============================================================ */
 
+const TOUR_LIST_SELECT = [
+  'id',
+  'community_id',
+  'admin_id',
+  'co_admin_ids',
+  'name',
+  'date',
+  'end_date',
+  'destination',
+  'description',
+  'distance',
+  'surface_display',
+  'route_metadata',
+  'created_at',
+].join(',');
+
 /* ----------------------------------------------------------
    User seen-state (badges / banners)
    ---------------------------------------------------------- */
@@ -164,8 +180,9 @@ async function loadHomeData() {
     return;
   }
 
-  // Load tours for this community
-  const toursRes = await sb.from('tours').select('*')
+  // Load only list metadata. Full GPX JSON is fetched lazily for tour detail
+  // or the planning map, otherwise every home render burns PostgREST egress.
+  const toursRes = await sb.from('tours').select(TOUR_LIST_SELECT)
     .eq('community_id', cid)
     .order('date', { ascending: true });
 
@@ -713,10 +730,12 @@ async function deletePlanDate(id) {
  * @param {Array} route
  */
 async function saveGPX(route, gpxText = '') {
+  const routeMetadata = typeof buildRouteMetadata === 'function' ? buildRouteMetadata(route) : null;
   const { error } = await sb
     .from('tours')
     .update({
       gpx_route: route,
+      route_metadata: routeMetadata,
       surface_analysis: null,
       surface_display: null,
       surface_analysis_updated_at: null,
@@ -726,6 +745,7 @@ async function saveGPX(route, gpxText = '') {
   const hadRoute = !!state.currentTour?.gpx_route;
   if (state.currentTour) {
     state.currentTour.gpx_route = route;
+    state.currentTour.route_metadata = routeMetadata;
     state.currentTour.surface_analysis = null;
     state.currentTour.surface_display = null;
     state.currentTour.surface_analysis_updated_at = null;
@@ -795,6 +815,7 @@ async function deleteGPX() {
     .from('tours')
     .update({
       gpx_route: null,
+      route_metadata: null,
       surface_analysis: null,
       surface_display: null,
       surface_analysis_updated_at: null,
@@ -803,6 +824,7 @@ async function deleteGPX() {
   if (error) throw new Error(error.message);
   if (state.currentTour) {
     state.currentTour.gpx_route = null;
+    state.currentTour.route_metadata = null;
     state.currentTour.surface_analysis = null;
     state.currentTour.surface_display = null;
     state.currentTour.surface_analysis_updated_at = null;
@@ -1079,7 +1101,8 @@ async function createCommunity(name, password) {
 async function loadPlanningData() {
   const cid = state.currentCommunityId;
 
-  // Load tours, polls, messages and changelog all in parallel — all independent
+  // Planning overview needs only tour metadata for the calendar. Route geometry
+  // is loaded separately by loadPlanningMapRoutes() when the map tab is opened.
   const [
     { data: tours },
     { data: polls },
@@ -1087,9 +1110,9 @@ async function loadPlanningData() {
     { data: log },
   ] = await Promise.all([
     sb.from('tours')
-      .select('id, name, gpx_route, surface_analysis, date, end_date')
+      .select(TOUR_LIST_SELECT)
       .eq('community_id', cid)
-      .not('gpx_route', 'is', null),
+      .order('date', { ascending: true }),
     sb.from('community_polls')
       .select('*')
       .eq('community_id', cid)
@@ -1103,6 +1126,9 @@ async function loadPlanningData() {
       .eq('community_id', cid)
       .order('created_at', { ascending: false }),
   ]);
+
+  state.tours = tours || [];
+  state._loadedPlanningForCid = cid;
 
   state.communityMessages  = msgs || [];
   state.communityChangelog = log  || [];
@@ -1130,13 +1156,40 @@ async function loadPlanningData() {
     });
   }
 
-  // Init plan map visibility (all tours visible by default)
-  (tours || []).forEach(t => {
+  if (state._loadedPlanMapRoutesCid !== cid) state.communityToursGpx = [];
+}
+
+async function loadPlanningMapRoutes() {
+  const cid = state.currentCommunityId;
+  if (!cid) return;
+  if (!navigator.onLine && state._loadedPlanMapRoutesCid === cid && state.communityToursGpx) return;
+  if (state._loadedPlanMapRoutesCid === cid && state.communityToursGpx?.length) return;
+
+  const { data } = await sb.from('tours')
+    .select('id, name, gpx_route, route_metadata, date, end_date')
+    .eq('community_id', cid)
+    .not('gpx_route', 'is', null)
+    .order('date', { ascending: true });
+
+  state.communityToursGpx = data || [];
+  state._loadedPlanMapRoutesCid = cid;
+  state.communityToursGpx.forEach(t => {
     if (state.planMapVisible[t.id] === undefined) state.planMapVisible[t.id] = true;
   });
+}
 
-  // Store tours with gpx for plan map
-  state.communityToursGpx = tours || [];
+async function loadTourRouteGeometry(tourId) {
+  if (!tourId) return null;
+  const { data } = await sb.from('tours')
+    .select('id, gpx_route, route_metadata, surface_analysis, surface_display')
+    .eq('id', tourId)
+    .single();
+  if (!data) return null;
+
+  const mergeRouteFields = t => t?.id === tourId ? { ...t, ...data } : t;
+  state.tours = (state.tours || []).map(mergeRouteFields);
+  if (state.currentTour?.id === tourId) Object.assign(state.currentTour, data);
+  return data;
 }
 
 /**

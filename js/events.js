@@ -614,7 +614,7 @@ function attachEvents() {
     const treffpunktLink = nextTour
       ? (state.tourPlanDates || []).find(pd => pd.type === 'treffpunkt' && pd.maps_link)?.maps_link
       : null;
-    if (nextTour && (nextTour.destination || treffpunktLink || nextTour.gpx_route)) {
+    if (nextTour) {
       _loadCheckinWeather(nextTour.id, nextTour.destination, nextTour.date, nextTour.end_date || nextTour.date, treffpunktLink, nextTour);
     }
   }
@@ -1477,7 +1477,13 @@ function attachPlanningTabHandlers() {
 
       switch (state.planningTab) {
         case 'polls': tc.innerHTML = renderPlanPolls();  attachPlanningContentEvents(); break;
-        case 'map':   tc.innerHTML = renderPlanMap();    _initPlanMap(); attachPlanningContentEvents(); break;
+        case 'map':
+          tc.innerHTML = '<div class="weather-loading">Routen werden geladen…</div>';
+          await loadPlanningMapRoutes();
+          tc.innerHTML = renderPlanMap();
+          _initPlanMap();
+          attachPlanningContentEvents();
+          break;
         case 'chat':  tc.innerHTML = renderPlanChat();   _scrollPlanChat(); attachPlanningContentEvents(); break;
         case 'log':   tc.innerHTML = renderPlanLog();    break;
       }
@@ -1495,7 +1501,16 @@ function attachPlanningTabHandlers() {
   );
 
   /* Init content for initial tab */
-  if (state.planningTab === 'map') setTimeout(_initPlanMap, 80);
+  if (state.planningTab === 'map') {
+    loadPlanningMapRoutes().then(() => {
+      const tc = document.getElementById('plan-tab-content');
+      if (tc && state.view === 'planning' && state.planningTab === 'map') {
+        tc.innerHTML = renderPlanMap();
+        attachPlanningContentEvents();
+        setTimeout(_initPlanMap, 80);
+      }
+    });
+  }
   if (state.planningTab === 'chat') _scrollPlanChat();
 }
 

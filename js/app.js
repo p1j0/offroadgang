@@ -172,6 +172,7 @@ async function _loadViewData(view) {
 
     if (view === 'planning') {
       await loadPlanningData();
+      if (state.planningTab === 'map') await loadPlanningMapRoutes();
       markTabSeen(state.currentCommunityId, 'plan-chat');
       markTabSeen(state.currentCommunityId, 'plan-polls');
       state.planningBadges = { chat: 0, polls: 0 };
@@ -227,12 +228,14 @@ async function navigateTo(view, params = {}) {
     const _isOffline = !navigator.onLine;
     const _hasCommData = (state.communities?.length || 0) > 0;
     const _hasHomeData = (state.tours?.length || 0) > 0 && state._loadedHomeForCid === state.currentCommunityId;
+    const _hasPlanningData = (state.communityPolls?.length || state.communityMessages?.length || state.communityChangelog?.length || state.tours?.length)
+      && state._loadedPlanningForCid === state.currentCommunityId;
     const _hasTourData = state.currentTour?.id === state.currentTourId;
     const _canRenderNow = (
       (view === 'communities'    && _hasCommData) ||
       (view === 'community-home' && _hasHomeData) ||
       (view === 'community-media'&& _hasHomeData) ||
-      (view === 'planning'       && _hasHomeData) ||
+      (view === 'planning'       && (_hasHomeData || _hasPlanningData)) ||
       (view === 'tour'           && _hasTourData)
     );
 
@@ -485,23 +488,28 @@ function getTourWeatherOptions(tour = state.currentTour) {
     });
   }
 
-  const gpx = normalizeGPXRoute(tour?.gpx_route);
-  (gpx?.tracks || []).forEach((track, trackIndex) => {
-    const points = (track.points || []).filter(p => Number.isFinite(p?.[0]) && Number.isFinite(p?.[1]));
-    if (!points.length) return;
-    const trackName = track.name || `Track ${trackIndex + 1}`;
+  const routeMetadata = tour?.route_metadata || (typeof buildRouteMetadata === 'function' ? buildRouteMetadata(tour?.gpx_route) : null);
+  (routeMetadata?.tracks || []).forEach((track, trackIndex) => {
+    const routeTrackIndex = Number.isFinite(Number(track.index)) ? Number(track.index) : trackIndex;
+    const trackName = track.name || `Track ${routeTrackIndex + 1}`;
     [
-      ['start', 'Anfang', 0],
-      ['middle', 'Mitte', 0.5],
-      ['end', 'Ende', 1],
-    ].forEach(([pos, label, fraction]) => {
+      ['start', 'Anfang'],
+      ['middle', 'Mitte'],
+      ['end', 'Ende'],
+    ].forEach(([pos, label]) => {
+      const point = track[pos];
+      const lat = Number(point?.lat);
+      const lon = Number(point?.lon ?? point?.lng);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
       options.push({
-        value: `track:${trackIndex}:${pos}`,
+        value: `track:${routeTrackIndex}:${pos}`,
         label: `${trackName} ${label}`,
         source: `${trackName} ${label}`,
         detail: trackName,
-        trackIndex,
-        fraction,
+        trackIndex: routeTrackIndex,
+        position: pos,
+        latitude: lat,
+        longitude: lon,
       });
     });
   });
@@ -555,15 +563,38 @@ async function resolveTourWeatherChoice(choice, tour = state.currentTour) {
     return coords ? { ...coords, label: choice.label, source: choice.source } : null;
   }
 
+  const directLat = Number(choice.latitude);
+  const directLon = Number(choice.longitude);
+  if (Number.isFinite(directLat) && Number.isFinite(directLon)) {
+    return {
+      latitude: directLat,
+      longitude: directLon,
+      label: choice.label,
+      source: choice.source,
+    };
+  }
+
   const match = choice.value.match(/^track:(\d+):(start|middle|end)$/);
   if (!match) return null;
   const trackIndex = Number(match[1]);
+  const routeMetadata = tour.route_metadata || (typeof buildRouteMetadata === 'function' ? buildRouteMetadata(tour.gpx_route) : null);
+  const metaTrack = (routeMetadata?.tracks || []).find(t => Number(t.index) === trackIndex);
+  const metaPoint = metaTrack?.[match[2]];
+  const metaLat = Number(metaPoint?.lat);
+  const metaLon = Number(metaPoint?.lon ?? metaPoint?.lng);
+  if (Number.isFinite(metaLat) && Number.isFinite(metaLon)) {
+    return { latitude: metaLat, longitude: metaLon, label: choice.label, source: choice.source };
+  }
+
   const gpx = normalizeGPXRoute(tour.gpx_route);
   const points = (gpx?.tracks?.[trackIndex]?.points || []).filter(p => Number.isFinite(p?.[0]) && Number.isFinite(p?.[1]));
-  const point = _trackPointAtFraction(points, choice.fraction);
+  const fraction = match[2] === 'middle' ? 0.5 : match[2] === 'end' ? 1 : 0;
+  const point = typeof routePointAtFraction === 'function'
+    ? routePointAtFraction(points, fraction)
+    : _trackPointAtFraction(points, fraction);
   return point ? {
-    latitude: point[0],
-    longitude: point[1],
+    latitude: Array.isArray(point) ? point[0] : point.lat,
+    longitude: Array.isArray(point) ? point[1] : point.lon,
     label: choice.label,
     source: choice.source,
   } : null;
@@ -1135,7 +1166,10 @@ async function _loadCheckinWeather(tourId, destination, startDate, endDate, maps
   const WEATHER_CACHE_MAX_AGE_MS = 60 * 60 * 1000;
   const now = Date.now();
   const today = new Date(now).toISOString().slice(0, 10);
-  const cacheKey = ['v3', destination || '', startDate || '', endDate || '', mapsLink || '', tour?.gpx_route ? 'gpx' : ''].join('|');
+  const routeMetaKey = tour?.route_metadata
+    ? `${tour.route_metadata.trackCount || 0}:${tour.route_metadata.waypointCount || 0}`
+    : (tour?.gpx_route ? 'gpx' : '');
+  const cacheKey = ['v4', destination || '', startDate || '', endDate || '', mapsLink || '', routeMetaKey].join('|');
   const cached = state.weatherCache[tourId];
   const cachedFetchedAt = cached?.fetchedAt
     || (cached?.fetchDate ? Date.parse(`${cached.fetchDate}T00:00:00`) : 0);
@@ -1172,6 +1206,24 @@ async function _loadCheckinWeather(tourId, destination, startDate, endDate, maps
         if (geoData.results?.length) ({ latitude, longitude } = geoData.results[0]);
       }
       if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        let routeMetadata = tour?.route_metadata;
+        if (!routeMetadata && tour?.gpx_route && typeof buildRouteMetadata === 'function') {
+          routeMetadata = buildRouteMetadata(tour.gpx_route);
+          tour.route_metadata = routeMetadata;
+        }
+        const firstMetaPoint = routeMetadata?.tracks?.[0]?.start;
+        const metaLat = Number(firstMetaPoint?.lat);
+        const metaLon = Number(firstMetaPoint?.lon ?? firstMetaPoint?.lng);
+        if (Number.isFinite(metaLat) && Number.isFinite(metaLon)) {
+          latitude = metaLat;
+          longitude = metaLon;
+        }
+      }
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        if (!tour?.gpx_route && typeof loadTourRouteGeometry === 'function') {
+          const routeFields = await loadTourRouteGeometry(tourId);
+          if (routeFields && tour) Object.assign(tour, routeFields);
+        }
         const gpx = normalizeGPXRoute(tour?.gpx_route);
         const firstPoint = (gpx?.tracks || [])
           .flatMap(track => track.points || [])
