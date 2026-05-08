@@ -186,7 +186,7 @@ function computeTabBadges(tourId) {
 
   /* ── Changelog ── */
   const seenLog  = getLastSeen(tourId, 'changelog');
-  const newLog   = state.tourChangelog.filter(e => new Date(e.created_at) > seenLog);
+  const newLog   = _dedupeLogEntries(state.tourChangelog.filter(e => new Date(e.created_at) > seenLog));
   if (newLog.length) {
     state.tabBadges.changelog = newLog.map(e => ({
       text: `${e.username} → ${e.field}`,
@@ -196,7 +196,7 @@ function computeTabBadges(tourId) {
 
   /* ── Info (tour data changes since last visit) ── */
   const seenInfo = getLastSeen(tourId, 'info');
-  const infoLog  = state.tourChangelog.filter(e => new Date(e.created_at) > seenInfo);
+  const infoLog  = _dedupeLogEntries(state.tourChangelog.filter(e => new Date(e.created_at) > seenInfo));
   if (infoLog.length) {
     state.tabBadges.info = infoLog.map(e => ({
       text: `${e.field}: ${e.new_value || '—'}`,
@@ -213,6 +213,26 @@ function computeTabBadges(tourId) {
       time: new Date(m.created_at),
     }));
   }
+}
+
+function _dedupeLogEntries(entries, windowMs = 2 * 60 * 1000) {
+  const seen = new Map();
+  return (entries || []).filter(e => {
+    const key = [
+      e.tour_id || '',
+      e.user_id || e.username || '',
+      e.field || '',
+      e.old_value || '',
+      e.new_value || '',
+    ].join('\u0001');
+    const ts = new Date(e.created_at).getTime();
+    const previousTs = seen.get(key);
+    if (Number.isFinite(previousTs) && Number.isFinite(ts) && Math.abs(previousTs - ts) <= windowMs) {
+      return false;
+    }
+    seen.set(key, ts);
+    return true;
+  });
 }
 
 /**
@@ -233,9 +253,29 @@ async function loadChangelog() {
  * @param {string} oldValue
  * @param {string} newValue
  */
+const _recentLogWrites = new Map();
+const LOG_DEDUPE_WINDOW_MS = 5000;
+
 async function logChange(field, oldValue, newValue) {
   if (String(oldValue || '') === String(newValue || '')) return;
-  await sb.from('change_log').insert({
+
+  const now = Date.now();
+  for (const [key, ts] of _recentLogWrites) {
+    if (now - ts > LOG_DEDUPE_WINDOW_MS) _recentLogWrites.delete(key);
+  }
+
+  const logKey = [
+    state.currentTourId || '',
+    state.currentUser?.id || state.currentUser?.username || '',
+    field || '',
+    String(oldValue || ''),
+    String(newValue || ''),
+  ].join('\u0001');
+
+  if (_recentLogWrites.has(logKey)) return;
+  _recentLogWrites.set(logKey, now);
+
+  const { error } = await sb.from('change_log').insert({
     tour_id:   state.currentTourId,
     user_id:   state.currentUser.id,
     username:  state.currentUser.username,
@@ -243,6 +283,10 @@ async function logChange(field, oldValue, newValue) {
     old_value: String(oldValue || ''),
     new_value: String(newValue || ''),
   });
+  if (error) {
+    _recentLogWrites.delete(logKey);
+    throw new Error(error.message);
+  }
 }
 
 /**
@@ -291,8 +335,10 @@ async function joinTour(tourId) {
     .from('tour_members')
     .insert({ tour_id: tourId, user_id: state.currentUser.id });
 
-  if (error && !error.message.includes('duplicate')) throw new Error(error.message);
+  const alreadyMember = !!error && error.message.includes('duplicate');
+  if (error && !alreadyMember) throw new Error(error.message);
   state.myTourIds.add(tourId);
+  if (alreadyMember) return;
 
   // Log join
   const savedId = state.currentTourId;

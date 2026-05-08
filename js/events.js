@@ -785,6 +785,8 @@ function attachEvents() {
   /* --- Tour tabs (only wire up when on tour view) --- */
   /* --- Overview cards → switch to the target tab --- */
   document.querySelectorAll('[data-go-tab]').forEach(card => {
+    if (card.dataset.goTabAttached === '1') return;
+    card.dataset.goTabAttached = '1';
     card.addEventListener('click', async () => {
       const tab = card.dataset.goTab;
       if (!tab) return;
@@ -849,12 +851,17 @@ function afterTabRender() {
   if (state.currentTab === 'overview') {
     // Re-attach card click handlers (attachEvents() only runs on full render)
     document.querySelectorAll('[data-go-tab]').forEach(card => {
+      if (card.dataset.goTabAttached === '1') return;
+      card.dataset.goTabAttached = '1';
       card.addEventListener('click', async () => {
         const tab = card.dataset.goTab;
         if (!tab) return;
         state.currentTab = tab;
         if (tab === 'chat')      await loadMessages();
         if (tab === 'changelog') await loadChangelog();
+        if (tab === 'info' && state.tabBadges.info?.length) {
+          state.infoBannerItems = state.tabBadges.info;
+        }
         markTabSeen(state.currentTourId, tab);
         computeTabBadges(state.currentTourId);
         _refreshTabBar();
@@ -970,6 +977,9 @@ function _refreshTabBar() {
       state.currentTab = btn.dataset.tab;
       if (state.currentTab === 'chat')      await loadMessages();
       if (state.currentTab === 'changelog') await loadChangelog();
+      if (state.currentTab === 'info' && state.tabBadges.info?.length) {
+        state.infoBannerItems = state.tabBadges.info;
+      }
       markTabSeen(state.currentTourId, state.currentTab);
       computeTabBadges(state.currentTourId);
       _refreshTabBar();
@@ -1053,6 +1063,10 @@ function _updateFsUi(container, isFs) {
 }
 
 function attachMapEvents() {
+  const mapContainer = document.getElementById('map-container');
+  if (mapContainer?.dataset.eventsAttached === '1') return;
+  if (mapContainer) mapContainer.dataset.eventsAttached = '1';
+
   /* Fullscreen toggle — CSS-based for mobile compatibility (iOS Safari
      does not support requestFullscreen on non-video elements) */
   document.getElementById('map-fullscreen')?.addEventListener('click', () => {
@@ -1117,18 +1131,22 @@ function attachMapEvents() {
 
   /* GPX upload (admin only) */
   document.getElementById('gpx-up')?.addEventListener('change', async e => {
+    if (e.target.dataset.busy === '1') return;
     const file = e.target.files[0];
     if (!file) return;
-
-    const text = await file.text();
-    const data = parseGPX(text);
-
-    const totalPts = data.tracks.reduce((s, t) => s + t.points.length, 0);
-    if (!totalPts && !data.waypoints.length) {
-      toast('Keine Route oder Wegpunkte in GPX-Datei gefunden.', 'error'); return;
-    }
+    e.target.dataset.busy = '1';
 
     try {
+      const text = await file.text();
+      const data = parseGPX(text);
+
+      const totalPts = data.tracks.reduce((s, t) => s + t.points.length, 0);
+      if (!totalPts && !data.waypoints.length) {
+        toast('Keine Route oder Wegpunkte in GPX-Datei gefunden.', 'error');
+        delete e.target.dataset.busy;
+        return;
+      }
+
       toast('Route wird gespeichert, Offroad-Anteil wird berechnet…');
       const result = await saveGPX(data, text);
       const summary = [
@@ -1138,7 +1156,10 @@ function attachMapEvents() {
       const offRoad = formatOffRoadPercentage(result?.surfaceAnalysis?.total);
       toast(`✓ Gespeichert: ${summary}${offRoad ? ` · ${offRoad}` : ' · Offroad-Analyse später erneut versuchen'}`);
       _refreshMapTab();
-    } catch (e) { toast(e.message, 'error'); }
+    } catch (e) {
+      toast(e.message, 'error');
+      delete e.target.dataset.busy;
+    }
   });
 
   document.getElementById('gpx-dl')?.addEventListener('click', () => {
@@ -1146,13 +1167,19 @@ function attachMapEvents() {
   });
 
   /* Delete route (admin only) */
-  document.getElementById('gpx-del')?.addEventListener('click', async () => {
+  document.getElementById('gpx-del')?.addEventListener('click', async e => {
+    const btn = e.currentTarget;
+    if (btn?.dataset.busy === '1') return;
+    if (btn) btn.dataset.busy = '1';
     try {
       await deleteGPX();
       clearRouteFromMap();
       toast('Route gelöscht');
       _refreshMapTab();
-    } catch (e) { toast(e.message, 'error'); }
+    } catch (e) {
+      toast(e.message, 'error');
+      if (btn) delete btn.dataset.busy;
+    }
   });
 }
 
