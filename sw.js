@@ -3,7 +3,7 @@
    Handles: offline caching + Web Push Notifications
    ============================================================ */
 
-const CACHE_NAME = 'motoroute-v9';
+const CACHE_NAME = 'motoroute-v10';
 const API_CACHE_NAME  = 'motoroute-api-v1';
 const TILE_CACHE_NAME = 'motoroute-tiles-v1';
 const TILE_CACHE_MAX  = 500; // ~500 Tiles × ø20 KB = max ~10 MB
@@ -55,8 +55,31 @@ self.addEventListener('activate', event => {
   );
 });
 
+function isAppShellRequest(event, url) {
+  if (url.origin !== self.location.origin || event.request.method !== 'GET') return false;
+  if (event.request.mode === 'navigate') return true;
+  return /\.(?:html|css|js|json|webmanifest)$/i.test(url.pathname);
+}
+
+function networkFirstWithCache(event, fallbackUrl) {
+  event.respondWith(
+    caches.open(CACHE_NAME).then(async cache => {
+      try {
+        const response = await fetch(event.request);
+        if (response.ok) cache.put(event.request, response.clone());
+        return response;
+      } catch (e) {
+        const cached = await cache.match(event.request);
+        if (cached) return cached;
+        if (fallbackUrl) return cache.match(fallbackUrl);
+        return undefined;
+      }
+    })
+  );
+}
+
 /* ----------------------------------------------------------
-   Fetch – Network-first für API, Cache-first für Assets
+   Fetch – Network-first für API/App-Shell, Cache-first für Tiles/Images
    ---------------------------------------------------------- */
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
@@ -138,6 +161,14 @@ self.addEventListener('fetch', event => {
     return; // Browser-Standard
   }
 
+  // App-Shell (HTML/CSS/JS/Manifest): online immer frisch laden.
+  // Wichtig für installierte PWAs: cache-first kann sonst nach Deploys alte
+  // JS-Dateien mit neuem Serverstand mischen.
+  if (isAppShellRequest(event, url)) {
+    networkFirstWithCache(event, event.request.mode === 'navigate' ? '/index.html' : null);
+    return;
+  }
+
   // Karten-Tiles (OpenStreetMap) — Cache-first, Größenlimit
   if (url.hostname.includes('tile.openstreetmap.org')) {
     event.respondWith(
@@ -170,7 +201,7 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // App-Shell: Cache-first, Fallback auf Network
+  // Statische Medien: Cache-first, Fallback auf Network
   event.respondWith(
     caches.match(event.request).then(cached => {
       if (cached) return cached;

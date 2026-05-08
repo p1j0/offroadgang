@@ -77,7 +77,8 @@ const state = {
    offline with previously cached data.
    ---------------------------------------------------------- */
 const STATE_STORAGE_KEY = 'motoroute_state_v1';
-const STATE_SCHEMA_VERSION = 2;
+const STATE_SCHEMA_VERSION = 3;
+const STATE_APP_VERSION = (typeof APP_VERSION !== 'undefined' && APP_VERSION) ? APP_VERSION : 'dev';
 const STATE_MAX_AGE_MS  = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 function persistState() {
@@ -86,6 +87,7 @@ function persistState() {
     // Convert Sets and other non-serializable values to plain types
     const snap = {
       schemaVersion: STATE_SCHEMA_VERSION,
+      appVersion: STATE_APP_VERSION,
       ts: Date.now(),
       currentUser:        state.currentUser,
       currentCommunityId: state.currentCommunityId,
@@ -135,6 +137,10 @@ function restoreState(expectedUserId) {
       localStorage.removeItem(STATE_STORAGE_KEY);
       return false;
     }
+    if (STATE_APP_VERSION !== 'dev' && snap.appVersion && snap.appVersion !== STATE_APP_VERSION) {
+      localStorage.removeItem(STATE_STORAGE_KEY);
+      return false;
+    }
     if (expectedUserId && snap.currentUser?.id !== expectedUserId) {
       localStorage.removeItem(STATE_STORAGE_KEY);
       return false;
@@ -153,6 +159,7 @@ function restoreState(expectedUserId) {
     );
     delete state.ts;
     delete state.schemaVersion;
+    delete state.appVersion;
     return true;
   } catch (e) {
     console.warn('[restoreState]', e);
