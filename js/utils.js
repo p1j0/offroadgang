@@ -188,7 +188,7 @@ function copyPageLink() {
 }
 
 /* ----------------------------------------------------------
-   Tab "last seen" tracking – stored in localStorage
+   "last seen" tracking – Supabase-backed with local fallback
    ---------------------------------------------------------- */
 
 /**
@@ -197,42 +197,143 @@ function copyPageLink() {
  * @param {string} tab
  * @returns {string}
  */
-function _seenKey(tourId, tab) {
-  return `mr_seen_${tourId}_${tab}`;
+function _seenUserId() {
+  return state?.currentUser?.id || 'anon';
 }
 
-/**
- * Mark a tab as seen right now.
- * @param {string} tourId
- * @param {string} tab
- */
-function markTabSeen(tourId, tab) {
-  try { localStorage.setItem(_seenKey(tourId, tab), new Date().toISOString()); } catch(e) {}
+function _seenKey(scopeId, seenKey, userId = _seenUserId()) {
+  return `mr_seen_${userId}_${scopeId}_${seenKey}`;
+}
 
-  // Home-Karten-Badge optimistisch leeren, damit der SWR-Sofort-Render
-  // beim Zurückgehen zur Community-Home keine alte (stale) Markierung mehr zeigt.
-  // computeHomeBadges bestätigt das später nochmal mit frischen Server-Daten.
-  if (typeof state !== 'undefined' && state.homeBadges?.[tourId]) {
-    if (tab === 'chat')      state.homeBadges[tourId].chat      = 0;
-    if (tab === 'changelog') state.homeBadges[tourId].changelog = 0;
-    const b = state.homeBadges[tourId];
-    if ((b.chat || 0) === 0 && (b.changelog || 0) === 0) {
-      delete state.homeBadges[tourId];
+function _seenCacheKey(scopeId, seenKey, userId = _seenUserId()) {
+  return `${userId || 'anon'}\u0001${scopeId || ''}\u0001${seenKey || ''}`;
+}
+
+function _legacySeenKey(scopeId, seenKey) {
+  return `mr_seen_${scopeId}_${seenKey}`;
+}
+
+const LEGACY_SEEN_OWNER_KEY = 'mr_seen_legacy_owner_v1';
+const LEGACY_SEEN_KEYS = [
+  'community-media',
+  'tour-media',
+  'plan-chat',
+  'plan-polls',
+  'changelog',
+  'chat',
+  'info',
+  'media',
+];
+
+function _parseLegacySeenStorageKey(storageKey) {
+  if (!storageKey?.startsWith('mr_seen_')) return null;
+  const rest = storageKey.slice('mr_seen_'.length);
+  for (const seenKey of LEGACY_SEEN_KEYS) {
+    const suffix = `_${seenKey}`;
+    if (!rest.endsWith(suffix)) continue;
+    const scopeId = rest.slice(0, -suffix.length);
+    if (!scopeId || scopeId === _seenUserId()) return null;
+    return { scopeId, seenKey };
+  }
+  return null;
+}
+
+function migrateLegacySeenStateForCurrentUser() {
+  const userId = _seenUserId();
+  if (!userId || userId === 'anon') return;
+
+  let owner = null;
+  try { owner = localStorage.getItem(LEGACY_SEEN_OWNER_KEY); } catch(e) {}
+  if (!owner) {
+    try {
+      const hasLegacyKeys = Object.keys(localStorage).some(k => !!_parseLegacySeenStorageKey(k));
+      if (!hasLegacyKeys) return;
+      localStorage.setItem(LEGACY_SEEN_OWNER_KEY, userId);
+      owner = userId;
+    } catch(e) { return; }
+  }
+  if (owner !== userId) return;
+
+  for (const storageKey of Object.keys(localStorage)) {
+    const parsed = _parseLegacySeenStorageKey(storageKey);
+    if (!parsed) continue;
+    let seenAt = '';
+    try { seenAt = localStorage.getItem(storageKey) || ''; } catch(e) {}
+    if (!Number.isFinite(new Date(seenAt).getTime())) continue;
+
+    const userKey = _seenKey(parsed.scopeId, parsed.seenKey, userId);
+    try {
+      if (!localStorage.getItem(userKey)) localStorage.setItem(userKey, seenAt);
+    } catch(e) {}
+
+    if (!state.seenState) state.seenState = {};
+    const cacheKey = _seenCacheKey(parsed.scopeId, parsed.seenKey, userId);
+    if (!state.seenState[cacheKey]) state.seenState[cacheKey] = seenAt;
+
+    if (typeof saveSeenState === 'function') {
+      saveSeenState(parsed.scopeId, parsed.seenKey, seenAt).catch(e => {
+        console.warn('[seen_state] legacy migration failed:', e.message || e);
+      });
     }
   }
 }
 
 /**
- * Get the Date the user last visited a tab (or epoch if never).
- * @param {string} tourId
- * @param {string} tab
+ * Mark a badge/banner scope as seen right now.
+ * Writes locally immediately and syncs to Supabase in the background.
+ * @param {string} scopeId
+ * @param {string} seenKey
+ * @param {string} [seenAt]
+ */
+function markTabSeen(scopeId, seenKey, seenAt = new Date().toISOString()) {
+  try { localStorage.setItem(_seenKey(scopeId, seenKey), seenAt); } catch(e) {}
+
+  if (typeof state !== 'undefined') {
+    if (!state.seenState) state.seenState = {};
+    state.seenState[_seenCacheKey(scopeId, seenKey)] = seenAt;
+  }
+
+  if (typeof saveSeenState === 'function') {
+    saveSeenState(scopeId, seenKey, seenAt).catch(e => {
+      console.warn('[seen_state] save failed:', e.message || e);
+    });
+  }
+
+  // Home-Karten-Badge optimistisch leeren, damit der SWR-Sofort-Render
+  // beim Zurückgehen zur Community-Home keine alte (stale) Markierung mehr zeigt.
+  // computeHomeBadges bestätigt das später nochmal mit frischen Server-Daten.
+  if (typeof state !== 'undefined' && state.homeBadges?.[scopeId]) {
+    if (seenKey === 'chat')      state.homeBadges[scopeId].chat      = 0;
+    if (seenKey === 'changelog') state.homeBadges[scopeId].changelog = 0;
+    const b = state.homeBadges[scopeId];
+    if ((b.chat || 0) === 0 && (b.changelog || 0) === 0) {
+      delete state.homeBadges[scopeId];
+    }
+  }
+}
+
+/**
+ * Get the Date the user last saw a badge/banner scope (or epoch if never).
+ * Supabase-loaded values win over localStorage so seen-state follows the user
+ * across devices after loadSeenStates() has populated the cache.
+ * @param {string} scopeId
+ * @param {string} seenKey
  * @returns {Date}
  */
-function getLastSeen(tourId, tab) {
+function getLastSeen(scopeId, seenKey) {
+  const values = [];
+  const cached = state?.seenState?.[_seenCacheKey(scopeId, seenKey)];
+  if (cached) values.push(cached);
   try {
-    const v = localStorage.getItem(_seenKey(tourId, tab));
-    return v ? new Date(v) : new Date(0);
-  } catch(e) { return new Date(0); }
+    const local = localStorage.getItem(_seenKey(scopeId, seenKey));
+    if (local) values.push(local);
+  } catch(e) {}
+
+  const newest = values
+    .map(v => new Date(v))
+    .filter(d => Number.isFinite(d.getTime()))
+    .sort((a, b) => b - a)[0];
+  return newest || new Date(0);
 }
 
 /**

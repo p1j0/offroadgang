@@ -4,6 +4,54 @@
    ============================================================ */
 
 /* ----------------------------------------------------------
+   User seen-state (badges / banners)
+   ---------------------------------------------------------- */
+
+function _cacheSeenStateRow(row) {
+  if (!row?.scope_id || !row?.seen_key || !row?.seen_at) return;
+  if (!state.seenState) state.seenState = {};
+  const userId = row.user_id || state.currentUser?.id;
+  state.seenState[_seenCacheKey(row.scope_id, row.seen_key, userId)] = row.seen_at;
+  try { localStorage.setItem(_seenKey(row.scope_id, row.seen_key, userId), row.seen_at); } catch(e) {}
+}
+
+async function loadSeenStates(scopeIds) {
+  if (!state.currentUser || !navigator.onLine) return;
+  if (typeof migrateLegacySeenStateForCurrentUser === 'function') {
+    migrateLegacySeenStateForCurrentUser();
+  }
+  const ids = [...new Set((Array.isArray(scopeIds) ? scopeIds : [scopeIds]).filter(Boolean).map(String))];
+  if (!ids.length) return;
+
+  const { data, error } = await sb
+    .from('user_seen_state')
+    .select('user_id,scope_id,seen_key,seen_at')
+    .eq('user_id', state.currentUser.id)
+    .in('scope_id', ids);
+
+  if (error) {
+    console.warn('[seen_state] load failed:', error.message);
+    return;
+  }
+  (data || []).forEach(_cacheSeenStateRow);
+}
+
+async function saveSeenState(scopeId, seenKey, seenAt = new Date().toISOString()) {
+  if (!state.currentUser || !navigator.onLine || !scopeId || !seenKey) return;
+  const row = {
+    user_id: state.currentUser.id,
+    scope_id: String(scopeId),
+    seen_key: String(seenKey),
+    seen_at: seenAt,
+    updated_at: new Date().toISOString(),
+  };
+  const { error } = await sb
+    .from('user_seen_state')
+    .upsert(row, { onConflict: 'user_id,scope_id,seen_key' });
+  if (error) throw new Error(error.message);
+}
+
+/* ----------------------------------------------------------
    Home data
    ---------------------------------------------------------- */
 
@@ -68,6 +116,7 @@ async function loadHomeData() {
     (profs || []).forEach(p => { state.profileCache[p.id] = p.username; });
   }
 
+  await loadSeenStates([...state.myTourIds]);
   await computeHomeBadges();
   state._loadedHomeForCid = cid;
 }
@@ -80,6 +129,7 @@ async function computeHomeBadges() {
   state.homeBadges = {};
   const myTourIds = [...state.myTourIds];
   if (!myTourIds.length) return;
+  await loadSeenStates(myTourIds);
 
   // For each tour, find events newer than last-seen timestamp
   await Promise.all(myTourIds.map(async tourId => {
@@ -163,6 +213,7 @@ async function loadTourData(tourId) {
     state.tourCalMonth = new Date(state.currentTour.date + 'T12:00:00');
   }
 
+  await loadSeenStates([tourId]);
   computeTabBadges(tourId);
 }
 
@@ -1142,6 +1193,7 @@ async function computePlanningBadges() {
   if (!cid) return;
   // HEAD requests can't be cached → skip when offline, keep last known counts
   if (!navigator.onLine) return;
+  await loadSeenStates([cid]);
 
   const seenChat  = getLastSeen(cid, 'plan-chat');
   const seenPolls = getLastSeen(cid, 'plan-polls');
@@ -1342,6 +1394,7 @@ async function computeMediaBadges() {
   if (!cid) return;
   // HEAD requests can't be cached → skip when offline, keep last known counts
   if (!navigator.onLine) return;
+  await loadSeenStates([cid]);
   const seenCm = getLastSeen(cid, 'community-media');
   const seenTm = getLastSeen(cid, 'tour-media');
 
@@ -1370,6 +1423,7 @@ async function computeTourMediaCounts() {
   if (!navigator.onLine && state._loadedTourMediaCountsCid === state.currentCommunityId) {
     return;
   }
+  await loadSeenStates([state.currentCommunityId]);
 
   const seenMedia = getLastSeen(state.currentCommunityId, 'tour-media');
 

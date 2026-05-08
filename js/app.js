@@ -397,6 +397,9 @@ function startForegroundRefresh() {
    Render dispatcher
    ---------------------------------------------------------- */
 
+let _renderGeneration = 0;
+let _siteChangelogPopupTimer = null;
+
 /**
  * Re-render the entire #app element based on state.view.
  * After injecting HTML, wire up event listeners.
@@ -404,6 +407,7 @@ function startForegroundRefresh() {
 function render() {
   const app = document.getElementById('app');
   if (!app) return;
+  const renderGeneration = ++_renderGeneration;
 
   const showNav = !['auth', 'loading', 'forgot-password', 'reset-password'].includes(state.view);
 
@@ -425,10 +429,19 @@ function render() {
       default: html += '<div class="loading-screen">…</div>';
     }
 
+    // A full app render replaces modal DOM. If a modal was open during a
+    // background/SWR re-render, clear its scroll lock so the page remains usable.
+    document.body.style.overflow = '';
     app.innerHTML = html;
     attachEvents();
     syncStickyLayout();
     requestAnimationFrame(fitTourCardAvatars);
+    if (typeof maybeOpenSiteChangelogPopup === 'function') {
+      if (_siteChangelogPopupTimer) clearTimeout(_siteChangelogPopupTimer);
+      _siteChangelogPopupTimer = setTimeout(() => {
+        if (renderGeneration === _renderGeneration) maybeOpenSiteChangelogPopup();
+      }, 1800);
+    }
   } catch (e) {
     console.error('[render] error:', e);
     app.innerHTML = `<div style="padding:40px;color:#e04444;font-family:monospace">
@@ -439,6 +452,572 @@ function render() {
 }
 
 window._setTourFilter = (f) => { state.tourFilter = f; render(); };
+
+/* ----------------------------------------------------------
+   Tour weather tab (Open-Meteo, per-user location choice)
+   ---------------------------------------------------------- */
+
+function _weatherChoiceKey(tourId) {
+  return `mr_weather_location_${tourId}`;
+}
+
+function getStoredWeatherChoice(tourId) {
+  try { return localStorage.getItem(_weatherChoiceKey(tourId)); }
+  catch(e) { return null; }
+}
+
+function setStoredWeatherChoice(tourId, value) {
+  try { localStorage.setItem(_weatherChoiceKey(tourId), value); }
+  catch(e) {}
+}
+
+function getTourWeatherOptions(tour = state.currentTour) {
+  const options = [];
+  const meeting = (state.tourPlanDates || []).find(pd => pd.type === 'treffpunkt' && pd.maps_link);
+  if (meeting) {
+    const place = (meeting.label || '').trim();
+    options.push({
+      value: 'meeting',
+      label: place ? `Treffpunkt - ${place}` : 'Treffpunkt',
+      source: place ? `Treffpunkt - ${place}` : 'Treffpunkt',
+      detail: meeting.label || meeting.date || '',
+      mapsLink: meeting.maps_link,
+    });
+  }
+
+  const gpx = normalizeGPXRoute(tour?.gpx_route);
+  (gpx?.tracks || []).forEach((track, trackIndex) => {
+    const points = (track.points || []).filter(p => Number.isFinite(p?.[0]) && Number.isFinite(p?.[1]));
+    if (!points.length) return;
+    const trackName = track.name || `Track ${trackIndex + 1}`;
+    [
+      ['start', 'Anfang', 0],
+      ['middle', 'Mitte', 0.5],
+      ['end', 'Ende', 1],
+    ].forEach(([pos, label, fraction]) => {
+      options.push({
+        value: `track:${trackIndex}:${pos}`,
+        label: `${trackName} ${label}`,
+        source: `${trackName} ${label}`,
+        detail: trackName,
+        trackIndex,
+        fraction,
+      });
+    });
+  });
+
+  return options;
+}
+
+function getSelectedWeatherChoice(tour = state.currentTour) {
+  const options = getTourWeatherOptions(tour);
+  if (!options.length) return null;
+  const stored = getStoredWeatherChoice(tour.id);
+  return options.find(o => o.value === stored) || options[0];
+}
+
+function _trackPointAtFraction(points, fraction) {
+  if (!points?.length) return null;
+  if (fraction <= 0 || points.length === 1) return points[0];
+  if (fraction >= 1) return points[points.length - 1];
+
+  const distances = [];
+  let total = 0;
+  for (let i = 1; i < points.length; i++) {
+    const d = _haversine(points[i - 1], points[i]);
+    distances.push(d);
+    total += d;
+  }
+  if (!total) return points[Math.floor(points.length * fraction)] || points[0];
+
+  const target = total * fraction;
+  let walked = 0;
+  for (let i = 1; i < points.length; i++) {
+    const segment = distances[i - 1];
+    if (walked + segment >= target) {
+      const ratio = segment ? (target - walked) / segment : 0;
+      const a = points[i - 1];
+      const b = points[i];
+      return [
+        a[0] + (b[0] - a[0]) * ratio,
+        a[1] + (b[1] - a[1]) * ratio,
+      ];
+    }
+    walked += segment;
+  }
+  return points[points.length - 1];
+}
+
+async function resolveTourWeatherChoice(choice, tour = state.currentTour) {
+  if (!choice || !tour) return null;
+  if (choice.value === 'meeting') {
+    const coords = await _extractMapCoords(choice.mapsLink);
+    return coords ? { ...coords, label: choice.label, source: choice.source } : null;
+  }
+
+  const match = choice.value.match(/^track:(\d+):(start|middle|end)$/);
+  if (!match) return null;
+  const trackIndex = Number(match[1]);
+  const gpx = normalizeGPXRoute(tour.gpx_route);
+  const points = (gpx?.tracks?.[trackIndex]?.points || []).filter(p => Number.isFinite(p?.[0]) && Number.isFinite(p?.[1]));
+  const point = _trackPointAtFraction(points, choice.fraction);
+  return point ? {
+    latitude: point[0],
+    longitude: point[1],
+    label: choice.label,
+    source: choice.source,
+  } : null;
+}
+
+async function loadTourWeatherTab() {
+  const tour = state.currentTour;
+  const root = document.getElementById('tour-weather-body');
+  if (!tour || !root) return;
+
+  const choices = getTourWeatherOptions(tour);
+  const choice = getSelectedWeatherChoice(tour);
+  if (!choices.length || !choice) {
+    root.innerHTML = '<div class="weather-empty">Keine Wetterposition verfügbar. Lege einen Treffpunkt mit Maps-Link an oder lade eine GPX-Route hoch.</div>';
+    return;
+  }
+
+  root.innerHTML = '<div class="weather-loading">Wetter wird geladen…</div>';
+  try {
+    const resolved = await resolveTourWeatherChoice(choice, tour);
+    if (!resolved) {
+      root.innerHTML = '<div class="weather-empty">Position konnte nicht bestimmt werden.</div>';
+      return;
+    }
+
+    const startDate = tour.date;
+    const endDate = tour.end_date || tour.date;
+    const maxDate = new Date();
+    maxDate.setDate(maxDate.getDate() + 15);
+    const maxDateStr = maxDate.toISOString().slice(0, 10);
+    const clampedEnd = endDate > maxDateStr ? maxDateStr : endDate;
+
+    const resp = await fetch(
+      `https://api.open-meteo.com/v1/forecast?latitude=${resolved.latitude}&longitude=${resolved.longitude}&daily=weathercode,temperature_2m_max,temperature_2m_min&hourly=precipitation,precipitation_probability&timezone=auto&start_date=${startDate}&end_date=${clampedEnd}`,
+      { cache: 'no-store' }
+    );
+    const [data, wetnessRows] = await Promise.all([
+      resp.json(),
+      loadAllOffroadWetness(choices, tour),
+    ]);
+    const daily = data.daily || {};
+    const segmentsByDay = _weatherSegmentsByDay(data.hourly);
+    const forecastRows = _renderWeatherForecastRows(daily, segmentsByDay);
+    const coords = `${resolved.latitude.toFixed(5)}, ${resolved.longitude.toFixed(5)}`;
+
+    root.innerHTML = `
+      ${renderOffroadWetnessList(wetnessRows)}
+      <div class="tour-weather-location">
+        <span>${esc(resolved.source || choice.label)}</span>
+        <span>${coords}</span>
+      </div>
+      <div class="tour-weather-grid">${forecastRows || '<div class="weather-empty">Keine Vorhersage für diesen Zeitraum verfügbar.</div>'}</div>
+      ${endDate > maxDateStr ? '<div class="checkin-weather-hint">Vorhersage max. 16 Tage im Voraus verfügbar</div>' : ''}`;
+  } catch (e) {
+    console.warn('[tour weather]', e);
+    root.innerHTML = '<div class="weather-empty">Wetter konnte nicht geladen werden.</div>';
+  }
+}
+
+async function loadOverviewWeatherCard() {
+  const tour = state.currentTour;
+  const el = document.getElementById(`tov-weather-${tour?.id}`);
+  if (!tour || !el) return;
+
+  const choice = getSelectedWeatherChoice(tour);
+  if (!choice) {
+    el.innerHTML = '<div class="tov-empty-hint">Kein Wetterpunkt verfügbar</div>';
+    return;
+  }
+
+  try {
+    const resolved = await resolveTourWeatherChoice(choice, tour);
+    if (!resolved) {
+      el.innerHTML = '<div class="tov-empty-hint">Position nicht verfügbar</div>';
+      return;
+    }
+
+    const endDate = tour.end_date || tour.date;
+    const maxDate = new Date();
+    maxDate.setDate(maxDate.getDate() + 15);
+    const maxDateStr = maxDate.toISOString().slice(0, 10);
+    if (tour.date > maxDateStr) {
+      el.innerHTML = renderOverviewWeatherNA(
+        resolved.source || choice.label,
+        'Vorhersage max. 16 Tage im Voraus verfügbar'
+      );
+      return;
+    }
+
+    const clampedEnd = endDate > maxDateStr ? maxDateStr : endDate;
+    const resp = await fetch(
+      `https://api.open-meteo.com/v1/forecast?latitude=${resolved.latitude}&longitude=${resolved.longitude}&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum&timezone=auto&start_date=${tour.date}&end_date=${clampedEnd}`,
+      { cache: 'no-store' }
+    );
+    const [data, wetness] = await Promise.all([
+      resp.json(),
+      loadOffroadWetness(resolved.latitude, resolved.longitude),
+    ]);
+
+    const daily = data.daily || {};
+    const idx = 0;
+    const hasForecast = daily.time?.[idx]
+      && Number.isFinite(Number(daily.temperature_2m_max?.[idx]))
+      && Number.isFinite(Number(daily.temperature_2m_min?.[idx]));
+    if (!hasForecast) {
+      el.innerHTML = renderOverviewWeatherNA(
+        resolved.source || choice.label,
+        'Keine Vorhersagedaten für diesen Zeitraum verfügbar'
+      );
+      return;
+    }
+
+    const icon = _weatherIcon(daily.weathercode?.[idx]);
+    const max = Math.round(Number(daily.temperature_2m_max[idx]));
+    const min = Math.round(Number(daily.temperature_2m_min[idx]));
+    const probRaw = Number(daily.precipitation_probability_max?.[idx]);
+    const rainRaw = Number(daily.precipitation_sum?.[idx]);
+    const prob = Number.isFinite(probRaw) ? Math.round(probRaw) : 'N/A';
+    const rain = Number.isFinite(rainRaw)
+      ? rainRaw.toLocaleString('de-DE', { maximumFractionDigits: 1 }) + 'mm'
+      : 'N/A';
+    const wetTotal = wetness.total.toLocaleString('de-DE', { maximumFractionDigits: 1 });
+    const wetMax = wetness.maxHour.toLocaleString('de-DE', { maximumFractionDigits: 1 });
+
+    el.innerHTML = `
+      <div class="tov-weather-location">${esc(resolved.source || choice.label)}</div>
+      <div class="tov-weather-main">
+        <span class="tov-weather-icon">${icon}</span>
+        <span class="tov-weather-temp">${min}° / ${max}°</span>
+      </div>
+      <div class="tov-weather-rain">🌧 ${prob}${prob === 'N/A' ? '' : '%'} · ${rain}</div>
+      <div class="tov-weather-index offroad-wetness-${wetness.level}">
+        <strong>${wetness.label}</strong>
+        <span>48h ${wetTotal}mm · max/h ${wetMax}mm/h</span>
+      </div>`;
+  } catch (e) {
+    console.warn('[overview weather]', e);
+    el.innerHTML = '<div class="tov-empty-hint">Wetter nicht verfügbar</div>';
+  }
+}
+
+function renderOverviewWeatherNA(location, hint) {
+  return `
+    <div class="tov-weather-location">${esc(location || 'Wetterpunkt')}</div>
+    <div class="tov-weather-na">N/A</div>
+    <div class="tov-weather-na-hint">${esc(hint || 'Wetterdaten nicht verfügbar')}</div>`;
+}
+
+function _renderWeatherForecastRows(daily = {}, segmentsByDay = {}) {
+  return (daily.time || []).map((date, idx) => {
+    const dt = new Date(`${date}T12:00:00`);
+    const label = dt.toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' });
+    const icon = _weatherIcon(daily.weathercode?.[idx]);
+    const max = Math.round(daily.temperature_2m_max?.[idx] ?? 0);
+    const min = Math.round(daily.temperature_2m_min?.[idx] ?? 0);
+    const segments = segmentsByDay[date] || _emptyWeatherSegments();
+    const segmentRows = segments.map(s => {
+      const rain = Number(s.precip || 0).toLocaleString('de-DE', { maximumFractionDigits: 1 });
+      return `<div class="tour-weather-segment">
+        <span>${s.label}</span>
+        <span>🌧 ${Math.round(s.prob || 0)}%</span>
+        <span>${rain}mm/h</span>
+      </div>`;
+    }).join('');
+    return `
+      <div class="tour-weather-day">
+        <div class="tour-weather-date">${label}</div>
+        <div class="tour-weather-icon">${icon}</div>
+        <div class="tour-weather-temp">${min}° / ${max}°</div>
+        <div class="tour-weather-segments">${segmentRows}</div>
+      </div>`;
+  }).join('');
+}
+
+function _weatherIcon(code) {
+  if (code === 0) return '☀️';
+  if (code <= 2) return '⛅';
+  if (code <= 3) return '☁️';
+  if (code <= 48) return '🌫️';
+  if (code <= 67) return '🌧️';
+  if (code <= 77) return '❄️';
+  if (code <= 82) return '🌧️';
+  if (code <= 86) return '❄️';
+  return '⚡';
+}
+
+function _emptyWeatherSegments() {
+  return [
+    { key: 'morning', label: 'VM', prob: 0, precip: 0 },
+    { key: 'midday',  label: 'MI', prob: 0, precip: 0 },
+    { key: 'evening', label: 'AB', prob: 0, precip: 0 },
+  ];
+}
+
+function _weatherSegmentsByDay(hourly = {}) {
+  const result = {};
+  (hourly.time || []).forEach((time, idx) => {
+    const day = String(time).slice(0, 10);
+    const hour = Number(String(time).slice(11, 13));
+    const segmentIndex = hour >= 6 && hour < 12 ? 0
+      : hour >= 12 && hour < 18 ? 1
+      : hour >= 18 && hour < 24 ? 2
+      : -1;
+    if (segmentIndex < 0) return;
+    if (!result[day]) result[day] = _emptyWeatherSegments();
+    const segment = result[day][segmentIndex];
+    segment.prob = Math.max(segment.prob, Number(hourly.precipitation_probability?.[idx] || 0));
+    segment.precip = Math.max(segment.precip, Number(hourly.precipitation?.[idx] || 0));
+  });
+  return result;
+}
+
+async function loadOffroadWetness(latitude, longitude) {
+  const resp = await fetch(
+    `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&hourly=precipitation&past_hours=48&forecast_hours=1&timezone=auto`,
+    { cache: 'no-store' }
+  );
+  const data = await resp.json();
+  const values = (data.hourly?.precipitation || []).map(v => Number(v || 0));
+  const total = values.reduce((sum, v) => sum + v, 0);
+  const maxHour = values.reduce((max, v) => Math.max(max, v), 0);
+
+  let level = 'dry';
+  let label = 'trocken';
+  if (total >= 25 || maxHour >= 8) {
+    level = 'heavy';
+    label = 'sehr nass';
+  } else if (total >= 10 || maxHour >= 4) {
+    level = 'wet';
+    label = 'nass';
+  } else if (total >= 2 || maxHour >= 1) {
+    level = 'damp';
+    label = 'feucht';
+  }
+
+  return { total, maxHour, level, label };
+}
+
+async function loadAllOffroadWetness(choices, tour) {
+  return Promise.all(choices.map(async choice => {
+    const resolved = await resolveTourWeatherChoice(choice, tour);
+    if (!resolved) return { choice, resolved: null, wetness: null };
+    const wetness = await loadOffroadWetness(resolved.latitude, resolved.longitude);
+    return { choice, resolved, wetness };
+  }));
+}
+
+function renderOffroadWetnessList(rows) {
+  if (!rows?.length) return '';
+  const cells = rows.map(row => {
+    if (!row.wetness) {
+      return {
+        className: 'offroad-wetness-missing',
+        name: row.choice.label,
+        score: '—',
+        total: null,
+        maxHour: null,
+      };
+    }
+    const total = row.wetness.total.toLocaleString('de-DE', { maximumFractionDigits: 1 });
+    const maxHour = row.wetness.maxHour.toLocaleString('de-DE', { maximumFractionDigits: 1 });
+    return {
+      className: `offroad-wetness-${row.wetness.level}`,
+      name: row.resolved.source || row.choice.label,
+      score: row.wetness.label,
+      total,
+      maxHour,
+    };
+  });
+
+  return `<div class="offroad-wetness-matrix-wrap">
+    <div class="offroad-wetness-matrix-title">OffRoad Regen-Index</div>
+    <table class="offroad-wetness-matrix">
+      <tbody>
+        <tr class="offroad-wetness-matrix-names">
+          ${cells.map(c => `<td class="${c.className}">${esc(c.name)}</td>`).join('')}
+        </tr>
+        <tr class="offroad-wetness-matrix-scores">
+          ${cells.map(c => `<td class="${c.className}">${esc(c.score)}</td>`).join('')}
+        </tr>
+        <tr class="offroad-wetness-matrix-history">
+          ${cells.map(c => `<td class="${c.className}">${c.total ? `<span>last 48h:</span><span>ges: ${esc(c.total)} mm</span><span>max/h: ${esc(c.maxHour)} mm/h</span>` : 'Position nicht verfügbar'}</td>`).join('')}
+        </tr>
+      </tbody>
+    </table>
+  </div>`;
+}
+
+function renderOffroadWetness(wetness) {
+  if (!wetness) return '';
+  const total = wetness.total.toLocaleString('de-DE', { maximumFractionDigits: 1 });
+  const maxHour = wetness.maxHour.toLocaleString('de-DE', { maximumFractionDigits: 1 });
+  return `<div class="offroad-wetness offroad-wetness-${wetness.level}">
+    <div>
+      <span class="offroad-wetness-label">Offroad-Nässe</span>
+      <strong>${wetness.label}</strong>
+    </div>
+    <div class="offroad-wetness-meta">
+      <span>48h ${total}mm</span>
+      <span>max st. ${maxHour}mm/h</span>
+    </div>
+  </div>`;
+}
+
+async function openRainRadarModal() {
+  const tour = state.currentTour;
+  const choice = getSelectedWeatherChoice(tour);
+  if (!tour || !choice) {
+    toast('Keine Wetterposition verfügbar.', 'error');
+    return;
+  }
+
+  document.getElementById('rain-radar-overlay')?.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'rain-radar-overlay';
+  overlay.className = 'rain-radar-overlay';
+  overlay.innerHTML = `
+    <div class="rain-radar-modal">
+      <div class="rain-radar-head">
+        <div>
+          <div class="rain-radar-title">Regenradar</div>
+          <div class="rain-radar-sub" id="rain-radar-sub">Lädt…</div>
+        </div>
+        <button class="rain-radar-close" id="rain-radar-close" aria-label="Schließen">×</button>
+      </div>
+      <div class="rain-radar-map" id="rain-radar-map"></div>
+      <div class="rain-radar-controls">
+        <button class="rain-radar-step" id="rain-radar-prev" title="Zurück">‹</button>
+        <button class="rain-radar-step" id="rain-radar-play" title="Animation starten">▶</button>
+        <input type="range" id="rain-radar-range" min="0" max="0" value="0" />
+        <button class="rain-radar-step" id="rain-radar-next" title="Vor">›</button>
+      </div>
+      <div class="rain-radar-foot">
+        <span id="rain-radar-time"></span>
+        <a href="https://www.rainviewer.com/" target="_blank" rel="noopener">RainViewer</a>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  document.body.style.overflow = 'hidden';
+
+  const close = () => {
+    if (window._rainRadarTimer) clearInterval(window._rainRadarTimer);
+    window._rainRadarTimer = null;
+    try { window._rainRadarMap?.remove(); } catch(e) {}
+    window._rainRadarMap = null;
+    overlay.remove();
+    document.body.style.overflow = '';
+  };
+  document.getElementById('rain-radar-close')?.addEventListener('click', close);
+  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+
+  try {
+    const resolved = await resolveTourWeatherChoice(choice, tour);
+    if (!resolved) throw new Error('Position konnte nicht bestimmt werden.');
+
+    document.getElementById('rain-radar-sub').textContent =
+      `${resolved.source || choice.label} · ${resolved.latitude.toFixed(5)}, ${resolved.longitude.toFixed(5)}`;
+
+    const metaResp = await fetch('https://api.rainviewer.com/public/weather-maps.json', { cache: 'no-store' });
+    const meta = await metaResp.json();
+    const pastFrames = (meta.radar?.past || []).map(f => ({ ...f, kind: 'past' }));
+    const nowcastFrames = (meta.radar?.nowcast || []).map(f => ({ ...f, kind: 'nowcast' }));
+    const frames = [...pastFrames, ...nowcastFrames];
+    if (!meta.host || !frames.length) throw new Error('Keine Radardaten verfügbar.');
+
+    const map = L.map('rain-radar-map', {
+      center: [resolved.latitude, resolved.longitude],
+      zoom: 7,
+      maxZoom: 7,
+      minZoom: 3,
+    });
+    window._rainRadarMap = map;
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      opacity: 0.9,
+      attribution: '&copy; OpenStreetMap',
+    }).addTo(map);
+
+    const boundsPoints = [[resolved.latitude, resolved.longitude]];
+    const gpxData = normalizeGPXRoute(tour.gpx_route);
+    (gpxData?.tracks || []).forEach((track, idx) => {
+      const pts = (track.points || []).filter(p => Number.isFinite(p?.[0]) && Number.isFinite(p?.[1]));
+      if (!pts.length) return;
+      L.polyline(pts.map(p => [p[0], p[1]]), {
+        color: track.color || TRACK_COLORS[idx % TRACK_COLORS.length],
+        weight: 4,
+        opacity: 0.95,
+      }).addTo(map);
+      boundsPoints.push(...pts.map(p => [p[0], p[1]]));
+    });
+
+    L.marker([resolved.latitude, resolved.longitude]).addTo(map);
+
+    const range = document.getElementById('rain-radar-range');
+    const prevBtn = document.getElementById('rain-radar-prev');
+    const nextBtn = document.getElementById('rain-radar-next');
+    const playBtn = document.getElementById('rain-radar-play');
+    let frameIndex = Math.max(0, pastFrames.length - 1);
+    let radarLayer = null;
+
+    range.max = String(frames.length - 1);
+
+    const setFrame = (index) => {
+      frameIndex = Math.max(0, Math.min(frames.length - 1, index));
+      const frame = frames[frameIndex];
+      if (radarLayer) map.removeLayer(radarLayer);
+      radarLayer = L.tileLayer(`${meta.host}${frame.path}/256/{z}/{x}/{y}/2/1_1.png`, {
+        tileSize: 256,
+        opacity: 0.72,
+        maxZoom: 7,
+        attribution: 'Radar: RainViewer',
+      }).addTo(map);
+
+      range.value = String(frameIndex);
+      prevBtn.disabled = frameIndex === 0;
+      nextBtn.disabled = frameIndex === frames.length - 1;
+      const time = new Date(frame.time * 1000).toLocaleString('de-DE', {
+        day: '2-digit',
+        month: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+      const tag = frame.kind === 'nowcast' ? 'Nowcast' : 'Radar';
+      document.getElementById('rain-radar-time').textContent = `${tag} ${time}`;
+    };
+
+    prevBtn.addEventListener('click', () => setFrame(frameIndex - 1));
+    nextBtn.addEventListener('click', () => setFrame(frameIndex + 1));
+    range.addEventListener('input', () => setFrame(Number(range.value)));
+    playBtn.addEventListener('click', () => {
+      if (window._rainRadarTimer) {
+        clearInterval(window._rainRadarTimer);
+        window._rainRadarTimer = null;
+        playBtn.textContent = '▶';
+        return;
+      }
+      playBtn.textContent = '⏸';
+      window._rainRadarTimer = setInterval(() => {
+        setFrame(frameIndex >= frames.length - 1 ? 0 : frameIndex + 1);
+      }, 700);
+    });
+
+    setFrame(frameIndex);
+    if (boundsPoints.length > 1) {
+      map.fitBounds(L.latLngBounds(boundsPoints), { padding: [28, 28], maxZoom: 7 });
+    }
+    setTimeout(() => map.invalidateSize(), 80);
+  } catch (e) {
+    console.warn('[rain radar]', e);
+    document.getElementById('rain-radar-sub').textContent = e.message || 'Radar konnte nicht geladen werden.';
+    document.getElementById('rain-radar-map').innerHTML = '<div class="weather-empty">Regenradar konnte nicht geladen werden.</div>';
+  }
+}
 
 /* ----------------------------------------------------------
    Check-in weather forecast (Open-Meteo, free, no API key)
@@ -475,7 +1054,7 @@ async function _extractMapCoords(url) {
   return null;
 }
 
-async function _loadCheckinWeather(tourId, destination, startDate, endDate, mapsLink) {
+async function _loadCheckinWeather(tourId, destination, startDate, endDate, mapsLink, tour = null) {
   const weatherEl = document.getElementById(`checkin-weather-${tourId}`);
   if (!weatherEl) return;
 
@@ -491,19 +1070,42 @@ async function _loadCheckinWeather(tourId, destination, startDate, endDate, maps
     return '⚡';
   };
 
+  const forecastConfidence = () => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const start = new Date(`${startDate}T00:00:00`);
+    const daysUntilStart = Math.round((start - today) / 86400000);
+    if (daysUntilStart <= 3) return { label: 'HOCH', className: 'high' };
+    if (daysUntilStart <= 7) return { label: 'MITTEL', className: 'medium' };
+    return { label: 'NIEDRIG', className: 'low' };
+  };
+
+  const applyConfidence = (hasTruncated) => {
+    const el = document.getElementById(`checkin-weather-confidence-${tourId}`);
+    if (!el) return;
+    const confidence = hasTruncated ? { label: 'NIEDRIG', className: 'low' } : forecastConfidence();
+    el.textContent = `SICHERHEIT ${confidence.label}`;
+    el.className = `checkin-weather-confidence checkin-weather-confidence-${confidence.className}`;
+  };
+
   // Helper: write fetched data into current DOM (called from cache and from fresh fetch)
-  const applyWeather = (days, codes, temps, hasTruncated, maxDateStr) => {
+  const applyWeather = (days, codes, temps, precipProbs, precipSums, hasTruncated, maxDateStr) => {
     const el = document.getElementById(`checkin-weather-${tourId}`);
     if (!el) return;
+    applyConfidence(hasTruncated);
     el.querySelectorAll('.checkin-weather-day').forEach(row => {
       const date = row.dataset.date;
       const idx  = days.indexOf(date);
       if (idx !== -1) {
         row.querySelector('[data-wicon]').textContent = wmoIcon(codes[idx]);
         row.querySelector('[data-wtemp]').textContent = `${Math.round(temps[idx])}°C`;
+        row.querySelector('[data-wrainprob]').textContent = `🌧 ${Math.round(precipProbs[idx] || 0)}%`;
+        row.querySelector('[data-wrain]').textContent = `${Number(precipSums[idx] || 0).toLocaleString('de-DE', { maximumFractionDigits: 1 })}mm`;
       } else if (date > maxDateStr) {
         row.querySelector('[data-wicon]').textContent = '—';
         row.querySelector('[data-wtemp]').textContent = '';
+        row.querySelector('[data-wrainprob]').textContent = '';
+        row.querySelector('[data-wrain]').textContent = '';
         row.style.opacity = '0.4';
       }
     });
@@ -533,7 +1135,7 @@ async function _loadCheckinWeather(tourId, destination, startDate, endDate, maps
   const WEATHER_CACHE_MAX_AGE_MS = 60 * 60 * 1000;
   const now = Date.now();
   const today = new Date(now).toISOString().slice(0, 10);
-  const cacheKey = [destination || '', startDate || '', endDate || '', mapsLink || ''].join('|');
+  const cacheKey = ['v3', destination || '', startDate || '', endDate || '', mapsLink || '', tour?.gpx_route ? 'gpx' : ''].join('|');
   const cached = state.weatherCache[tourId];
   const cachedFetchedAt = cached?.fetchedAt
     || (cached?.fetchDate ? Date.parse(`${cached.fetchDate}T00:00:00`) : 0);
@@ -542,48 +1144,71 @@ async function _loadCheckinWeather(tourId, destination, startDate, endDate, maps
   const isOnline = navigator.onLine !== false;
 
   if (cacheMatches) {
-    applyWeather(cached.days || [], cached.codes || [], cached.temps || [], hasTruncated, maxDateStr);
+    applyWeather(
+      cached.days || [],
+      cached.codes || [],
+      cached.temps || [],
+      cached.precipProbs || [],
+      cached.precipSums || [],
+      hasTruncated,
+      maxDateStr
+    );
     if (hasFreshCache || !isOnline) return;
   }
   if (!isOnline) return;
 
   try {
-    // 1. Resolve coordinates — prefer Treffpunkt maps link, fall back to geocoding
+    // 1. Resolve coordinates — prefer Treffpunkt maps link, then destination, then GPX start
     let latitude, longitude;
     const fromMap = await _extractMapCoords(mapsLink);
     if (fromMap) {
       ({ latitude, longitude } = fromMap);
     } else {
-      if (!destination) return;
-      const geoResp = await fetch(
-        `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(destination)}&count=1&language=de&format=json`
-      );
-      const geoData = await geoResp.json();
-      if (!geoData.results?.length) return;
-      ({ latitude, longitude } = geoData.results[0]);
+      if (destination) {
+        const geoResp = await fetch(
+          `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(destination)}&count=1&language=de&format=json`
+        );
+        const geoData = await geoResp.json();
+        if (geoData.results?.length) ({ latitude, longitude } = geoData.results[0]);
+      }
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        const gpx = normalizeGPXRoute(tour?.gpx_route);
+        const firstPoint = (gpx?.tracks || [])
+          .flatMap(track => track.points || [])
+          .find(p => Number.isFinite(p?.[0]) && Number.isFinite(p?.[1]));
+        if (firstPoint) {
+          latitude = firstPoint[0];
+          longitude = firstPoint[1];
+        }
+      }
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
     }
 
     // 2. Fetch forecast (only if tour start is within forecast window)
     const days  = [];
     const codes = [];
     const temps = [];
+    const precipProbs = [];
+    const precipSums  = [];
     if (startDate <= maxDateStr) {
       const weatherResp = await fetch(
-        `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&daily=temperature_2m_max,weathercode&timezone=auto&start_date=${startDate}&end_date=${clampedEnd}`,
+        `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&daily=temperature_2m_max,weathercode,precipitation_probability_max,precipitation_sum&timezone=auto&start_date=${startDate}&end_date=${clampedEnd}`,
         { cache: 'no-store' }
       );
       const weatherData = await weatherResp.json();
-      days.push(...(weatherData.daily?.time               || []));
-      codes.push(...(weatherData.daily?.weathercode        || []));
-      temps.push(...(weatherData.daily?.temperature_2m_max || []));
+      days.push(...(weatherData.daily?.time                          || []));
+      codes.push(...(weatherData.daily?.weathercode                   || []));
+      temps.push(...(weatherData.daily?.temperature_2m_max            || []));
+      precipProbs.push(...(weatherData.daily?.precipitation_probability_max || []));
+      precipSums.push(...(weatherData.daily?.precipitation_sum        || []));
     }
 
     // 3. Save to cache so SWR second-render reuses without re-fetching
-    state.weatherCache[tourId] = { days, codes, temps, fetchDate: today, fetchedAt: Date.now(), cacheKey };
+    state.weatherCache[tourId] = { days, codes, temps, precipProbs, precipSums, fetchDate: today, fetchedAt: Date.now(), cacheKey };
     if (typeof persistState === 'function') persistState();
 
     // 4. Apply to DOM
-    applyWeather(days, codes, temps, hasTruncated, maxDateStr);
+    applyWeather(days, codes, temps, precipProbs, precipSums, hasTruncated, maxDateStr);
   } catch (e) {
     console.warn('[checkin weather]', e);
   }
@@ -725,6 +1350,7 @@ async function init() {
           defaultCommunityId: profile.default_community_id || null,
         };
         state.profileCache[session.user.id] = profile.username;
+        migrateLegacySeenStateForCurrentUser();
         startHeartbeat();
 
         if (joinId) {

@@ -38,6 +38,7 @@ const state = {
   memberCounts:  {},
   tourMemberIds: {},
   homeBadges:    {},
+  seenState:     {},
   calMonth:      null,       // home calendar current month
   calView:       'month',    // 'month' | 'year' — home calendar
   planCalView:   'year',     // 'month' | 'year' — planning calendar
@@ -102,6 +103,7 @@ function persistState() {
       tourMemberIds:      state.tourMemberIds,
       tourMediaCounts:    state.tourMediaCounts,
       tourMediaNew:       state.tourMediaNew,
+      seenState:          state.seenState,
       weatherCache:       state.weatherCache,
       myTourIds:          [...(state.myTourIds || [])],
       myCommunityIds:     [...(state.myCommunityIds || [])],

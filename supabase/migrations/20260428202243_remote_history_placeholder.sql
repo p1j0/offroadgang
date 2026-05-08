@@ -1,0 +1,1 @@
+-- Placeholder for remote migration history already applied in Supabase.

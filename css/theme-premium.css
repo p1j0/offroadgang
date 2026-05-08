@@ -915,6 +915,382 @@ html, body {
   color: var(--text);
   letter-spacing: 0.02em;
 }
+.checkin-wd-rainprob,
+.checkin-wd-rain {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+.checkin-wd-rainprob { color: var(--accent); }
+.checkin-wd-rain { color: var(--muted); }
+.checkin-weather-confidence {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.checkin-weather-confidence-high { color: #4ade80; }
+.checkin-weather-confidence-medium { color: var(--accent); }
+.checkin-weather-confidence-low { color: #ffb020; }
+
+/* ---------- TOUR WEATHER TAB ---------- */
+.tour-weather-layout {
+  padding: 24px;
+  max-width: 860px;
+}
+.tour-weather-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.tour-weather-head h2 {
+  font-family: var(--font-display);
+  font-size: 28px;
+  letter-spacing: 1px;
+  margin: 0;
+}
+.tour-weather-select-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 240px;
+}
+.tour-weather-select-wrap span {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+.tour-weather-location {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+}
+.tour-weather-location span:first-child {
+  color: var(--accent);
+  font-weight: 800;
+}
+.tour-weather-points {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.tour-weather-point {
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+.tour-weather-point:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+.tour-weather-point-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+}
+.tour-weather-point-head strong {
+  color: var(--accent);
+  font-weight: 900;
+  letter-spacing: 0.04em;
+}
+.tour-weather-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: 8px;
+}
+.tour-weather-day {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 8px;
+  text-align: center;
+}
+.tour-weather-date,
+.tour-weather-temp,
+.tour-weather-rain,
+.tour-weather-mm,
+.weather-loading,
+.weather-empty {
+  font-family: var(--font-mono);
+}
+.tour-weather-date {
+  font-size: 10px;
+  color: var(--muted);
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.tour-weather-icon {
+  font-size: 24px;
+  line-height: 1;
+  margin: 7px 0;
+}
+.tour-weather-temp {
+  font-size: 13px;
+  color: var(--text);
+  font-weight: 800;
+}
+.tour-weather-segments {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 7px;
+}
+.tour-weather-segment {
+  display: grid;
+  grid-template-columns: 22px 1fr 1fr;
+  gap: 4px;
+  align-items: baseline;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  font-weight: 700;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.tour-weather-segment span:first-child {
+  color: var(--accent);
+  font-weight: 900;
+}
+.tour-weather-segment span:nth-child(2) {
+  color: var(--accent);
+}
+.weather-loading,
+.weather-empty {
+  color: var(--muted);
+  font-size: 12px;
+}
+.offroad-wetness {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--muted);
+  border-radius: var(--radius);
+}
+.offroad-wetness-label {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+.offroad-wetness strong {
+  font-family: var(--font-display);
+  font-size: 20px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+.offroad-wetness-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--muted);
+}
+.offroad-wetness-dry { border-left-color: #4ade80; }
+.offroad-wetness-damp { border-left-color: var(--accent); }
+.offroad-wetness-wet { border-left-color: #ffb020; }
+.offroad-wetness-heavy { border-left-color: #e04444; }
+.offroad-wetness-dry strong { color: #4ade80; }
+.offroad-wetness-damp strong { color: var(--accent); }
+.offroad-wetness-wet strong { color: #ffb020; }
+.offroad-wetness-heavy strong { color: #e04444; }
+.offroad-wetness-matrix-wrap {
+  width: 100%;
+  max-width: 100%;
+  margin: 0 0 16px;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface2);
+}
+.offroad-wetness-matrix {
+  width: 100%;
+  min-width: 640px;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+.offroad-wetness-matrix-title {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  text-transform: uppercase;
+}
+.offroad-wetness-matrix td {
+  width: 1%;
+  min-width: 104px;
+  padding: 7px 8px;
+  border-right: 1px solid var(--border);
+  font-family: var(--font-mono);
+  text-align: center;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  vertical-align: middle;
+}
+.offroad-wetness-matrix td:last-child { border-right: none; }
+.offroad-wetness-matrix-names td {
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1.2;
+}
+.offroad-wetness-matrix-scores td {
+  border-top: 1px solid var(--border);
+  font-family: var(--font-display);
+  font-size: clamp(11px, 1.35vw, 14px);
+  letter-spacing: 0;
+  text-transform: uppercase;
+  line-height: 1.05;
+}
+.offroad-wetness-matrix-history td {
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+.offroad-wetness-matrix-history span {
+  display: block;
+}
+.offroad-wetness-matrix .offroad-wetness-dry { color: #4ade80; }
+.offroad-wetness-matrix .offroad-wetness-damp { color: var(--accent); }
+.offroad-wetness-matrix .offroad-wetness-wet { color: #ffb020; }
+.offroad-wetness-matrix .offroad-wetness-heavy { color: #e04444; }
+.offroad-wetness-matrix-names .offroad-wetness-dry,
+.offroad-wetness-matrix-names .offroad-wetness-damp,
+.offroad-wetness-matrix-names .offroad-wetness-wet,
+.offroad-wetness-matrix-names .offroad-wetness-heavy {
+  color: var(--text);
+}
+.tour-weather-controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+.rain-radar-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 5000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  background: rgba(5, 5, 8, 0.78);
+}
+.rain-radar-modal {
+  width: min(980px, 100%);
+  height: min(720px, calc(100vh - 36px));
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.rain-radar-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.rain-radar-title {
+  font-family: var(--font-display);
+  font-size: 24px;
+  letter-spacing: 1px;
+  color: var(--text);
+}
+.rain-radar-sub,
+.rain-radar-foot {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+}
+.rain-radar-close {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface2);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 20px;
+  line-height: 1;
+}
+.rain-radar-map {
+  flex: 1;
+  min-height: 360px;
+}
+.rain-radar-controls {
+  display: grid;
+  grid-template-columns: 34px 34px 1fr 34px;
+  gap: 8px;
+  align-items: center;
+  padding: 9px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--surface2);
+}
+.rain-radar-step {
+  width: 34px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--accent);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-weight: 900;
+}
+.rain-radar-step:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+#rain-radar-range {
+  width: 100%;
+  accent-color: var(--accent);
+}
+.rain-radar-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+}
+.rain-radar-foot a {
+  color: var(--accent);
+  text-decoration: none;
+}
 
 /* ---------- WEATHER FORECAST HINT ---------- */
 .checkin-weather-hint {
