@@ -1174,6 +1174,10 @@ async function leaveCommunity() {
     .eq('community_id', state.currentCommunityId)
     .eq('user_id', state.currentUser.id);
   if (error) throw new Error(error.message);
+  // Log vor dem State-Update, damit currentCommunityId noch gesetzt ist.
+  // Ohne diesen Log-Eintrag bleibt das Verlassen der Community im normalen
+  // Changelog unsichtbar (Audit-Tabelle hat es zwar, aber Admins sehen sie nicht).
+  await logCommunityChange('Mitglied verlassen', state.currentUser.username, '');
   state.myCommunityIds.delete(state.currentCommunityId);
 }
 
@@ -1261,6 +1265,8 @@ async function removeCommunityMember(userId) {
     .eq('community_id', state.currentCommunityId)
     .eq('user_id', userId);
   if (error) throw new Error(error.message);
+  const username = state.profileCache[userId] || userId;
+  await logCommunityChange('Mitglied entfernt', username, '');
 }
 
 async function createCommunity(name, password) {
