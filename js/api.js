@@ -3,6 +3,9 @@
    Depends on: config.js (sb), state.js (state)
    ============================================================ */
 
+// Home-Liste: route_metadata absichtlich ausgelassen — die Tourenkarten
+// brauchen es nicht. route_metadata.preview ist 6–25 KB pro Tour, das
+// summiert sich auf ~120 KB pro Home-Aufruf für nichts.
 const TOUR_LIST_SELECT = [
   'id',
   'community_id',
@@ -15,12 +18,14 @@ const TOUR_LIST_SELECT = [
   'description',
   'distance',
   'surface_display',
-  'route_metadata',
   'created_at',
 ].join(',');
 
+// Detail-View: zusätzlich route_metadata (für Mini-Map-Preview im Overview-Tab)
+// und surface_analysis (für die volle Surface-Aufschlüsselung).
 const TOUR_DETAIL_SELECT = [
   TOUR_LIST_SELECT,
+  'route_metadata',
   'surface_analysis',
   'surface_analysis_updated_at',
 ].join(',');
@@ -52,23 +57,32 @@ function _preserveCachedRoute(tour) {
   const cached = _cachedRouteFields(tour?.id);
   if (!tour || !cached) return tour;
 
-  // Wenn sich route_metadata verändert hat, ist der gecachte gpx_route veraltet.
-  // In diesem Fall wird gpx_route nicht übernommen → Karte zeigt Preview aus
-  // route_metadata.preview, voller GPX wird erst beim Zoom-Button neu geladen.
+  // Home-Liste lädt route_metadata absichtlich nicht (Egress-Optimierung).
+  // In dem Fall: gpx_route NICHT mit-mergen — es würde sonst in state.tours[i]
+  // landen und beim Persist nach localStorage 800 KB pro Tour wegfressen.
+  // Auch keine Stale-Detection in diesem Pfad (würde fälschlich triggern).
+  const hasFreshMeta = !!tour.route_metadata;
+  if (!hasFreshMeta) {
+    return tour; // Home-Pfad: nichts mergen, GPX bleibt nur in currentTour
+  }
+
+  // Detail-Pfad: voller route_metadata-Vergleich
   const newFp    = _routeFingerprint(tour.route_metadata);
   const cachedFp = _routeFingerprint(cached.route_metadata);
   const gpxStale = newFp !== cachedFp;
 
   if (gpxStale) {
-    // Als veraltet markieren damit loadGPX den SW-Cache umgeht
     state._staleGpxTourIds = state._staleGpxTourIds || new Set();
     state._staleGpxTourIds.add(tour.id);
+    if (typeof gpxCacheDelete === 'function') {
+      gpxCacheDelete(tour.id); // fire & forget
+    }
   }
 
   return {
     ...tour,
-    gpx_route:       gpxStale ? null : cached.gpx_route,
-    route_metadata:  tour.route_metadata || cached.route_metadata,
+    gpx_route:        gpxStale ? null : cached.gpx_route,
+    route_metadata:   tour.route_metadata,
     surface_analysis: gpxStale ? null : (tour.surface_analysis || cached.surface_analysis),
     surface_display:  gpxStale ? null : (tour.surface_display  || cached.surface_display),
   };
@@ -296,6 +310,12 @@ async function loadHomeData() {
 
   await computeHomeBadges();
   state._loadedHomeForCid = cid;
+
+  // GPX-Cache aufräumen: Tour-IDs die wir nicht mehr sehen → IndexedDB
+  // Eintrag löschen. Fire-and-forget, blockiert nicht.
+  if (typeof gpxCacheCleanup === 'function') {
+    gpxCacheCleanup((state.tours || []).map(t => t.id));
+  }
 }
 
 /**
@@ -478,10 +498,38 @@ function _dedupeLogEntries(entries, windowMs = 2 * 60 * 1000) {
  * Reload only the changelog for the current tour.
  */
 async function loadChangelog() {
+  const tourId = state.currentTourId;
+  const cached = state.tourChangelog;
+  const newest = cached?.[0]?.created_at; // list is sorted desc
+
+  // Wenn wir lokal schon was haben: HEAD-Check ob es überhaupt Neueres gibt.
+  // Spart den vollen GET (LIMIT 50) wenn nichts dazu kam.
+  if (newest && navigator.onLine) {
+    const head = await sb
+      .from('change_log')
+      .select('id', { head: true, count: 'exact' })
+      .eq('tour_id', tourId)
+      .gt('created_at', newest);
+    if ((head.count || 0) === 0) return; // nichts Neues → Cache reicht
+    // Nur die neuen Einträge holen, nicht alles neu:
+    const { data: deltaRows } = await sb
+      .from('change_log')
+      .select(TOUR_CHANGELOG_SELECT)
+      .eq('tour_id', tourId)
+      .gt('created_at', newest)
+      .order('created_at', { ascending: false });
+    if (deltaRows?.length) {
+      // Vorne anhängen, auf TOUR_INITIAL_LIMIT kappen
+      state.tourChangelog = [...deltaRows, ...cached].slice(0, TOUR_INITIAL_LIMIT);
+    }
+    return;
+  }
+
+  // Kein Cache (Erstaufruf) oder offline → Vollladen
   const { data } = await sb
     .from('change_log')
     .select(TOUR_CHANGELOG_SELECT)
-    .eq('tour_id', state.currentTourId)
+    .eq('tour_id', tourId)
     .order('created_at', { ascending: false })
     .limit(TOUR_INITIAL_LIMIT);
   state.tourChangelog = data || [];
@@ -533,10 +581,38 @@ async function logChange(field, oldValue, newValue) {
  * Refresh only the messages for the current tour.
  */
 async function loadMessages() {
+  const tourId = state.currentTourId;
+  const cached = state.tourMessages || [];
+  // tourMessages ist asc sortiert → newest ist last
+  const newest = cached.length ? cached[cached.length - 1].created_at : null;
+
+  if (newest && navigator.onLine) {
+    const head = await sb
+      .from('messages')
+      .select('id', { head: true, count: 'exact' })
+      .eq('tour_id', tourId)
+      .gt('created_at', newest);
+    if ((head.count || 0) === 0) return; // keine neuen Nachrichten
+
+    const { data: deltaRows } = await sb
+      .from('messages')
+      .select(TOUR_MESSAGE_SELECT)
+      .eq('tour_id', tourId)
+      .gt('created_at', newest)
+      .order('created_at', { ascending: true });
+    if (deltaRows?.length) {
+      // Anhängen, dann auf TOUR_INITIAL_LIMIT kappen (älteste fallen raus)
+      const merged = [...cached, ...deltaRows];
+      state.tourMessages = merged.slice(-TOUR_INITIAL_LIMIT);
+    }
+    return;
+  }
+
+  // Erstaufruf oder offline → Vollladen
   const { data } = await sb
     .from('messages')
     .select(TOUR_MESSAGE_SELECT)
-    .eq('tour_id', state.currentTourId)
+    .eq('tour_id', tourId)
     .order('created_at', { ascending: false })
     .limit(TOUR_INITIAL_LIMIT);
   state.tourMessages = (data || []).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
@@ -852,6 +928,10 @@ async function saveGPX(route, gpxText = '') {
     state.currentTour.surface_display = null;
     state.currentTour.surface_analysis_updated_at = null;
   }
+  // Frischen GPX im IndexedDB-Cache ablegen mit neuem Fingerprint
+  if (typeof gpxCachePut === 'function') {
+    try { await gpxCachePut(state.currentTourId, route, routeMetadata); } catch (e) {}
+  }
   const tracks = route?.tracks?.length || 0;
   const wpts   = route?.waypoints?.length || 0;
   await logChange('Route', hadRoute ? 'Vorherige Route' : '', `${tracks} Track(s), ${wpts} Wegpunkt(e)`);
@@ -930,6 +1010,10 @@ async function deleteGPX() {
     state.currentTour.surface_analysis = null;
     state.currentTour.surface_display = null;
     state.currentTour.surface_analysis_updated_at = null;
+  }
+  // GPX-Cache für diese Tour leeren
+  if (typeof gpxCacheDelete === 'function') {
+    try { await gpxCacheDelete(state.currentTourId); } catch (e) {}
   }
   await logChange('Route', 'Route vorhanden', 'Gelöscht');
 }
@@ -1296,20 +1380,42 @@ async function loadTourRouteGeometry(tourId) {
 }
 
 async function ensureCurrentTourRouteLoaded() {
-  if (!state.currentTourId) return null;
+  const tourId = state.currentTourId;
+  if (!tourId) return null;
   if (state.currentTour?.gpx_route) return state.currentTour.gpx_route;
 
-  // Wenn der GPX für diese Tour als veraltet markiert ist (route_metadata hat sich
-  // geändert seit dem letzten gecachten GPX-Load), SW-Cache zuerst leeren damit
-  // frische Daten vom Netzwerk geladen werden — kein Egress für normale Aufrufe.
-  const isStale = state._staleGpxTourIds?.has(state.currentTourId);
-  if (isStale && typeof _invalidateSWTable === 'function') {
-    await _invalidateSWTable('tours');
-    state._staleGpxTourIds.delete(state.currentTourId);
+  const isStale = state._staleGpxTourIds?.has(tourId);
+
+  // 1. IndexedDB-Cache prüfen (überlebt Reload, Multi-Tour-Sessions, Tabwechsel)
+  //    Wird übersprungen wenn der GPX als stale markiert ist — dann muss frisch.
+  if (!isStale && typeof gpxCacheGet === 'function') {
+    try {
+      const cached = await gpxCacheGet(tourId, state.currentTour?.route_metadata);
+      if (cached) {
+        if (state.currentTour?.id === tourId) state.currentTour.gpx_route = cached;
+        return cached;
+      }
+    } catch (e) { /* fallback to network */ }
   }
 
-  const data = await loadTourRouteGeometry(state.currentTourId);
-  return data?.gpx_route || null;
+  // 2. Wenn stale: SW-Cache für tours zuerst leeren, damit der Fetch wirklich
+  //    vom Netzwerk kommt und nicht eine alte Antwort liefert.
+  if (isStale && typeof _invalidateSWTable === 'function') {
+    await _invalidateSWTable('tours');
+    state._staleGpxTourIds.delete(tourId);
+    if (typeof gpxCacheDelete === 'function') await gpxCacheDelete(tourId);
+  }
+
+  // 3. Netzwerk-Fetch
+  const data = await loadTourRouteGeometry(tourId);
+  const gpx  = data?.gpx_route || null;
+
+  // 4. In IndexedDB ablegen für die nächste Session
+  if (gpx && typeof gpxCachePut === 'function') {
+    try { await gpxCachePut(tourId, gpx, data?.route_metadata || state.currentTour?.route_metadata); }
+    catch (e) { /* non-fatal */ }
+  }
+  return gpx;
 }
 
 /**
