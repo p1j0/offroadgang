@@ -331,8 +331,9 @@ function _canForegroundRefresh() {
   if (document.visibilityState && document.visibilityState !== 'visible') return false;
   if (_navigating || _foregroundRefreshRunning) return false;
   if (_isInteractiveElementActive() || _hasVisibleBlockingUi()) return false;
-  if (state.view === 'tour' && state.currentTab === 'map') return false;
-  if (state.view === 'planning' && state.planningTab === 'map') return false;
+  // Map-Tabs werden NICHT mehr ausgeschlossen — wir wollen externe GPX-Updates
+  // erkennen. Der full-Re-Render wird in refreshCurrentView gezielt unterdrückt
+  // damit die Leaflet-Karte nicht zerlegt wird; stattdessen erscheint ein Toast.
   return ['communities', 'community-home', 'planning', 'community-media', 'tour'].includes(state.view);
 }
 
@@ -389,10 +390,51 @@ async function refreshCurrentView({ force = false } = {}) {
   _foregroundRefreshRunning = true;
   _lastForegroundRefreshAt = now;
   const view = state.view;
+  const onTourMap = view === 'tour'    && state.currentTab === 'map';
+  const onPlanMap = view === 'planning' && state.planningTab === 'map';
+  const onMapTab  = onTourMap || onPlanMap;
+
+  // Vor dem Refresh: Fingerprints merken um externe GPX-Updates zu erkennen.
+  // _loadViewData ruft loadTourData/loadPlanningMapRoutes auf, die intern via
+  // _preserveCachedRoute den Fingerprint vergleichen und state aktualisieren.
+  const beforeTourFp = onTourMap
+    ? (typeof _routeFingerprint === 'function' ? _routeFingerprint(state.currentTour?.route_metadata) : null)
+    : null;
+  const beforePlanFps = onPlanMap
+    ? new Map((state.communityToursGpx || []).map(t => [
+        t.id,
+        typeof _routeFingerprint === 'function' ? _routeFingerprint(t.route_metadata) : ''
+      ]))
+    : null;
 
   try {
     await _loadViewData(view);
     if (state.view !== view || !_canForegroundRefresh()) return;
+
+    if (onMapTab) {
+      // Auf dem Map-Tab: KEIN render() — sonst zerlegen wir die Leaflet-Karte
+      // mitten in der User-Interaktion. Stattdessen Toast wenn GPX-Daten extern
+      // aktualisiert wurden; die Karte zeigt weiter den alten Stand bis der User
+      // den Tab neu öffnet (dann initMap mit frischem state.currentTour.gpx_route=null
+      // → Preview, beim Zoom-Klick voller GPX vom Server).
+      let staleDetected = false;
+      if (onTourMap) {
+        const afterFp = _routeFingerprint(state.currentTour?.route_metadata);
+        if (beforeTourFp && afterFp && beforeTourFp !== afterFp) staleDetected = true;
+      } else if (onPlanMap) {
+        for (const t of (state.communityToursGpx || [])) {
+          const before = beforePlanFps.get(t.id);
+          const after  = _routeFingerprint(t.route_metadata);
+          if (before && after && before !== after) { staleDetected = true; break; }
+        }
+      }
+      if (staleDetected && typeof toast === 'function') {
+        toast('Route wurde aktualisiert — Karte neu öffnen für die neue Version');
+      }
+      persistState();
+      return;
+    }
+
     render();
     persistState();
   } catch (e) {

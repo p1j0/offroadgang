@@ -93,7 +93,10 @@ function persistState() {
       currentCommunityId: state.currentCommunityId,
       currentCommunity:   state.currentCommunity,
       currentTourId:      state.currentTourId,
-      currentTour:        state.currentTour,
+      // gpx_route lebt in IndexedDB (siehe gpx-cache.js) — beim Persistieren
+      // hier rausstrippen damit das 5-MB-Limit von localStorage nicht
+      // gesprengt wird (volle GPX = bis zu 800 KB pro Tour).
+      currentTour:        state.currentTour ? { ...state.currentTour, gpx_route: undefined } : state.currentTour,
       communities:        state.communities,
       tours:              state.tours,
       communityMembers:   state.communityMembers,

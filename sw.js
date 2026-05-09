@@ -18,6 +18,7 @@ const PRECACHE = [
   '/js/config.js',
   '/js/state.js',
   '/js/utils.js',
+  '/js/gpx-cache.js',
   '/js/api.js',
   '/js/auth.js',
   '/js/map.js',
