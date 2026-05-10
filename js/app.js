@@ -593,6 +593,19 @@ function _redrawAllMapTiles() {
   }
 }
 
+async function hydrateCurrentTourGpxFromCache() {
+  const tour = state.currentTour;
+  if (!tour?.id || tour.gpx_route || typeof gpxCacheGet !== 'function') return;
+  try {
+    const cached = await gpxCacheGet(tour.id, tour.route_metadata);
+    if (cached && state.currentTour?.id === tour.id) {
+      state.currentTour.gpx_route = cached;
+    }
+  } catch (e) {
+    console.warn('[offline gpx hydrate]', e);
+  }
+}
+
 /* ----------------------------------------------------------
    Render dispatcher
    ---------------------------------------------------------- */
@@ -1555,6 +1568,7 @@ async function init() {
   const restoredAtBoot = restoreState() && !!state.currentUser;
   if (restoredAtBoot && !navigator.onLine) {
     console.log('[init] Boot mit gespeichertem State');
+    await hydrateCurrentTourGpxFromCache();
     state.view = state.currentCommunityId ? 'community-home' : 'communities';
     render();
     return;

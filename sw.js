@@ -3,7 +3,7 @@
    Handles: offline caching + Web Push Notifications
    ============================================================ */
 
-const CACHE_NAME = 'motoroute-v10';
+const CACHE_NAME = 'motoroute-v11';
 const API_CACHE_NAME  = 'motoroute-api-v1';
 const TILE_CACHE_NAME = 'motoroute-tiles-v1';
 const TILE_CACHE_MAX  = 500; // ~500 Tiles × ø20 KB = max ~10 MB
@@ -15,6 +15,11 @@ const PRECACHE = [
   '/manifest.json',
   '/css/styles.css',
   '/css/theme-premium.css',
+  '/vendor/leaflet/leaflet.min.css',
+  '/vendor/leaflet/leaflet.min.js',
+  '/vendor/leaflet/images/marker-icon.png',
+  '/vendor/leaflet/images/marker-icon-2x.png',
+  '/vendor/leaflet/images/marker-shadow.png',
   '/js/config.js',
   '/js/state.js',
   '/js/utils.js',
