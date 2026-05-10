@@ -213,6 +213,19 @@ async function navigateTo(view, params = {}) {
   _navigating = true;
 
   try {
+    // Offline-Pre-Check: Wenn wir offline sind und auf eine Tour navigieren
+    // wollen, die nicht im persistierten State ist, gibt es keine Möglichkeit
+    // sie zu laden. Toast statt User in eine "Tour nicht gefunden"-Sackgasse
+    // navigieren zu lassen.
+    if (view === 'tour' && !navigator.onLine) {
+      const targetTourId = params.currentTourId || state.currentTourId;
+      if (targetTourId && state.currentTour?.id !== targetTourId) {
+        if (typeof toast === 'function') toast('Diese Tour ist offline nicht verfügbar', 'error');
+        _navigating = false;
+        return;
+      }
+    }
+
     // Tear down map when leaving the tour detail page
     if (mapInstance && view !== 'tour') destroyMap();
     // Tear down overview mini-map when leaving tour

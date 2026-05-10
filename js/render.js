@@ -312,7 +312,16 @@ function renderPageHeader() {
       break;
 
     case 'tour': {
-      if (!tour) return '';
+      if (!tour) {
+        // Tour nicht im State (z.B. offline + Cache-Miss): trotzdem Back-Button
+        // rendern, sonst sitzt der User in einer Sackgasse fest.
+        backBtn = `<button class="btn-icon-back" id="back-home" title="Zurück" aria-label="Zurück">${backIcon}</button>`;
+        return `${backBtn}
+          <div class="page-header-titleblock">
+            <div class="page-header-eyebrow">${esc(community?.name || 'Community')}</div>
+            <div class="page-header-title">Tour</div>
+          </div>`;
+      }
       const canLeave = tour.admin_id !== state.currentUser.id;
       // Date period
       const tStart = new Date(tour.date + 'T12:00:00');
@@ -1115,7 +1124,16 @@ function renderJoin() {
 
 function renderTour() {
   const tour = state.currentTour;
-  if (!tour) return '<div style="padding:40px;color:var(--muted)">Tour nicht gefunden.</div>';
+  if (!tour) {
+    const isOffline = !navigator.onLine;
+    const msg = isOffline
+      ? 'Diese Tour ist offline nicht verfügbar. Bitte gehe online oder kehre zur Community zurück.'
+      : 'Tour nicht gefunden.';
+    return `<div style="padding:40px;color:var(--muted);text-align:center">
+      <div style="margin-bottom:16px">${esc(msg)}</div>
+      <button class="btn btn-primary" id="back-home">Zurück zur Community</button>
+    </div>`;
+  }
 
   const tabs = [
     { id: 'overview',     label: '⊞' },
