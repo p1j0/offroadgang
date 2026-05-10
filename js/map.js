@@ -337,39 +337,55 @@ function initMap(tour) {
     endMarker        = null;
   }
 
-  // Daten zuerst auflösen, damit wir den initialen View direkt auf die Tour
-  // zentrieren können. Andernfalls würde Leaflet zuerst Tiles für den Default
-  // (zoom 7, Mitte Deutschland) anfragen — die sind im Offline-Fall fast nie
-  // gecacht und der User sieht eine "dunkle" Karte, bis drawGPX→fitBounds
-  // greift. Mit korrektem Initial-Center werden direkt die gecachten Tour-
-  // Tiles geholt.
+  // Daten + Bounds zuerst auflösen, damit wir den initialen View direkt auf
+  // die Tour zentrieren können. Andernfalls würde Leaflet zuerst Tiles für
+  // den Default (zoom 7, Mitte Deutschland) anfragen — die sind im Offline-
+  // Fall fast nie gecacht und der User sieht eine "dunkle" Karte, bis
+  // drawGPX→fitBounds greift.
   const data = normalizeGPXRoute(tour.gpx_route)
     || (typeof routeMetadataToPreviewRoute === 'function' ? routeMetadataToPreviewRoute(tour.route_metadata) : null);
 
+  // Initial-Bounds: bevorzugt aus route_metadata.bounds (immer vorhanden wenn
+  // GPX existiert, auch wenn preview leer ist), Fallback aus Track-Punkten.
+  let initBounds = null;
+  const rmBounds = tour.route_metadata?.bounds;
+  if (rmBounds
+      && Number.isFinite(rmBounds.minLat) && Number.isFinite(rmBounds.maxLat)
+      && Number.isFinite(rmBounds.minLon) && Number.isFinite(rmBounds.maxLon)) {
+    initBounds = L.latLngBounds(
+      [rmBounds.minLat, rmBounds.minLon],
+      [rmBounds.maxLat, rmBounds.maxLon]
+    );
+  } else if (data?.tracks?.length) {
+    const allPoints = data.tracks.flatMap(t => t.points || []);
+    if (allPoints.length) initBounds = L.latLngBounds(allPoints);
+  }
+
   let initCenter = [48.2, 9.5];
   let initZoom   = 7;
-  let initBounds = null;
-  if (data?.tracks?.length) {
-    const allPoints = data.tracks.flatMap(t => t.points || []);
-    if (allPoints.length) {
-      initBounds = L.latLngBounds(allPoints);
-      const c = initBounds.getCenter();
-      initCenter = [c.lat, c.lng];
-      initZoom   = 11; // grobe Schätzung; fitBounds verfeinert gleich
-    }
+  if (initBounds) {
+    const c = initBounds.getCenter();
+    initCenter = [c.lat, c.lng];
+    initZoom   = 12; // typisch für Tour-View; fitBounds verfeinert gleich
   }
 
   mapInstance = L.map('map', { center: initCenter, zoom: initZoom, zoomControl: true });
-  if (initBounds) {
-    // Bounds direkt vor dem tileLayer setzen — so kennt Leaflet die richtige
-    // Größe/zoom-Stufe schon beim ersten Tile-Request.
-    mapInstance.fitBounds(initBounds, { padding: [40, 40], animate: false });
-  }
 
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
     maxZoom: 19,
   }).addTo(mapInstance);
+
+  // Container-Größe an Leaflet weitergeben, falls der Tab-Wechsel die CSS-
+  // Layout-Pass noch nicht durch hatte. Ohne invalidateSize bleibt die Karte
+  // gelegentlich auf 0×0 und zeigt nichts an.
+  requestAnimationFrame(() => {
+    if (!mapInstance) return;
+    mapInstance.invalidateSize(false);
+    if (initBounds) {
+      mapInstance.fitBounds(initBounds, { padding: [40, 40], animate: false });
+    }
+  });
 
   if (data) drawGPX(data);
 }
