@@ -391,16 +391,26 @@ function initMap(tour) {
   // Worker noch nicht die Kontrolle übernommen hat, gehen die ersten Tile-
   // Requests am SW vorbei direkt ans Netzwerk — das schlägt offline fehl
   // und die Tiles bleiben als "loaded" markiert (broken/empty), die Karte
-  // bleibt dunkel. Sobald der SW ready ist, alle Tiles neu zeichnen.
-  if ('serviceWorker' in navigator && navigator.serviceWorker.ready) {
-    navigator.serviceWorker.ready
-      .then(() => {
-        if (mapInstance && tileLayer && typeof tileLayer.redraw === 'function') {
-          tileLayer.redraw();
-        }
-      })
-      .catch(() => {});
+  // bleibt dunkel. Mehrere Versuche zum Tile-Redraw verteilt, damit der SW
+  // garantiert die Kontrolle hat:
+  //  • sofort wenn SW.ready resolvet
+  //  • bei controllerchange (falls SW erst nach dem Mount aktiv wird)
+  //  • zusätzlich nach 1s und 3s als Brute-Force gegen iOS-Eigenheiten
+  const redraw = () => {
+    if (!mapInstance || !tileLayer || typeof tileLayer.redraw !== 'function') return;
+    console.log('[map] redrawing tiles, SW controller:', !!navigator.serviceWorker?.controller);
+    tileLayer.redraw();
+  };
+  if ('serviceWorker' in navigator) {
+    if (navigator.serviceWorker.ready) {
+      navigator.serviceWorker.ready.then(redraw).catch(() => {});
+    }
+    if (!navigator.serviceWorker.controller) {
+      navigator.serviceWorker.addEventListener('controllerchange', redraw, { once: true });
+    }
   }
+  setTimeout(redraw, 1000);
+  setTimeout(redraw, 3000);
 
   if (data) drawGPX(data);
 }

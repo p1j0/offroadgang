@@ -528,21 +528,49 @@ function startForegroundRefresh() {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') refreshCurrentView({ force: true });
   });
-  window.addEventListener('online', () => {
-    // Wenn der User vorher offline war, hat Leaflet TileLayer die fehlgeschlagenen
-    // (oder leeren-PNG-) Tiles als "loaded" markiert und fragt sie nicht neu an.
-    // Beim Wiederkehren der Verbindung explizit redrawen, sonst bleibt die Karte
-    // dunkel bis der User pannt/zoomt.
-    _redrawAllMapTiles();
-    // Ebenso ggf. fehlende GPX-Geometrie laden, falls der User noch im Map-Tab
-    // ist und sie offline nicht gecached war.
-    if (state.view === 'tour' && state.currentTab === 'map' && typeof ensureCurrentTourRouteLoaded === 'function') {
-      ensureCurrentTourRouteLoaded().catch(() => {});
-    }
-    refreshCurrentView({ force: true });
-  });
+  window.addEventListener('online', _scheduleOnlineReload);
   window.addEventListener('focus', () => refreshCurrentView({ force: true }));
 }
+
+/**
+ * Beim Online-Wiederkehr macht die App einen vollen Page-Reload anstatt
+ * Tiles/State manuell zu reparieren. Grund: iOS Safari behält nach Flugmodus
+ * gerne kaputte Network-Sockets — `navigator.onLine` sagt true, aber Fetches
+ * scheitern weiter, bis der Tab neu geladen wird. Ein Reload löst das
+ * zuverlässig.
+ *
+ * Guards:
+ *  - Nicht reloaden wenn User gerade tippt (Input/Textarea aktiv)
+ *  - Nicht reloaden wenn ein Modal offen ist (würde Form-State verlieren)
+ *  - Nur einmal pro Session pro online-Übergang
+ *  - Nicht reloaden wenn wir uns gar nicht erinnern offline gewesen zu sein
+ *    (mancher Browser feuert online auch direkt nach App-Start)
+ */
+let _wasOffline = !navigator.onLine;
+let _onlineReloadScheduled = false;
+function _scheduleOnlineReload() {
+  if (!_wasOffline) return; // war nie offline → nichts zu tun
+  if (_onlineReloadScheduled) return;
+  _onlineReloadScheduled = true;
+
+  const tryReload = () => {
+    // Guards: User nicht beim Tippen / mit offenem Modal stören
+    if (_isInteractiveElementActive() || _hasVisibleBlockingUi()) {
+      // 5s später erneut versuchen
+      setTimeout(tryReload, 5000);
+      return;
+    }
+    if (typeof toast === 'function') toast('Verbindung wiederhergestellt — lade neu…');
+    setTimeout(() => location.reload(), 600);
+  };
+
+  // Kurzer Delay damit iOS-Socket sich beruhigt + Toast-Zeit
+  setTimeout(tryReload, 800);
+}
+window.addEventListener('offline', () => {
+  _wasOffline = true;
+  _onlineReloadScheduled = false;
+});
 
 /**
  * Forciere TileLayer-Redraw auf allen aktiven Leaflet-Maps. Wird beim Online-
