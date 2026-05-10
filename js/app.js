@@ -407,9 +407,45 @@ async function refreshCurrentView({ force = false } = {}) {
       ]))
     : null;
 
+  // Snapshot der wichtigsten Listen-Längen, um nach dem Refresh zu erkennen ob
+  // der Server-Roundtrip die Daten "verloren" hat (z.B. transienter Netzwerk-
+  // fehler, JWT-Ablauf). In dem Fall: KEIN persistState, sonst überschreiben
+  // wir die guten Daten in localStorage mit leeren Listen.
+  const beforeCounts = {
+    tours:             state.tours?.length             || 0,
+    tourMessages:      state.tourMessages?.length      || 0,
+    tourMembers:       state.tourMembers?.length       || 0,
+    tourChangelog:     state.tourChangelog?.length     || 0,
+    communityPolls:    state.communityPolls?.length    || 0,
+    communityMessages: state.communityMessages?.length || 0,
+    communityMembers:  state.communityMembers?.length  || 0,
+    communityMedia:    state.communityMedia?.length    || 0,
+  };
+
   try {
     await _loadViewData(view);
     if (state.view !== view || !_canForegroundRefresh()) return;
+
+    // Hat der Refresh eine zuvor gefüllte Liste auf 0 reduziert? Das ist bei
+    // einer einzelnen Aktion fast immer ein Symptom (transient), nicht das
+    // legitime "alles wurde gelöscht"-Szenario. State behalten.
+    const afterCounts = {
+      tours:             state.tours?.length             || 0,
+      tourMessages:      state.tourMessages?.length      || 0,
+      tourMembers:       state.tourMembers?.length       || 0,
+      tourChangelog:     state.tourChangelog?.length     || 0,
+      communityPolls:    state.communityPolls?.length    || 0,
+      communityMessages: state.communityMessages?.length || 0,
+      communityMembers:  state.communityMembers?.length  || 0,
+      communityMedia:    state.communityMedia?.length    || 0,
+    };
+    const dataLost = Object.keys(beforeCounts).some(
+      k => beforeCounts[k] > 0 && afterCounts[k] === 0
+    );
+    if (dataLost) {
+      console.warn('[refreshCurrentView] data shrunk to empty — likely transient, skipping render+persist', { beforeCounts, afterCounts });
+      return; // weder Render noch Persist
+    }
 
     if (onMapTab) {
       // Auf dem Map-Tab: KEIN render() — sonst zerlegen wir die Leaflet-Karte
