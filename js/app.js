@@ -250,6 +250,18 @@ async function navigateTo(view, params = {}) {
       _planMapLayers   = [];
     }
 
+    // Snapshot vor State-Änderung — nötig für Revert wenn loadViewData transient
+    // fehlschlägt (iOS-Sockets nach Flugmodus, Timeout etc.). Ohne Revert würde
+    // der User auf einer kaputten Tour-View landen mit currentTourId der neuen
+    // Tour aber currentTour == null → "Tour nicht gefunden".
+    const _navSnapshot = {
+      view:               state.view,
+      currentTourId:      state.currentTourId,
+      currentTour:        state.currentTour,
+      currentCommunityId: state.currentCommunityId,
+      currentCommunity:   state.currentCommunity,
+    };
+
     // Merge any extra params into global state
     Object.assign(state, params);
 
@@ -282,10 +294,23 @@ async function navigateTo(view, params = {}) {
     }
 
     // Load data required for the target view
+    let transientLoadFailure = false;
     try {
       await _loadViewData(view);
     } catch (e) {
       console.error('[navigateTo] data fetch error:', e);
+      if (e?.code === 'TRANSIENT_LOAD') {
+        transientLoadFailure = true;
+      }
+    }
+
+    // Bei transientem Load-Fehler (z.B. iOS-Socket-Glitch nach Flugmodus):
+    // State-Snapshot zurückspielen, Toast zeigen, NICHT zur kaputten View
+    // navigieren. Der User bleibt da wo er war und kann es erneut versuchen.
+    if (transientLoadFailure) {
+      Object.assign(state, _navSnapshot);
+      if (typeof toast === 'function') toast('Verbindung instabil — bitte erneut versuchen', 'error');
+      return;
     }
 
     // Nach dem Laden neu rendern — bei SWR ist dies der "stille" Update-Render.
