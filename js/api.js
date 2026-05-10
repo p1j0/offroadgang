@@ -92,6 +92,25 @@ function _preserveCachedRoutes(tours) {
   return (tours || []).map(_preserveCachedRoute);
 }
 
+/**
+ * Erkennt ob eine Supabase-Antwort transient fehlgeschlagen ist (Netzwerk-
+ * Abriss, Timeout, JWT abgelaufen, 5xx). In dem Fall sollte der Aufrufer
+ * den vorhandenen State NICHT mit leeren Arrays überschreiben — sonst
+ * gehen Offline-/Flaky-Network-Sessions Daten verloren.
+ *
+ * Echte "leer"-Antworten (Server liefert ok mit data: []) sind KEIN
+ * transienter Fehler — die müssen den State legitim aktualisieren.
+ *
+ * single()-Queries: PGRST116 ("row not found") ist legitim und kein
+ * transienter Fehler — z.B. Tour wurde wirklich gelöscht.
+ */
+function _isTransientFetchError(res) {
+  if (!res) return true;
+  if (!res.error) return false;
+  if (res.error.code === 'PGRST116') return false; // single() row not found
+  return true;
+}
+
 /* ----------------------------------------------------------
    User seen-state (badges / banners)
    ---------------------------------------------------------- */
@@ -259,6 +278,13 @@ async function loadHomeData() {
     .eq('community_id', cid)
     .order('date', { ascending: true });
 
+  // Bei transientem Fehler (Timeout, 401, Offline-Mid-Fetch) cached State behalten
+  // statt mit [] zu überschreiben.
+  if (_isTransientFetchError(toursRes) && state.tours?.length && state._loadedHomeForCid === cid) {
+    console.warn('[loadHomeData] transient error, keeping cached state', toursRes.error);
+    return;
+  }
+
   state.tours = _preserveCachedRoutes(toursRes.data || []);
   if (!state.calMonth) state.calMonth = new Date();
 
@@ -278,6 +304,15 @@ async function loadHomeData() {
     sb.from('tour_members').select('tour_id').eq('user_id', state.currentUser.id).in('tour_id', tourIds),
     sb.from('tour_members').select('tour_id, user_id').in('tour_id', tourIds),
   ]);
+
+  // Bei transientem Fehler einer der Queries: bestehende Member-Daten behalten
+  // statt mit leeren Sets/Objekten zu überschreiben.
+  const membersTransient = _isTransientFetchError(membershipsRes) || _isTransientFetchError(memberCountsRes);
+  if (membersTransient && state.myTourIds?.size && state._loadedHomeForCid === cid) {
+    console.warn('[loadHomeData] member fetch transient error, keeping cached memberships');
+    state._loadedHomeForCid = cid;
+    return;
+  }
 
   const memberIds = (membershipsRes.data || []).map(m => m.tour_id);
   const adminIds  = state.tours
@@ -370,10 +405,28 @@ async function loadTourData(tourId) {
     sb.from('change_log').select(TOUR_CHANGELOG_SELECT).eq('tour_id', tourId).order('created_at', { ascending: false }).limit(TOUR_INITIAL_LIMIT),
   ]);
 
-  state.currentTour    = _preserveCachedRoute(tourRes.data);
-  state.tourMessages   = (msgsRes.data || []).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-  state.tourPlanDates  = datesRes.data     || [];
-  state.tourChangelog  = changelogRes.data || [];
+  // Wenn die Haupt-Tour-Query transient fehlschlägt (Timeout, 401, offline) UND
+  // wir haben dieselbe Tour bereits im State → cached State behalten statt zu
+  // overwriten. PGRST116 (single() row not found) ist KEIN transienter Fehler —
+  // dann ist die Tour wirklich gelöscht und der State sollte sich aktualisieren.
+  if (_isTransientFetchError(tourRes) && state.currentTour?.id === tourId) {
+    console.warn('[loadTourData] transient error, keeping cached tour state', tourRes.error);
+    return;
+  }
+
+  state.currentTour = _preserveCachedRoute(tourRes.data);
+
+  // Per-Field-Guard: einzelne Sub-Queries dürfen nicht still bestehende
+  // Listen mit [] überschreiben wenn sie transient fehlschlagen.
+  if (!_isTransientFetchError(msgsRes)) {
+    state.tourMessages = (msgsRes.data || []).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  }
+  if (!_isTransientFetchError(datesRes)) {
+    state.tourPlanDates = datesRes.data || [];
+  }
+  if (!_isTransientFetchError(changelogRes)) {
+    state.tourChangelog = changelogRes.data || [];
+  }
 
   // Cache usernames we haven't seen yet
   const memberUserIds = (membersRes.data || []).map(m => m.user_id);
@@ -390,6 +443,10 @@ async function loadTourData(tourId) {
   // Build sorted member list: admin first, then others.
   // Apply any pending local kicks so a concurrent or delayed loadTourData
   // can't race-overwrite a just-kicked member back into the list.
+  // Per-Field-Guard: bei transientem Fehler die Member-Liste nicht antasten.
+  if (_isTransientFetchError(membersRes) && state.tourMembers?.length) {
+    return;
+  }
   const adminId  = state.currentTour?.admin_id;
   const kickedIds = state._kickedMembers?.[tourId] || new Set();
 
@@ -510,29 +567,40 @@ async function loadChangelog() {
       .select('id', { head: true, count: 'exact' })
       .eq('tour_id', tourId)
       .gt('created_at', newest);
-    if ((head.count || 0) === 0) return; // nichts Neues → Cache reicht
-    // Nur die neuen Einträge holen, nicht alles neu:
-    const { data: deltaRows } = await sb
-      .from('change_log')
-      .select(TOUR_CHANGELOG_SELECT)
-      .eq('tour_id', tourId)
-      .gt('created_at', newest)
-      .order('created_at', { ascending: false });
-    if (deltaRows?.length) {
-      // Vorne anhängen, auf TOUR_INITIAL_LIMIT kappen
-      state.tourChangelog = [...deltaRows, ...cached].slice(0, TOUR_INITIAL_LIMIT);
+
+    // Defensive: HEAD-Fehler oder undefined count → fall-through zum Vollladen
+    // statt zu früh "nichts Neues" anzunehmen. Worst case: ein zusätzlicher GET,
+    // aber Korrektheit > Egress-Optimierung wenn HEAD scheitert.
+    const headOk = !head.error && typeof head.count === 'number';
+    if (headOk) {
+      if (head.count === 0) return; // nichts Neues → Cache reicht
+      // Nur die neuen Einträge holen, nicht alles neu:
+      const deltaRes = await sb
+        .from('change_log')
+        .select(TOUR_CHANGELOG_SELECT)
+        .eq('tour_id', tourId)
+        .gt('created_at', newest)
+        .order('created_at', { ascending: false });
+      if (_isTransientFetchError(deltaRes)) return; // bestehenden cache behalten
+      const deltaRows = deltaRes.data;
+      if (deltaRows?.length) {
+        // Vorne anhängen, auf TOUR_INITIAL_LIMIT kappen
+        state.tourChangelog = [...deltaRows, ...cached].slice(0, TOUR_INITIAL_LIMIT);
+      }
+      return;
     }
-    return;
+    // HEAD scheiterte → Vollladen unten als Fallback
   }
 
-  // Kein Cache (Erstaufruf) oder offline → Vollladen
-  const { data } = await sb
+  // Kein Cache (Erstaufruf), offline oder HEAD-Fehler → Vollladen
+  const fullRes = await sb
     .from('change_log')
     .select(TOUR_CHANGELOG_SELECT)
     .eq('tour_id', tourId)
     .order('created_at', { ascending: false })
     .limit(TOUR_INITIAL_LIMIT);
-  state.tourChangelog = data || [];
+  if (_isTransientFetchError(fullRes) && cached?.length) return;
+  state.tourChangelog = fullRes.data || [];
 }
 
 /**
@@ -592,30 +660,39 @@ async function loadMessages() {
       .select('id', { head: true, count: 'exact' })
       .eq('tour_id', tourId)
       .gt('created_at', newest);
-    if ((head.count || 0) === 0) return; // keine neuen Nachrichten
 
-    const { data: deltaRows } = await sb
-      .from('messages')
-      .select(TOUR_MESSAGE_SELECT)
-      .eq('tour_id', tourId)
-      .gt('created_at', newest)
-      .order('created_at', { ascending: true });
-    if (deltaRows?.length) {
-      // Anhängen, dann auf TOUR_INITIAL_LIMIT kappen (älteste fallen raus)
-      const merged = [...cached, ...deltaRows];
-      state.tourMessages = merged.slice(-TOUR_INITIAL_LIMIT);
+    // Defensive: nur dem HEAD-Resultat trauen wenn er sauber durchkam.
+    const headOk = !head.error && typeof head.count === 'number';
+    if (headOk) {
+      if (head.count === 0) return; // keine neuen Nachrichten
+
+      const deltaRes = await sb
+        .from('messages')
+        .select(TOUR_MESSAGE_SELECT)
+        .eq('tour_id', tourId)
+        .gt('created_at', newest)
+        .order('created_at', { ascending: true });
+      if (_isTransientFetchError(deltaRes)) return; // bestehenden cache behalten
+      const deltaRows = deltaRes.data;
+      if (deltaRows?.length) {
+        // Anhängen, dann auf TOUR_INITIAL_LIMIT kappen (älteste fallen raus)
+        const merged = [...cached, ...deltaRows];
+        state.tourMessages = merged.slice(-TOUR_INITIAL_LIMIT);
+      }
+      return;
     }
-    return;
+    // HEAD scheiterte → Vollladen als Fallback
   }
 
-  // Erstaufruf oder offline → Vollladen
-  const { data } = await sb
+  // Erstaufruf, offline oder HEAD-Fehler → Vollladen
+  const fullRes = await sb
     .from('messages')
     .select(TOUR_MESSAGE_SELECT)
     .eq('tour_id', tourId)
     .order('created_at', { ascending: false })
     .limit(TOUR_INITIAL_LIMIT);
-  state.tourMessages = (data || []).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  if (_isTransientFetchError(fullRes) && cached.length) return;
+  state.tourMessages = (fullRes.data || []).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
 }
 
 /* ----------------------------------------------------------
@@ -1194,10 +1271,19 @@ async function loadCommunityData(communityId) {
   state.currentCommunityId = communityId;
 
   // Load community members + tour IDs in parallel (independent queries)
-  const [{ data: members }, { data: tourIds }] = await Promise.all([
+  const [membersRes, tourIdsRes] = await Promise.all([
     sb.from('community_members').select('user_id').eq('community_id', communityId),
     sb.from('tours').select('id').eq('community_id', communityId),
   ]);
+
+  // Bei transientem Fehler den bestehenden Member-State nicht auf [] resetten.
+  if (_isTransientFetchError(membersRes) && state.communityMembers?.length && state._loadedCommunityDataId === communityId) {
+    console.warn('[loadCommunityData] transient error, keeping cached members');
+    return;
+  }
+
+  const members = membersRes.data;
+  const tourIds = tourIdsRes.data;
 
   // Load tour members (needs tour IDs from above)
   let tourMemberIds = [];
@@ -1293,14 +1379,16 @@ async function createCommunity(name, password) {
 async function loadPlanningData() {
   const cid = state.currentCommunityId;
 
+  // Offline + bereits für diese Community geladen → State behalten (war bisher
+  // ein Lückenpunkt: ohne Guard hätte ein Re-Fetch bei leerem SW-Cache alle
+  // gecachten Polls/Chat/Log gelöscht).
+  if (!navigator.onLine && state._loadedPlanningForCid === cid && state.tours) {
+    return;
+  }
+
   // Planning overview needs only tour metadata for the calendar. Route geometry
   // is loaded separately by loadPlanningMapRoutes() when the map tab is opened.
-  const [
-    { data: tours },
-    { data: polls },
-    { data: msgs },
-    { data: log },
-  ] = await Promise.all([
+  const [toursRes, pollsRes, msgsRes, logRes] = await Promise.all([
     sb.from('tours')
       .select(TOUR_LIST_SELECT)
       .eq('community_id', cid)
@@ -1319,17 +1407,33 @@ async function loadPlanningData() {
       .order('created_at', { ascending: false }),
   ]);
 
+  // Wenn die Tour-Query transient fehlschlägt UND wir hatten schon Daten:
+  // alles behalten. (Tour-Liste ist die "kanonische" Erfolgsanzeige.)
+  if (_isTransientFetchError(toursRes) && state._loadedPlanningForCid === cid && state.tours?.length) {
+    console.warn('[loadPlanningData] transient error, keeping cached planning state');
+    return;
+  }
+
+  const tours = toursRes.data;
+  const polls = pollsRes.data;
+  const msgs  = msgsRes.data;
+  const log   = logRes.data;
+
   state.tours = _preserveCachedRoutes(tours || []);
   state._loadedPlanningForCid = cid;
 
-  state.communityMessages  = msgs || [];
-  state.communityChangelog = log  || [];
+  // Per-Field-Guard für die parallelen Sub-Queries
+  if (!_isTransientFetchError(msgsRes)) state.communityMessages  = msgs || [];
+  if (!_isTransientFetchError(logRes))  state.communityChangelog = log  || [];
 
-  state.communityPolls = (polls || []).map(p => ({
-    ...p,
-    options: typeof p.options === 'string' ? JSON.parse(p.options) : p.options,
-    votes: [],
-  }));
+  // Polls auch defensiv: bei transientem Fehler nicht überschreiben
+  if (!_isTransientFetchError(pollsRes)) {
+    state.communityPolls = (polls || []).map(p => ({
+      ...p,
+      options: typeof p.options === 'string' ? JSON.parse(p.options) : p.options,
+      votes: [],
+    }));
+  }
 
   // Load votes — needs poll IDs from above
   const pollIds = state.communityPolls.map(p => p.id);
@@ -1708,12 +1812,19 @@ async function loadCommunityMedia() {
     return;
   }
 
-  const { data } = await sb
+  const res = await sb
     .from('community_media')
     .select('*')
     .eq('community_id', cid)
     .order('sort_order', { ascending: true });
-  state.communityMedia = data || [];
+
+  // Bei transientem Fehler bestehende Media-Liste nicht überschreiben.
+  if (_isTransientFetchError(res) && state.communityMedia?.length && state._loadedMediaForCid === cid) {
+    console.warn('[loadCommunityMedia] transient error, keeping cached media');
+    return;
+  }
+
+  state.communityMedia = res.data || [];
   state._loadedMediaForCid = cid;
 }
 

@@ -109,6 +109,15 @@ self.addEventListener('fetch', event => {
       caches.open(API_CACHE_NAME).then(async cache => {
         try {
           const response = await fetch(event.request);
+          // Bei abgelaufenem JWT (401/403) liefert Supabase einen Fehler zurück,
+          // der im App-Layer wie "leeres Ergebnis" behandelt würde und so cached
+          // State überschreiben kann. Lieber den vorhandenen Cache zurückgeben —
+          // der Auth-Layer kümmert sich parallel um Token-Refresh, und beim
+          // nächsten Refresh-Tick sehen wir wieder frische Daten.
+          if (response.status === 401 || response.status === 403) {
+            const cached = await cache.match(event.request);
+            if (cached) return cached;
+          }
           if (response.ok) cache.put(event.request, response.clone());
           return response;
         } catch (e) {
