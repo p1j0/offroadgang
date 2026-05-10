@@ -77,7 +77,7 @@ const state = {
    offline with previously cached data.
    ---------------------------------------------------------- */
 const STATE_STORAGE_KEY = 'motoroute_state_v1';
-const STATE_SCHEMA_VERSION = 6;
+const STATE_SCHEMA_VERSION = 7;
 const STATE_APP_VERSION = (typeof APP_VERSION !== 'undefined' && APP_VERSION) ? APP_VERSION : 'dev';
 const STATE_MAX_AGE_MS  = 7 * 24 * 60 * 60 * 1000; // 7 days
 
@@ -104,6 +104,15 @@ function persistState() {
       communityChangelog: state.communityChangelog,
       communityPolls:     state.communityPolls,
       communityMessages:  state.communityMessages,
+      // Tour-Detail-Daten persistieren, damit ein Offline-Cold-Start die
+      // zuletzt geöffnete Tour vollständig anzeigen kann (Mitglieder, Chat,
+      // Plan-Termine, Log, Media). Die GPX-Geometrie liegt separat in IndexedDB
+      // (siehe gpx-cache.js). Wetter wird live von open-meteo geladen und ist
+      // offline bewusst nicht verfügbar.
+      tourMembers:        state.tourMembers,
+      tourMessages:       state.tourMessages,
+      tourChangelog:      state.tourChangelog,
+      tourMedia:          state.tourMedia,
       tourPlanDates:      state.tourPlanDates,
       profileCache:       state.profileCache,
       memberCounts:       state.memberCounts,

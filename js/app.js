@@ -1456,7 +1456,20 @@ async function init() {
   const restoredAtBoot = restoreState() && !!state.currentUser;
   if (restoredAtBoot && !navigator.onLine) {
     console.log('[init] Boot mit gespeichertem State');
-    state.view = state.currentCommunityId ? 'community-home' : 'communities';
+    // Wenn der User zuletzt eine Tour offen hatte UND wir die zugehörigen
+    // Daten gecached haben, direkt dorthin booten — sonst sieht er beim
+    // Offline-Cold-Start nie wieder Mitglieder/Chat/Log/Karte. Voraussetzung:
+    // currentTourId, currentTour mit gleicher ID und persistierte Tour-Listen.
+    const canBootToTour = state.currentTourId
+      && state.currentTour?.id === state.currentTourId
+      && state.currentCommunityId;
+    if (canBootToTour) {
+      state.view = 'tour';
+    } else if (state.currentCommunityId) {
+      state.view = 'community-home';
+    } else {
+      state.view = 'communities';
+    }
     render();
     return;
   } else if (!navigator.onLine) {
