@@ -337,15 +337,40 @@ function initMap(tour) {
     endMarker        = null;
   }
 
-  mapInstance = L.map('map', { center: [48.2, 9.5], zoom: 7, zoomControl: true });
+  // Daten zuerst auflösen, damit wir den initialen View direkt auf die Tour
+  // zentrieren können. Andernfalls würde Leaflet zuerst Tiles für den Default
+  // (zoom 7, Mitte Deutschland) anfragen — die sind im Offline-Fall fast nie
+  // gecacht und der User sieht eine "dunkle" Karte, bis drawGPX→fitBounds
+  // greift. Mit korrektem Initial-Center werden direkt die gecachten Tour-
+  // Tiles geholt.
+  const data = normalizeGPXRoute(tour.gpx_route)
+    || (typeof routeMetadataToPreviewRoute === 'function' ? routeMetadataToPreviewRoute(tour.route_metadata) : null);
+
+  let initCenter = [48.2, 9.5];
+  let initZoom   = 7;
+  let initBounds = null;
+  if (data?.tracks?.length) {
+    const allPoints = data.tracks.flatMap(t => t.points || []);
+    if (allPoints.length) {
+      initBounds = L.latLngBounds(allPoints);
+      const c = initBounds.getCenter();
+      initCenter = [c.lat, c.lng];
+      initZoom   = 11; // grobe Schätzung; fitBounds verfeinert gleich
+    }
+  }
+
+  mapInstance = L.map('map', { center: initCenter, zoom: initZoom, zoomControl: true });
+  if (initBounds) {
+    // Bounds direkt vor dem tileLayer setzen — so kennt Leaflet die richtige
+    // Größe/zoom-Stufe schon beim ersten Tile-Request.
+    mapInstance.fitBounds(initBounds, { padding: [40, 40], animate: false });
+  }
 
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
     maxZoom: 19,
   }).addTo(mapInstance);
 
-  const data = normalizeGPXRoute(tour.gpx_route)
-    || (typeof routeMetadataToPreviewRoute === 'function' ? routeMetadataToPreviewRoute(tour.route_metadata) : null);
   if (data) drawGPX(data);
 }
 

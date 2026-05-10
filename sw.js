@@ -201,11 +201,18 @@ self.addEventListener('fetch', event => {
         return response;
       }).catch(() => {
         // Offline + nicht gecacht → leere aber gültige PNG-Antwort
-        // (Leaflet zeigt graue Tile statt kaputtem Bild-Icon)
-        return new Response(
-          atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='),
-          { status: 200, headers: { 'Content-Type': 'image/png' } }
-        );
+        // (Leaflet zeigt graue Tile statt kaputtem Bild-Icon).
+        // WICHTIG: atob() liefert einen Binary-String — als String an Response
+        // übergeben würde der als UTF-8 enkodiert und das PNG zerstört. Deshalb
+        // explizit in Uint8Array umwandeln, damit echte Bytes ausgehen.
+        const b64   = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+        const bin   = atob(b64);
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        return new Response(bytes, {
+          status: 200,
+          headers: { 'Content-Type': 'image/png' },
+        });
       })
     );
     return;
