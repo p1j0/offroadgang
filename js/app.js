@@ -503,8 +503,41 @@ function startForegroundRefresh() {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') refreshCurrentView({ force: true });
   });
-  window.addEventListener('online', () => refreshCurrentView({ force: true }));
+  window.addEventListener('online', () => {
+    // Wenn der User vorher offline war, hat Leaflet TileLayer die fehlgeschlagenen
+    // (oder leeren-PNG-) Tiles als "loaded" markiert und fragt sie nicht neu an.
+    // Beim Wiederkehren der Verbindung explizit redrawen, sonst bleibt die Karte
+    // dunkel bis der User pannt/zoomt.
+    _redrawAllMapTiles();
+    // Ebenso ggf. fehlende GPX-Geometrie laden, falls der User noch im Map-Tab
+    // ist und sie offline nicht gecached war.
+    if (state.view === 'tour' && state.currentTab === 'map' && typeof ensureCurrentTourRouteLoaded === 'function') {
+      ensureCurrentTourRouteLoaded().catch(() => {});
+    }
+    refreshCurrentView({ force: true });
+  });
   window.addEventListener('focus', () => refreshCurrentView({ force: true }));
+}
+
+/**
+ * Forciere TileLayer-Redraw auf allen aktiven Leaflet-Maps. Wird beim Online-
+ * Comeback aufgerufen — ohne das bleiben offline geladene leere PNGs für
+ * immer in der View hängen.
+ */
+function _redrawAllMapTiles() {
+  const maps = [];
+  if (typeof mapInstance !== 'undefined' && mapInstance) maps.push(mapInstance);
+  if (typeof window !== 'undefined' && window._tovMapInstance) maps.push(window._tovMapInstance);
+  if (typeof _planMapInstance !== 'undefined' && _planMapInstance) maps.push(_planMapInstance);
+  for (const m of maps) {
+    try {
+      m.eachLayer(layer => {
+        if (layer instanceof L.TileLayer && typeof layer.redraw === 'function') {
+          layer.redraw();
+        }
+      });
+    } catch (e) { /* non-fatal */ }
+  }
 }
 
 /* ----------------------------------------------------------
