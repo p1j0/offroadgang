@@ -405,13 +405,24 @@ async function loadTourData(tourId) {
     sb.from('change_log').select(TOUR_CHANGELOG_SELECT).eq('tour_id', tourId).order('created_at', { ascending: false }).limit(TOUR_INITIAL_LIMIT),
   ]);
 
-  // Wenn die Haupt-Tour-Query transient fehlschlägt (Timeout, 401, offline) UND
-  // wir haben dieselbe Tour bereits im State → cached State behalten statt zu
-  // overwriten. PGRST116 (single() row not found) ist KEIN transienter Fehler —
-  // dann ist die Tour wirklich gelöscht und der State sollte sich aktualisieren.
-  if (_isTransientFetchError(tourRes) && state.currentTour?.id === tourId) {
-    console.warn('[loadTourData] transient error, keeping cached tour state', tourRes.error);
-    return;
+  // Wenn die Haupt-Tour-Query transient fehlschlägt (Timeout, 401, offline,
+  // iOS-Socket-Glitch nach Flugmodus etc.):
+  // - Selbe Tour im State → still cached State behalten.
+  // - Andere/keine Tour im State → ERROR werfen, sodass navigateTo den State
+  //   revertet und einen Retry-Toast zeigt. Sonst würde state.currentTour=null
+  //   gesetzt → Render zeigt fälschlich "Tour nicht gefunden", obwohl die
+  //   Tour existiert und nur die Verbindung gerade kaputt ist.
+  // PGRST116 (row not found) ist KEIN transienter Fehler — dann ist die Tour
+  // wirklich gelöscht und State darf aktualisiert werden.
+  if (_isTransientFetchError(tourRes)) {
+    if (state.currentTour?.id === tourId) {
+      console.warn('[loadTourData] transient error, keeping cached tour state', tourRes.error);
+      return;
+    }
+    console.warn('[loadTourData] transient error for new tour — surfacing', tourRes.error);
+    const err = new Error('Verbindung instabil — bitte erneut versuchen');
+    err.code = 'TRANSIENT_LOAD';
+    throw err;
   }
 
   state.currentTour = _preserveCachedRoute(tourRes.data);

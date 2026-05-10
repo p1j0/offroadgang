@@ -371,7 +371,7 @@ function initMap(tour) {
 
   mapInstance = L.map('map', { center: initCenter, zoom: initZoom, zoomControl: true });
 
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  const tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
     maxZoom: 19,
   }).addTo(mapInstance);
@@ -386,6 +386,21 @@ function initMap(tour) {
       mapInstance.fitBounds(initBounds, { padding: [40, 40], animate: false });
     }
   });
+
+  // PWA-Cold-Start-Race-Fallback: Wenn beim Mounten der Karte der Service
+  // Worker noch nicht die Kontrolle übernommen hat, gehen die ersten Tile-
+  // Requests am SW vorbei direkt ans Netzwerk — das schlägt offline fehl
+  // und die Tiles bleiben als "loaded" markiert (broken/empty), die Karte
+  // bleibt dunkel. Sobald der SW ready ist, alle Tiles neu zeichnen.
+  if ('serviceWorker' in navigator && navigator.serviceWorker.ready) {
+    navigator.serviceWorker.ready
+      .then(() => {
+        if (mapInstance && tileLayer && typeof tileLayer.redraw === 'function') {
+          tileLayer.redraw();
+        }
+      })
+      .catch(() => {});
+  }
 
   if (data) drawGPX(data);
 }

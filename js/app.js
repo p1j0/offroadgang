@@ -250,6 +250,18 @@ async function navigateTo(view, params = {}) {
       _planMapLayers   = [];
     }
 
+    // Snapshot vor State-Änderung — nötig für Revert wenn loadViewData transient
+    // fehlschlägt (iOS-Sockets nach Flugmodus, Timeout etc.). Ohne Revert würde
+    // der User auf einer kaputten Tour-View landen mit currentTourId der neuen
+    // Tour aber currentTour == null → "Tour nicht gefunden".
+    const _navSnapshot = {
+      view:               state.view,
+      currentTourId:      state.currentTourId,
+      currentTour:        state.currentTour,
+      currentCommunityId: state.currentCommunityId,
+      currentCommunity:   state.currentCommunity,
+    };
+
     // Merge any extra params into global state
     Object.assign(state, params);
 
@@ -282,10 +294,23 @@ async function navigateTo(view, params = {}) {
     }
 
     // Load data required for the target view
+    let transientLoadFailure = false;
     try {
       await _loadViewData(view);
     } catch (e) {
       console.error('[navigateTo] data fetch error:', e);
+      if (e?.code === 'TRANSIENT_LOAD') {
+        transientLoadFailure = true;
+      }
+    }
+
+    // Bei transientem Load-Fehler (z.B. iOS-Socket-Glitch nach Flugmodus):
+    // State-Snapshot zurückspielen, Toast zeigen, NICHT zur kaputten View
+    // navigieren. Der User bleibt da wo er war und kann es erneut versuchen.
+    if (transientLoadFailure) {
+      Object.assign(state, _navSnapshot);
+      if (typeof toast === 'function') toast('Verbindung instabil — bitte erneut versuchen', 'error');
+      return;
     }
 
     // Nach dem Laden neu rendern — bei SWR ist dies der "stille" Update-Render.
@@ -503,8 +528,41 @@ function startForegroundRefresh() {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') refreshCurrentView({ force: true });
   });
-  window.addEventListener('online', () => refreshCurrentView({ force: true }));
+  window.addEventListener('online', () => {
+    // Wenn der User vorher offline war, hat Leaflet TileLayer die fehlgeschlagenen
+    // (oder leeren-PNG-) Tiles als "loaded" markiert und fragt sie nicht neu an.
+    // Beim Wiederkehren der Verbindung explizit redrawen, sonst bleibt die Karte
+    // dunkel bis der User pannt/zoomt.
+    _redrawAllMapTiles();
+    // Ebenso ggf. fehlende GPX-Geometrie laden, falls der User noch im Map-Tab
+    // ist und sie offline nicht gecached war.
+    if (state.view === 'tour' && state.currentTab === 'map' && typeof ensureCurrentTourRouteLoaded === 'function') {
+      ensureCurrentTourRouteLoaded().catch(() => {});
+    }
+    refreshCurrentView({ force: true });
+  });
   window.addEventListener('focus', () => refreshCurrentView({ force: true }));
+}
+
+/**
+ * Forciere TileLayer-Redraw auf allen aktiven Leaflet-Maps. Wird beim Online-
+ * Comeback aufgerufen — ohne das bleiben offline geladene leere PNGs für
+ * immer in der View hängen.
+ */
+function _redrawAllMapTiles() {
+  const maps = [];
+  if (typeof mapInstance !== 'undefined' && mapInstance) maps.push(mapInstance);
+  if (typeof window !== 'undefined' && window._tovMapInstance) maps.push(window._tovMapInstance);
+  if (typeof _planMapInstance !== 'undefined' && _planMapInstance) maps.push(_planMapInstance);
+  for (const m of maps) {
+    try {
+      m.eachLayer(layer => {
+        if (layer instanceof L.TileLayer && typeof layer.redraw === 'function') {
+          layer.redraw();
+        }
+      });
+    } catch (e) { /* non-fatal */ }
+  }
 }
 
 /* ----------------------------------------------------------
