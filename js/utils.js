@@ -509,6 +509,54 @@ function getISOWeek(d) {
   return Math.ceil(((date - yearStart) / 86400000 + 1) / 7);
 }
 
+function _tourDay(dateStr) {
+  if (!dateStr) return null;
+  const d = new Date(dateStr + 'T00:00:00');
+  return Number.isFinite(d.getTime()) ? d : null;
+}
+
+function _addDays(date, days) {
+  const d = new Date(date);
+  d.setDate(d.getDate() + days);
+  return d;
+}
+
+function getCheckinTourInfo(tours, now = new Date()) {
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+
+  const items = (tours || [])
+    .map(t => {
+      const start = _tourDay(t.date);
+      const end = _tourDay(t.end_date && t.end_date !== t.date ? t.end_date : t.date);
+      if (!start || !end) return null;
+      return { tour: t, start, end };
+    })
+    .filter(Boolean)
+    .filter(item => item.end >= today)
+    .sort((a, b) => a.start - b.start);
+
+  const current = items.find(item => item.start <= today && item.end >= today);
+  if (current) {
+    const overlappingNext = items.find(item =>
+      item.tour.id !== current.tour.id
+      && item.start > current.start
+      && item.start <= current.end
+      && today >= _addDays(item.start, -1)
+    );
+    const selected = overlappingNext || current;
+    return {
+      tour: selected.tour,
+      status: selected.start <= today ? 'current' : 'upcoming',
+      start: selected.start,
+      end: selected.end,
+    };
+  }
+
+  const next = items[0];
+  return next ? { tour: next.tour, status: 'upcoming', start: next.start, end: next.end } : null;
+}
+
 /* ----------------------------------------------------------
    Emoji Picker
    ---------------------------------------------------------- */

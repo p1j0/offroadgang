@@ -162,20 +162,18 @@ async function _loadViewData(view) {
 
     if (view === 'community-home') {
       await loadHomeData();
-      // Determine next upcoming tour (needed for checkins + plan dates)
-      const todayMidnight = new Date(); todayMidnight.setHours(0,0,0,0);
-      const nextTour = (state.tours || [])
-        .filter(t => new Date((t.end_date || t.date) + 'T23:59:59') >= todayMidnight)
-        .sort((a,b) => new Date(a.date) - new Date(b.date))[0];
+      // Determine check-in tour (current tour wins until it is over, unless
+      // another tour starts during it and is one day away).
+      const checkinTour = getCheckinTourInfo(state.tours || [])?.tour || null;
       // Run all remaining fetches in parallel — none depend on each other
       await Promise.all([
         computePlanningBadges(),
         computeMediaBadges(),
-        nextTour
-          ? loadTourCheckins(nextTour.id).then(r => { state.tourCheckins[nextTour.id] = r; })
+        checkinTour
+          ? loadTourCheckins(checkinTour.id).then(r => { state.tourCheckins[checkinTour.id] = r; })
           : Promise.resolve(),
-        nextTour
-          ? loadNextTourPlanDates(nextTour.id)
+        checkinTour
+          ? loadNextTourPlanDates(checkinTour.id)
           : Promise.resolve(),
       ]);
     }
