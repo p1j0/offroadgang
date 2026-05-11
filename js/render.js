@@ -1776,9 +1776,14 @@ window._dismissInfoBanner = function() {
 function renderInfoTab(tour) {
   const isAdmin = isCurrentUserAdmin();
   const pendingPlanDate = state.pendingPlanDate?.tourId === tour.id ? state.pendingPlanDate : null;
-  const pendingType = pendingPlanDate?.type || 'treffpunkt';
-  const pendingLabel = pendingPlanDate?.label || '';
-  const pendingMapsLink = pendingPlanDate?.mapsLink || '';
+  const editingPlanDate = state.editingPlanDateId
+    ? (state.tourPlanDates || []).find(pd => pd.id === state.editingPlanDateId)
+    : null;
+  const formType = editingPlanDate?.type || pendingPlanDate?.type || 'treffpunkt';
+  const formLabel = editingPlanDate?.label || pendingPlanDate?.label || '';
+  const formMapsLink = editingPlanDate?.maps_link || pendingPlanDate?.mapsLink || '';
+  const formDate = editingPlanDate?.date || '';
+  const formTime = editingPlanDate?.meeting_time ? editingPlanDate.meeting_time.slice(0, 5) : '';
 
   const bannerItems = state.infoBannerItems || [];
   const infoBanner = bannerItems.length ? `
@@ -1867,8 +1872,12 @@ function renderInfoTab(tour) {
               ${pd.label ? ` <span style="color:var(--muted)">— ${esc(pd.label)}</span>` : ''}
               ${pd.maps_link ? ` <a href="${esc(pd.maps_link)}" target="_blank" rel="noopener" class="plan-date-maps-link">Maps →</a>` : ''}
             </div>
-            ${isAdmin ? `<button class="btn btn-ghost btn-sm" data-del-date="${pd.id}"
-              style="color:var(--danger);padding:3px 8px;flex-shrink:0">✕</button>` : ''}
+            ${isAdmin ? `<div style="display:flex;gap:6px;flex-shrink:0">
+              <button class="btn btn-ghost btn-sm" data-edit-date="${pd.id}"
+                style="padding:3px 8px">Bearbeiten</button>
+              <button class="btn btn-ghost btn-sm" data-del-date="${pd.id}"
+                style="color:var(--danger);padding:3px 8px">✕</button>
+            </div>` : ''}
           </div>`;
           }).join('')}
         </div>
@@ -1876,33 +1885,36 @@ function renderInfoTab(tour) {
         ${isAdmin ? `
         <div style="margin-top:14px;background:var(--surface2);border-radius:var(--radius);padding:12px">
           <div style="font-size:11px;font-weight:600;margin-bottom:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em">
-            Termin hinzufügen
+            ${editingPlanDate ? 'Termin bearbeiten' : 'Termin hinzufügen'}
           </div>
-          ${pendingPlanDate ? `<div style="font-size:12px;color:var(--accent);margin-bottom:10px">Wegpunkt übernommen: ${esc(pendingLabel || 'Wegpunkt')}</div>` : ''}
+          ${pendingPlanDate && !editingPlanDate ? `<div style="font-size:12px;color:var(--accent);margin-bottom:10px">Wegpunkt übernommen: ${esc(formLabel || 'Wegpunkt')}</div>` : ''}
           <div class="form-group" style="margin-bottom:10px">
             <label>Art</label>
             <select id="pd-type" onchange="document.getElementById('pd-time-row').style.display=this.value==='treffpunkt'?'':'none'">
-              <option value="treffpunkt"${pendingType === 'treffpunkt' ? ' selected' : ''}>📍 Treffpunkt</option>
-              <option value="sonstiger"${pendingType === 'sonstiger' ? ' selected' : ''}>📅 Sonstiger Termin</option>
+              <option value="treffpunkt"${formType === 'treffpunkt' ? ' selected' : ''}>📍 Treffpunkt</option>
+              <option value="sonstiger"${formType === 'sonstiger' ? ' selected' : ''}>📅 Sonstiger Termin</option>
             </select>
           </div>
           <div class="form-group" style="margin-bottom:10px">
             <label>Datum</label>
-            <input type="date" id="add-date" />
+            <input type="date" id="add-date" value="${esc(formDate)}" />
           </div>
-          <div class="form-group" id="pd-time-row" style="margin-bottom:10px;display:${pendingType === 'treffpunkt' ? '' : 'none'}">
+          <div class="form-group" id="pd-time-row" style="margin-bottom:10px;display:${formType === 'treffpunkt' ? '' : 'none'}">
             <label>Uhrzeit (optional)</label>
-            <input type="time" id="add-time" />
+            <input type="time" id="add-time" value="${esc(formTime)}" />
           </div>
           <div class="form-group" style="margin-bottom:10px">
             <label>Beschriftung (optional)</label>
-            <input type="text" id="add-label" placeholder="z.B. Parkplatz Talstation, Abfahrt…" maxlength="80" value="${esc(pendingLabel)}" />
+            <input type="text" id="add-label" placeholder="z.B. Parkplatz Talstation, Abfahrt…" maxlength="80" value="${esc(formLabel)}" />
           </div>
           <div class="form-group" style="margin-bottom:12px">
             <label>Google Maps Link (optional)</label>
-            <input type="url" id="add-maps-link" placeholder="https://maps.google.com/…" value="${esc(pendingMapsLink)}" />
+            <input type="url" id="add-maps-link" placeholder="https://maps.google.com/…" value="${esc(formMapsLink)}" />
           </div>
-          <button class="btn btn-ghost btn-sm" id="add-date-btn">+ Termin hinzufügen</button>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-ghost btn-sm" id="add-date-btn">${editingPlanDate ? 'Termin speichern' : '+ Termin hinzufügen'}</button>
+            ${editingPlanDate ? '<button class="btn btn-ghost btn-sm" id="cancel-edit-date-btn">Abbrechen</button>' : ''}
+          </div>
         </div>` : ''}
       </div>
 

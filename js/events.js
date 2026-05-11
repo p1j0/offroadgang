@@ -1159,6 +1159,7 @@ function attachMapEvents() {
       mapsLink: btn.dataset.wpMaps || googleMapsLinkForLatLon(btn.dataset.wpLat, btn.dataset.wpLon),
       fromWaypoint: true,
     };
+    state.editingPlanDateId = null;
     mapInstance?.closePopup?.();
     const container = document.getElementById('map-container');
     if (container?.classList.contains('map-fullscreen-active')) _cssFullscreen(container, false);
@@ -1446,21 +1447,40 @@ function attachInfoEvents() {
     const ti = t === 'treffpunkt' ? (document.getElementById('add-time')?.value || '') : '';
     if (!d) { toast('Bitte Datum wählen.', 'error'); return; }
     try {
-      const pendingFromWaypoint = state.pendingPlanDate?.tourId === state.currentTourId && state.pendingPlanDate?.fromWaypoint;
-      const existingTreffpunkte = t === 'treffpunkt' && pendingFromWaypoint
-        ? (state.tourPlanDates || []).filter(pd => pd.type === 'treffpunkt')
-        : [];
-      const replaceTreffpunkt = existingTreffpunkte.length ? await confirmTreffpunktReplace() : false;
-      const oldTreffpunkte = replaceTreffpunkt ? existingTreffpunkte : [];
-      const created = await addPlanDate(d, l, t, m, ti);
-      for (const pd of oldTreffpunkte) {
-        if (pd.id !== created?.id) await deletePlanDate(pd.id);
+      if (state.editingPlanDateId) {
+        await updatePlanDate(state.editingPlanDateId, d, l, t, m, ti);
+        state.editingPlanDateId = null;
+      } else {
+        const pendingFromWaypoint = state.pendingPlanDate?.tourId === state.currentTourId && state.pendingPlanDate?.fromWaypoint;
+        const existingTreffpunkte = t === 'treffpunkt' && pendingFromWaypoint
+          ? (state.tourPlanDates || []).filter(pd => pd.type === 'treffpunkt')
+          : [];
+        const replaceTreffpunkt = existingTreffpunkte.length ? await confirmTreffpunktReplace() : false;
+        const oldTreffpunkte = replaceTreffpunkt ? existingTreffpunkte : [];
+        const created = await addPlanDate(d, l, t, m, ti);
+        for (const pd of oldTreffpunkte) {
+          if (pd.id !== created?.id) await deletePlanDate(pd.id);
+        }
+        state.pendingPlanDate = null;
       }
-      state.pendingPlanDate = null;
       await loadNextTourPlanDates(state.currentTourId);
       state.currentTab = 'info';
       _refreshInfoTab();
     } catch (e) { toast(e.message, 'error'); }
+  });
+
+  document.getElementById('cancel-edit-date-btn')?.addEventListener('click', () => {
+    state.editingPlanDateId = null;
+    _refreshInfoTab();
+  });
+
+  document.querySelectorAll('[data-edit-date]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      state.editingPlanDateId = btn.dataset.editDate;
+      state.pendingPlanDate = null;
+      _refreshInfoTab();
+      setTimeout(() => document.getElementById('add-date')?.focus(), 50);
+    });
   });
 
   /* Delete plan dates */
@@ -1468,6 +1488,7 @@ function attachInfoEvents() {
     btn.addEventListener('click', async () => {
       try {
         await deletePlanDate(btn.dataset.delDate);
+        if (state.editingPlanDateId === btn.dataset.delDate) state.editingPlanDateId = null;
         _refreshInfoTab();
       } catch (e) { toast(e.message, 'error'); }
     });

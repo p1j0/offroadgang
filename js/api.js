@@ -961,6 +961,30 @@ async function addPlanDate(date, label, type = 'sonstiger', mapsLink = '', meeti
   return data;
 }
 
+async function updatePlanDate(id, date, label, type = 'sonstiger', mapsLink = '', meetingTime = '') {
+  const previous = state.tourPlanDates.find(d => d.id === id);
+  const updates = {
+    date,
+    label,
+    type,
+    maps_link:    mapsLink    || null,
+    meeting_time: type === 'treffpunkt' ? (meetingTime || null) : null,
+  };
+  const { data, error } = await sb
+    .from('plan_dates')
+    .update(updates)
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+
+  state.tourPlanDates = state.tourPlanDates.map(pd => pd.id === id ? data : pd);
+  const oldDisplay = previous ? (previous.label ? `${previous.date} (${previous.label})` : previous.date) : id;
+  const newDisplay = label ? `${date} (${label})` : date;
+  await logChange('Planungstermin geändert', oldDisplay, newDisplay);
+  return data;
+}
+
 async function loadNextTourPlanDates(tourId) {
   // Offline + bereits für diese Tour geladen → State behalten
   if (!navigator.onLine && state._loadedPlanDatesTourId === tourId && state.tourPlanDates) {

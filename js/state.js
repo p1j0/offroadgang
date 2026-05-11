@@ -63,6 +63,7 @@ const state = {
   tabBadges:     {},
   tourCalMonth:  null,
   pendingPlanDate: null,
+  editingPlanDateId: null,
 
   /* Check-ins: tourId → Set of user_ids who confirmed */
   tourCheckins:  {},
