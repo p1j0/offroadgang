@@ -473,7 +473,17 @@ function drawGPX(data) {
     });
 
     const symLabel = w.sym ? `<br><span style="font-size:11px;color:#aaa">${esc(w.sym)}</span>` : '';
-    const popup = `<strong>${esc(w.name)}</strong>${symLabel}${w.desc ? `<br><span style="font-size:12px;color:#888">${esc(w.desc)}</span>` : ''}`;
+    const mapsLink = typeof googleMapsLinkForLatLon === 'function' ? googleMapsLinkForLatLon(w.lat, w.lon) : '';
+    const canCreatePlanDate = typeof isCurrentUserAdmin === 'function' && isCurrentUserAdmin();
+    const popup = `<strong>${esc(w.name)}</strong>${symLabel}${w.desc ? `<br><span style="font-size:12px;color:#888">${esc(w.desc)}</span>` : ''}${canCreatePlanDate ? `
+      <div style="margin-top:10px">
+        <button class="btn btn-ghost btn-sm map-waypoint-plan-btn"
+          data-wp-plan="1"
+          data-wp-name="${esc(w.name)}"
+          data-wp-lat="${esc(String(w.lat))}"
+          data-wp-lon="${esc(String(w.lon))}"
+          data-wp-maps="${esc(mapsLink)}">+ Planungstermin</button>
+      </div>` : ''}`;
     const marker = L.marker([w.lat, w.lon], { icon })
       .addTo(mapInstance)
       .bindPopup(popup)

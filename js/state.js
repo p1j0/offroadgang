@@ -62,6 +62,7 @@ const state = {
   isSiteAdminUser: false,   // tour id selected in community media view
   tabBadges:     {},
   tourCalMonth:  null,
+  pendingPlanDate: null,
 
   /* Check-ins: tourId → Set of user_ids who confirmed */
   tourCheckins:  {},

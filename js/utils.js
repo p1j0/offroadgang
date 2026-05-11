@@ -557,6 +557,27 @@ function getCheckinTourInfo(tours, now = new Date()) {
   return next ? { tour: next.tour, status: 'upcoming', start: next.start, end: next.end } : null;
 }
 
+function googleMapsLinkForLatLon(lat, lon) {
+  const cleanLat = Number(lat);
+  const cleanLon = Number(lon);
+  if (!Number.isFinite(cleanLat) || !Number.isFinite(cleanLon)) return '';
+  return `https://www.google.com/maps/search/?api=1&query=${cleanLat.toFixed(6)},${cleanLon.toFixed(6)}`;
+}
+
+function getCheckinTreffpunkte(planDates) {
+  return (planDates || [])
+    .filter(pd => pd.type === 'treffpunkt')
+    .map((pd, index) => ({ pd, index }))
+    .sort((a, b) => {
+      const aCreated = new Date(a.pd.created_at || '').getTime();
+      const bCreated = new Date(b.pd.created_at || '').getTime();
+      if (Number.isFinite(aCreated) && Number.isFinite(bCreated) && aCreated !== bCreated) return bCreated - aCreated;
+      if (Number.isFinite(aCreated) !== Number.isFinite(bCreated)) return Number.isFinite(bCreated) ? 1 : -1;
+      return b.index - a.index;
+    })
+    .map(item => item.pd);
+}
+
 /* ----------------------------------------------------------
    Emoji Picker
    ---------------------------------------------------------- */
