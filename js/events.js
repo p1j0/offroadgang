@@ -605,12 +605,7 @@ function attachEvents() {
 
   /* --- Check-in weather forecast (async, community-home view) --- */
   if (state.view === 'community-home') {
-    const nextTour = (state.tours || [])
-      .filter(t => {
-        const end = t.end_date && t.end_date !== t.date ? t.end_date : t.date;
-        return new Date(end + 'T23:59:59') >= new Date();
-      })
-      .sort((a, b) => new Date(a.date) - new Date(b.date))[0];
+    const nextTour = getCheckinTourInfo(state.tours || [])?.tour || null;
     const treffpunktLink = nextTour
       ? (state.tourPlanDates || []).find(pd => pd.type === 'treffpunkt' && pd.maps_link)?.maps_link
       : null;

@@ -2366,8 +2366,10 @@ function renderCommunityHome() {
       ? `<div class="tour-grid">${tourCards(filteredTours)}</div>`
       : `<div style="text-align:center;padding:40px 20px;color:var(--muted);font-size:14px">Keine Touren in dieser Kategorie.</div>`;
 
-  // Check-in box — next upcoming tour: participant grid + weather forecast
-  const nextTour = upcoming[0] || null;
+  // Check-in box — current tour wins until it is over; overlapping next tour
+  // takes over one day before its start.
+  const checkinInfo = getCheckinTourInfo(tours);
+  const nextTour = checkinInfo?.tour || null;
   const checkInBox = nextTour ? (() => {
     const tStart = new Date(nextTour.date + 'T12:00:00');
     const tEnd   = nextTour.end_date && nextTour.end_date !== nextTour.date ? new Date(nextTour.end_date + 'T12:00:00') : null;
@@ -2383,7 +2385,14 @@ function renderCommunityHome() {
     const todayMidnightCI = new Date(); todayMidnightCI.setHours(0, 0, 0, 0);
     const tourMidnight    = new Date(nextTour.date + 'T00:00:00');
     const diffDays = Math.round((tourMidnight - todayMidnightCI) / 86400000);
-    const countdown = diffDays <= 0 ? 'HEUTE' : diffDays === 1 ? 'IN 1 TAG' : `IN ${diffDays} TAGEN`;
+    const endMidnight = new Date((nextTour.end_date && nextTour.end_date !== nextTour.date ? nextTour.end_date : nextTour.date) + 'T00:00:00');
+    const remainingDays = Math.max(0, Math.round((endMidnight - todayMidnightCI) / 86400000));
+    const isCurrentCheckinTour = checkinInfo?.status === 'current';
+    const countdown = isCurrentCheckinTour
+      ? (remainingDays <= 0 ? 'NOCH HEUTE' : remainingDays === 1 ? 'NOCH 1 TAG' : `NOCH ${remainingDays} TAGE`)
+      : (diffDays <= 0 ? 'HEUTE' : diffDays === 1 ? 'IN 1 TAG' : `IN ${diffDays} TAGEN`);
+    const checkinLabel = isCurrentCheckinTour ? 'AKTUELLE TOUR' : 'NÄCHSTE TOUR';
+    const pulseLabel = isCurrentCheckinTour ? remainingDays <= 10 : diffDays <= 10;
 
     const memberIds = (state.tourMemberIds?.[nextTour.id] || []);
     const adminId   = nextTour.admin_id;
@@ -2438,7 +2447,7 @@ function renderCommunityHome() {
     <div class="checkin-box" data-checkin-tour="${tourId}">
       <div class="checkin-header">
         <div class="checkin-header-nav checkin-header-info" data-open-tour="${tourId}" title="Tour öffnen">
-          <div class="checkin-label${diffDays <= 10 ? ' checkin-label--pulse' : ''}">● ${countdown} · NÄCHSTE TOUR</div>
+          <div class="checkin-label${pulseLabel ? ' checkin-label--pulse' : ''}">● ${countdown} · ${checkinLabel}</div>
           <div class="checkin-title">${esc(nextTour.name)}</div>
           <div class="checkin-meta">${dateStr}${nextTour.destination ? ' · ' + esc(nextTour.destination) : ''}</div>
         </div>
