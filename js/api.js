@@ -958,6 +958,7 @@ async function addPlanDate(date, label, type = 'sonstiger', mapsLink = '', meeti
       details:        display,
     }).catch(e => console.warn('[notify treffpunkt]', e));
   }
+  return data;
 }
 
 async function loadNextTourPlanDates(tourId) {

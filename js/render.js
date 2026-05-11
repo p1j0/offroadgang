@@ -1155,6 +1155,57 @@ function renderTour() {
   <div class="tab-content" id="tab-content">
     ${renderTab(tour)}
   </div>
+</div>
+${renderTourSettingsModal()}`;
+}
+
+function renderTourSettingsBody(tour) {
+  return `
+  <div class="form-group">
+    <label>Tour-Name</label>
+    <input type="text" id="edit-name" value="${esc(tour.name)}" maxlength="60" />
+  </div>
+  <div class="form-row">
+    <div class="form-group">
+      <label>Startdatum</label>
+      <input type="date" id="edit-date" value="${esc(tour.date || '')}" />
+    </div>
+    <div class="form-group">
+      <label>Enddatum</label>
+      <input type="date" id="edit-edate" value="${esc(tour.end_date || '')}" />
+    </div>
+  </div>
+  <div class="form-group">
+    <label>Ziel / Region</label>
+    <input type="text" id="edit-dest" value="${esc(tour.destination || '')}" />
+  </div>
+  <div class="form-group">
+    <label>Beschreibung</label>
+    <textarea id="edit-desc">${esc(tour.description || '')}</textarea>
+  </div>
+  <div class="divider" style="margin:14px 0 12px"></div>
+  <h4 style="font-size:12px;font-weight:600;margin-bottom:8px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em">
+    📏 Distanz berechnen
+  </h4>
+  ${renderDistanceSelector(tour)}
+  <button class="btn btn-primary btn-sm" id="edit-save">Änderungen speichern</button>
+  <div class="divider"></div>
+  <h3 style="font-size:14px;font-weight:600;margin-bottom:10px;color:var(--danger)">⚠️ Gefahrenzone</h3>
+  <button class="btn btn-danger btn-sm" id="delete-tour-btn" style="width:100%;justify-content:center">🗑️ Tour endgültig löschen</button>`;
+}
+
+function renderTourSettingsModal() {
+  return `
+<div class="modal-overlay settings-modal-overlay" id="tour-settings-modal" style="display:none">
+  <div class="settings-modal-content">
+    <div class="settings-modal-header">
+      <div class="settings-modal-title">⚙️ Tour Einstellungen</div>
+      <button class="btn btn-ghost btn-sm" id="tour-settings-modal-close" title="Schliessen" style="font-size:18px;padding:6px 14px">✕</button>
+    </div>
+    <div class="settings-modal-body" id="tour-settings-modal-body">
+      <div style="color:var(--muted);padding:20px">Lädt…</div>
+    </div>
+  </div>
 </div>`;
 }
 
@@ -1724,6 +1775,10 @@ window._dismissInfoBanner = function() {
 
 function renderInfoTab(tour) {
   const isAdmin = isCurrentUserAdmin();
+  const pendingPlanDate = state.pendingPlanDate?.tourId === tour.id ? state.pendingPlanDate : null;
+  const pendingType = pendingPlanDate?.type || 'treffpunkt';
+  const pendingLabel = pendingPlanDate?.label || '';
+  const pendingMapsLink = pendingPlanDate?.mapsLink || '';
 
   const bannerItems = state.infoBannerItems || [];
   const infoBanner = bannerItems.length ? `
@@ -1748,7 +1803,10 @@ function renderInfoTab(tour) {
 
       <!-- Left: tour details + admin edit form -->
       <div>
-        <h2 style="font-family:var(--font-display);font-size:24px;letter-spacing:0.5px;margin-bottom:14px">Tour-Details</h2>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px">
+          <h2 style="font-family:var(--font-display);font-size:24px;letter-spacing:0.5px;margin:0">Tour-Details</h2>
+          ${isAdmin ? `<button class="btn btn-ghost btn-sm" id="tour-settings-toggle">⚙️ Einstellungen</button>` : ''}
+        </div>
         <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:18px">
           <div class="info-block">
             <div class="info-label">Beschreibung</div>
@@ -1786,41 +1844,6 @@ function renderInfoTab(tour) {
           </div>
         </div>
 
-        ${isAdmin ? `
-        <div class="divider"></div>
-        <h3 style="font-size:14px;font-weight:600;margin-bottom:12px">⚙️ Infos bearbeiten</h3>
-        <div class="form-group">
-          <label>Tour-Name</label>
-          <input type="text" id="edit-name" value="${esc(tour.name)}" maxlength="60" />
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label>Startdatum</label>
-            <input type="date" id="edit-date" value="${esc(tour.date || '')}" />
-          </div>
-          <div class="form-group">
-            <label>Enddatum</label>
-            <input type="date" id="edit-edate" value="${esc(tour.end_date || '')}" />
-          </div>
-        </div>
-        <div class="form-group">
-          <label>Ziel / Region</label>
-          <input type="text" id="edit-dest" value="${esc(tour.destination || '')}" />
-        </div>
-        <div class="form-group">
-          <label>Beschreibung</label>
-          <textarea id="edit-desc">${esc(tour.description || '')}</textarea>
-        </div>
-        <div class="divider" style="margin:14px 0 12px"></div>
-        <h4 style="font-size:12px;font-weight:600;margin-bottom:8px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em">
-          📏 Distanz berechnen
-        </h4>
-        ${renderDistanceSelector(tour)}
-        <button class="btn btn-primary btn-sm" id="edit-save">Änderungen speichern</button>
-        <div class="divider"></div>
-        <h3 style="font-size:14px;font-weight:600;margin-bottom:10px;color:var(--danger)">⚠️ Gefahrenzone</h3>
-        <button class="btn btn-danger btn-sm" id="delete-tour-btn" style="width:100%;justify-content:center">🗑️ Tour endgültig löschen</button>
-        ` : ''}
       </div>
 
       <!-- Right: planning calendar -->
@@ -1855,28 +1878,29 @@ function renderInfoTab(tour) {
           <div style="font-size:11px;font-weight:600;margin-bottom:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em">
             Termin hinzufügen
           </div>
+          ${pendingPlanDate ? `<div style="font-size:12px;color:var(--accent);margin-bottom:10px">Wegpunkt übernommen: ${esc(pendingLabel || 'Wegpunkt')}</div>` : ''}
           <div class="form-group" style="margin-bottom:10px">
             <label>Art</label>
             <select id="pd-type" onchange="document.getElementById('pd-time-row').style.display=this.value==='treffpunkt'?'':'none'">
-              <option value="treffpunkt">📍 Treffpunkt</option>
-              <option value="sonstiger">📅 Sonstiger Termin</option>
+              <option value="treffpunkt"${pendingType === 'treffpunkt' ? ' selected' : ''}>📍 Treffpunkt</option>
+              <option value="sonstiger"${pendingType === 'sonstiger' ? ' selected' : ''}>📅 Sonstiger Termin</option>
             </select>
           </div>
           <div class="form-group" style="margin-bottom:10px">
             <label>Datum</label>
             <input type="date" id="add-date" />
           </div>
-          <div class="form-group" id="pd-time-row" style="margin-bottom:10px">
+          <div class="form-group" id="pd-time-row" style="margin-bottom:10px;display:${pendingType === 'treffpunkt' ? '' : 'none'}">
             <label>Uhrzeit (optional)</label>
             <input type="time" id="add-time" />
           </div>
           <div class="form-group" style="margin-bottom:10px">
             <label>Beschriftung (optional)</label>
-            <input type="text" id="add-label" placeholder="z.B. Parkplatz Talstation, Abfahrt…" maxlength="80" />
+            <input type="text" id="add-label" placeholder="z.B. Parkplatz Talstation, Abfahrt…" maxlength="80" value="${esc(pendingLabel)}" />
           </div>
           <div class="form-group" style="margin-bottom:12px">
             <label>Google Maps Link (optional)</label>
-            <input type="url" id="add-maps-link" placeholder="https://maps.google.com/…" />
+            <input type="url" id="add-maps-link" placeholder="https://maps.google.com/…" value="${esc(pendingMapsLink)}" />
           </div>
           <button class="btn btn-ghost btn-sm" id="add-date-btn">+ Termin hinzufügen</button>
         </div>` : ''}
@@ -2461,7 +2485,7 @@ function renderCommunityHome() {
         <div class="checkin-grid" id="checkin-grid-${tourId}">${participantGrid}</div>
       </div>
       ${(() => {
-        const treffpunkte = (state.tourPlanDates || []).filter(pd => pd.type === 'treffpunkt');
+        const treffpunkte = getCheckinTreffpunkte(state.tourPlanDates || []);
         if (!treffpunkte.length) return '';
         const rows = treffpunkte.map(pd => {
           const _pd = new Date(pd.date + 'T12:00:00');

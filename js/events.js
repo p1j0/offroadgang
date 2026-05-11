@@ -154,6 +154,12 @@ function attachEvents() {
     if (e.target.id === 'community-settings-modal') closeCommunitySettingsModal();
   });
 
+  /* --- Tour settings modal close --- */
+  document.getElementById('tour-settings-modal-close')?.addEventListener('click', closeTourSettingsModal);
+  document.getElementById('tour-settings-modal')?.addEventListener('click', (e) => {
+    if (e.target.id === 'tour-settings-modal') closeTourSettingsModal();
+  });
+
   /* --- Generic "back" buttons --- */
   document.querySelectorAll('#back-home').forEach(el => {
     el.addEventListener('click', () => {
@@ -607,7 +613,7 @@ function attachEvents() {
   if (state.view === 'community-home') {
     const nextTour = getCheckinTourInfo(state.tours || [])?.tour || null;
     const treffpunktLink = nextTour
-      ? (state.tourPlanDates || []).find(pd => pd.type === 'treffpunkt' && pd.maps_link)?.maps_link
+      ? getCheckinTreffpunkte(state.tourPlanDates || []).find(pd => pd.maps_link)?.maps_link
       : null;
     if (nextTour) {
       _loadCheckinWeather(nextTour.id, nextTour.destination, nextTour.date, nextTour.end_date || nextTour.date, treffpunktLink, nextTour);
@@ -1142,6 +1148,32 @@ function attachMapEvents() {
     }
   }, { once: false });
 
+  mapContainer?.addEventListener('click', e => {
+    const btn = e.target.closest('[data-wp-plan]');
+    if (!btn) return;
+    e.preventDefault();
+    state.pendingPlanDate = {
+      tourId: state.currentTourId,
+      type: 'treffpunkt',
+      label: btn.dataset.wpName || 'Wegpunkt',
+      mapsLink: btn.dataset.wpMaps || googleMapsLinkForLatLon(btn.dataset.wpLat, btn.dataset.wpLon),
+      fromWaypoint: true,
+    };
+    mapInstance?.closePopup?.();
+    const container = document.getElementById('map-container');
+    if (container?.classList.contains('map-fullscreen-active')) _cssFullscreen(container, false);
+    state.currentTab = 'info';
+    markTabSeen(state.currentTourId, 'info');
+    computeTabBadges(state.currentTourId);
+    _refreshTabBar();
+    const tc = document.getElementById('tab-content');
+    if (tc && state.currentTour) {
+      tc.innerHTML = renderTab(state.currentTour);
+      afterTabRender();
+      setTimeout(() => document.getElementById('add-date')?.focus(), 50);
+    }
+  });
+
   /* GPX upload (admin only) */
   document.getElementById('gpx-up')?.addEventListener('change', async e => {
     if (e.target.dataset.busy === '1') return;
@@ -1391,62 +1423,8 @@ function _appendChatMessage(msg) {
    ---------------------------------------------------------- */
 
 function attachInfoEvents() {
-  /* Distance dropdown: show/hide manual input */
-  document.getElementById('dist-source')?.addEventListener('change', e => {
-    const wrap = document.getElementById('dist-manual-wrap');
-    if (wrap) wrap.style.display = e.target.value === 'manual' ? 'block' : 'none';
-  });
-
-  /* Save edits (name + dates + destination + description + optional distance) */
-  document.getElementById('edit-save')?.addEventListener('click', async () => {
-    const name  = (document.getElementById('edit-name')?.value  || '').trim();
-    const date  =  document.getElementById('edit-date')?.value  || '';
-    const edate =  document.getElementById('edit-edate')?.value || '';
-    if (!name) { toast('Tour-Name darf nicht leer sein.', 'error'); return; }
-    if (!date) { toast('Startdatum darf nicht leer sein.', 'error'); return; }
-
-    // Distance from dropdown (if present)
-    const distSource = document.getElementById('dist-source')?.value;
-    let dist = '';
-    let surfaceDisplay = null;
-    if (distSource) {
-      const gpxData = normalizeGPXRoute(state.currentTour?.gpx_route);
-      if (distSource === 'total' && gpxData)       dist = calculateTotalDistance(gpxData);
-      else if (distSource.startsWith('track:') && gpxData) dist = calculateTrackDistance(gpxData, parseInt(distSource.split(':')[1]));
-      else if (distSource === 'manual') dist = (document.getElementById('dist-manual')?.value || '').trim();
-      surfaceDisplay = buildSurfaceDisplay(state.currentTour, distSource);
-    }
-
-    const updates = {
-      name,
-      date,
-      end_date:    edate || null,
-      destination: (document.getElementById('edit-dest')?.value || '').trim(),
-      description: (document.getElementById('edit-desc')?.value || '').trim(),
-      ...(dist ? { distance: dist } : {}),
-      ...(surfaceDisplay ? { surface_display: surfaceDisplay } : {}),
-    };
-    try {
-      await updateTourInfo(updates);
-      toast('✓ Gespeichert');
-      const hn = document.querySelector('.tour-detail-title'); if (hn) hn.textContent = name;
-      const hd = document.getElementById('hdr-dest'); if (hd) hd.textContent = updates.destination || 'Kein Ziel';
-      const id = document.getElementById('info-dest'); if (id) id.textContent = updates.destination || '—';
-      if (dist) { const hdi = document.getElementById('hdr-dist'); if (hdi) hdi.textContent = dist; }
-      _refreshInfoTab();
-    } catch (e) { toast(e.message, 'error'); }
-  });
-
-  /* Delete tour (admin only) */
-  document.getElementById('delete-tour-btn')?.addEventListener('click', async () => {
-    const name = state.currentTour?.name || 'diese Tour';
-    if (!confirm(`„${name}" wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.`)) return;
-    setBtn('delete-tour-btn', true, '');
-    try {
-      await deleteTour();
-      toast('Tour gelöscht');
-      await navigateTo('community-home');
-    } catch (e) { toast(e.message, 'error'); setBtn('delete-tour-btn', false, '🗑️ Tour endgültig löschen'); }
+  document.getElementById('tour-settings-toggle')?.addEventListener('click', () => {
+    openTourSettingsModal();
   });
 
   /* Tour calendar navigation */
@@ -1468,7 +1446,19 @@ function attachInfoEvents() {
     const ti = t === 'treffpunkt' ? (document.getElementById('add-time')?.value || '') : '';
     if (!d) { toast('Bitte Datum wählen.', 'error'); return; }
     try {
-      await addPlanDate(d, l, t, m, ti);
+      const pendingFromWaypoint = state.pendingPlanDate?.tourId === state.currentTourId && state.pendingPlanDate?.fromWaypoint;
+      const existingTreffpunkte = t === 'treffpunkt' && pendingFromWaypoint
+        ? (state.tourPlanDates || []).filter(pd => pd.type === 'treffpunkt')
+        : [];
+      const replaceTreffpunkt = existingTreffpunkte.length ? await confirmTreffpunktReplace() : false;
+      const oldTreffpunkte = replaceTreffpunkt ? existingTreffpunkte : [];
+      const created = await addPlanDate(d, l, t, m, ti);
+      for (const pd of oldTreffpunkte) {
+        if (pd.id !== created?.id) await deletePlanDate(pd.id);
+      }
+      state.pendingPlanDate = null;
+      await loadNextTourPlanDates(state.currentTourId);
+      state.currentTab = 'info';
       _refreshInfoTab();
     } catch (e) { toast(e.message, 'error'); }
   });
@@ -1481,6 +1471,43 @@ function attachInfoEvents() {
         _refreshInfoTab();
       } catch (e) { toast(e.message, 'error'); }
     });
+  });
+}
+
+function confirmTreffpunktReplace() {
+  return new Promise(resolve => {
+    document.getElementById('treffpunkt-replace-confirm')?.remove();
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay settings-modal-overlay';
+    overlay.id = 'treffpunkt-replace-confirm';
+    overlay.style.display = 'flex';
+    overlay.innerHTML = `
+      <div class="settings-modal-content" style="max-width:420px">
+        <div class="settings-modal-header">
+          <div class="settings-modal-title">Aktuellen Treffpunkt ersetzen?</div>
+        </div>
+        <div class="settings-modal-body">
+          <div style="color:var(--muted);font-size:14px;margin-bottom:18px">
+            Es gibt bereits einen Treffpunkt. Soll der neue Planungstermin den aktuellen Treffpunkt ersetzen?
+          </div>
+          <div style="display:flex;gap:10px;justify-content:flex-end">
+            <button class="btn btn-ghost btn-sm" id="treffpunkt-replace-no">Nein</button>
+            <button class="btn btn-primary btn-sm" id="treffpunkt-replace-yes">Ja</button>
+          </div>
+        </div>
+      </div>`;
+    const close = value => {
+      overlay.remove();
+      document.body.style.overflow = '';
+      resolve(value);
+    };
+    document.body.appendChild(overlay);
+    document.body.style.overflow = 'hidden';
+    overlay.addEventListener('click', e => {
+      if (e.target === overlay) close(false);
+    });
+    overlay.querySelector('#treffpunkt-replace-no')?.addEventListener('click', () => close(false));
+    overlay.querySelector('#treffpunkt-replace-yes')?.addEventListener('click', () => close(true));
   });
 }
 
@@ -2814,6 +2841,23 @@ async function reloadCommunitySettingsModal() {
   }
 }
 
+function openTourSettingsModal() {
+  const overlay = document.getElementById('tour-settings-modal');
+  const body    = document.getElementById('tour-settings-modal-body');
+  if (!overlay || !body) return;
+  if (!state.currentTour) { toast('Keine Tour geladen', 'error'); return; }
+  overlay.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+  body.innerHTML = renderTourSettingsBody(state.currentTour);
+  attachTourSettingsModalEvents();
+}
+
+function closeTourSettingsModal() {
+  const overlay = document.getElementById('tour-settings-modal');
+  if (overlay) overlay.style.display = 'none';
+  document.body.style.overflow = '';
+}
+
 /* ----------------------------------------------------------
    Scoped event binders — called only when the modal body is
    (re-)rendered, so no stacking on the global attachEvents().
@@ -2935,6 +2979,71 @@ function attachProfileModalEvents() {
       toast('Fehler: ' + (err.message || 'unbekannt'), 'error');
     }
     await refreshPushButtonState();
+  });
+}
+
+function attachTourSettingsModalEvents() {
+  document.getElementById('dist-source')?.addEventListener('change', e => {
+    const wrap = document.getElementById('dist-manual-wrap');
+    if (wrap) wrap.style.display = e.target.value === 'manual' ? 'block' : 'none';
+  });
+
+  document.getElementById('edit-save')?.addEventListener('click', async () => {
+    const name  = (document.getElementById('edit-name')?.value  || '').trim();
+    const date  =  document.getElementById('edit-date')?.value  || '';
+    const edate =  document.getElementById('edit-edate')?.value || '';
+    if (!name) { toast('Tour-Name darf nicht leer sein.', 'error'); return; }
+    if (!date) { toast('Startdatum darf nicht leer sein.', 'error'); return; }
+
+    const distSource = document.getElementById('dist-source')?.value;
+    let dist = '';
+    let surfaceDisplay = null;
+    if (distSource) {
+      const gpxData = normalizeGPXRoute(state.currentTour?.gpx_route);
+      if (distSource === 'total' && gpxData)       dist = calculateTotalDistance(gpxData);
+      else if (distSource.startsWith('track:') && gpxData) dist = calculateTrackDistance(gpxData, parseInt(distSource.split(':')[1]));
+      else if (distSource === 'manual') dist = (document.getElementById('dist-manual')?.value || '').trim();
+      surfaceDisplay = buildSurfaceDisplay(state.currentTour, distSource);
+    }
+
+    const updates = {
+      name,
+      date,
+      end_date:    edate || null,
+      destination: (document.getElementById('edit-dest')?.value || '').trim(),
+      description: (document.getElementById('edit-desc')?.value || '').trim(),
+      ...(dist ? { distance: dist } : {}),
+      ...(surfaceDisplay ? { surface_display: surfaceDisplay } : {}),
+    };
+    setBtn('edit-save', true, '');
+    try {
+      await updateTourInfo(updates);
+      toast('✓ Gespeichert');
+      const hn = document.querySelector('.tour-detail-title'); if (hn) hn.textContent = name;
+      const hd = document.getElementById('hdr-dest'); if (hd) hd.textContent = updates.destination || 'Kein Ziel';
+      const id = document.getElementById('info-dest'); if (id) id.textContent = updates.destination || '—';
+      if (dist) { const hdi = document.getElementById('hdr-dist'); if (hdi) hdi.textContent = dist; }
+      closeTourSettingsModal();
+      _refreshInfoTab();
+    } catch (e) {
+      toast(e.message, 'error');
+      setBtn('edit-save', false, 'Änderungen speichern');
+    }
+  });
+
+  document.getElementById('delete-tour-btn')?.addEventListener('click', async () => {
+    const name = state.currentTour?.name || 'diese Tour';
+    if (!confirm(`„${name}" wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.`)) return;
+    setBtn('delete-tour-btn', true, '');
+    try {
+      await deleteTour();
+      toast('Tour gelöscht');
+      closeTourSettingsModal();
+      await navigateTo('community-home');
+    } catch (e) {
+      toast(e.message, 'error');
+      setBtn('delete-tour-btn', false, '🗑️ Tour endgültig löschen');
+    }
   });
 }
 
