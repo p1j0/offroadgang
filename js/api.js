@@ -533,7 +533,9 @@ function computeTabBadges(tourId) {
 
   /* ── Media ── */
   const seenMedia = getLastSeen(tourId, 'media');
-  const newMedia  = state.tourMedia.filter(m => new Date(m.created_at) > seenMedia);
+  const newMedia  = state.tourMedia.filter(m =>
+    m.user_id !== state.currentUser?.id && new Date(m.created_at) > seenMedia
+  );
   if (newMedia.length) {
     state.tabBadges.media = newMedia.map(m => ({
       text: `${m.username}: ${m.media_type === 'youtube' ? 'YouTube' : m.media_type}`,
@@ -1931,10 +1933,12 @@ async function computeMediaBadges() {
     sb.from('community_media')
       .select('id', { count: 'exact', head: true })
       .eq('community_id', cid)
+      .neq('user_id', state.currentUser.id)
       .gt('created_at', seenCm.toISOString()),
     sb.from('tour_media')
       .select('id, tour_id', { count: 'exact', head: true })
       .in('tour_id', (state.tours || []).map(t => t.id))
+      .neq('user_id', state.currentUser.id)
       .gt('created_at', seenTm.toISOString()),
   ]);
 

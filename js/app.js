@@ -183,6 +183,11 @@ async function _loadViewData(view) {
       await Promise.all([loadHomeData(), loadCommunityMedia()]);
       await computeTourMediaCounts(); // needs state.tours from loadHomeData
       state.selectedTourMedia = null;
+      // Snapshot der seen-states EINFRIEREN bevor markTabSeen läuft,
+      // damit das Rendering noch weiß, welche Items "neu" sind.
+      if (!state.mediaSeenAt) state.mediaSeenAt = {};
+      state.mediaSeenAt[`cm:${state.currentCommunityId}`] = getLastSeen(state.currentCommunityId, 'community-media').getTime();
+      state.mediaSeenAt[`tm:${state.currentCommunityId}`] = getLastSeen(state.currentCommunityId, 'tour-media').getTime();
       markTabSeen(state.currentCommunityId, 'community-media');
       markTabSeen(state.currentCommunityId, 'tour-media');
       state.mediaBadges = { community: 0, tours: 0 };
@@ -201,6 +206,11 @@ async function _loadViewData(view) {
   if (view === 'tour' && state.currentTourId) {
     await loadTourData(state.currentTourId);
     await loadTourMedia();
+    // Snapshot der Media-seen-state für diese Tour einfrieren, BEVOR das
+    // Tab-Click-Handling markTabSeen('media') auslöst. So zeigt die Galerie
+    // pro Item ein "NEU"-Label für Uploads anderer User seit letztem Besuch.
+    if (!state.mediaSeenAt) state.mediaSeenAt = {};
+    state.mediaSeenAt[`tour:${state.currentTourId}`] = getLastSeen(state.currentTourId, 'media').getTime();
     subscribeToChat(state.currentTourId);
   }
 }

@@ -59,6 +59,11 @@ const state = {
   mediaBadges:    { community: 0, tours: 0 },
   tourMediaCounts: {},
   tourMediaNew:    {},
+  // Snapshot der zuletzt-gesehen-Zeitpunkte beim Öffnen einer Media-Ansicht.
+  // Wird benutzt um pro Item ein "NEU"-Label zu zeigen, OHNE dass markTabSeen
+  // (das gleich danach läuft) das Label sofort wieder verschwinden lässt.
+  // Keys: `tour:<tourId>` | `cm:<cid>` | `tm:<cid>`  → Wert: ms since epoch
+  mediaSeenAt:     {},
   isSiteAdminUser: false,   // tour id selected in community media view
   tabBadges:     {},
   tourCalMonth:  null,

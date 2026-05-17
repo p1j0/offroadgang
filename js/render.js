@@ -3210,8 +3210,21 @@ function renderPollEditModal(poll) {
    Media Tab (Cloudinary + YouTube)
    ---------------------------------------------------------- */
 
+/**
+ * Returns true if media item `m` is new to the current user since the last
+ * snapshot — i.e. uploaded by someone else AFTER the user last opened this
+ * media view. Used to render the small "NEU" badge on cards.
+ */
+function _isNewMedia(m, snapshotMs) {
+  if (!snapshotMs || !m?.created_at) return false;
+  if (m.user_id === state.currentUser?.id) return false;
+  const t = new Date(m.created_at).getTime();
+  return Number.isFinite(t) && t > snapshotMs;
+}
+
 function renderMediaTab() {
   const media = [...state.tourMedia].sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || (a.sort_order || 0) - (b.sort_order || 0) || new Date(b.created_at) - new Date(a.created_at));
+  const newSnap = state.mediaSeenAt?.[`tour:${state.currentTourId}`] || 0;
   const images = media.filter(m => m.media_type === 'image');
   const videos = media.filter(m => m.media_type === 'video');
   const ytVideos = media.filter(m => m.media_type === 'youtube');
@@ -3255,6 +3268,8 @@ function renderMediaTab() {
     const dt = new Date(m.created_at);
     const dateStr = dt.toLocaleDateString('de-DE', { day:'2-digit', month:'2-digit', year:'2-digit' });
 
+    const newBadge = _isNewMedia(m, newSnap) ? '<div class="media-new-badge">NEU</div>' : '';
+
     if (m.media_type === 'image') {
       // Cloudinary thumbnail: 400px wide, auto height, auto quality
       const thumb = m.url.replace('/upload/', '/upload/c_fill,w_400,h_300,q_auto/');
@@ -3262,6 +3277,7 @@ function renderMediaTab() {
 <div class="media-card" data-media-id="${m.id}" ${isAdmin ? 'draggable="true"' : ''}>
   <div class="media-thumb" style="cursor:pointer" data-lightbox-url="${m.url}" data-lightbox-type="image">
     ${m.pinned ? '<div class="media-pinned-badge">📌</div>' : ''}
+    ${newBadge}
     <img src="${thumb}" alt="${esc(m.caption || '')}" loading="lazy" />
   </div>
   <div class="media-card-footer">
@@ -3282,6 +3298,7 @@ function renderMediaTab() {
 <div class="media-card" data-media-id="${m.id}" ${isAdmin ? 'draggable="true"' : ''}>
   <div class="media-thumb" style="cursor:pointer;position:relative" data-lightbox-url="${m.url}" data-lightbox-type="video">
     ${m.pinned ? '<div class="media-pinned-badge">📌</div>' : ''}
+    ${newBadge}
     <img src="${thumb}" alt="${esc(m.caption || '')}" loading="lazy" />
     <div class="media-play-overlay">▶</div>
   </div>
@@ -3304,6 +3321,7 @@ function renderMediaTab() {
 <div class="media-card" data-media-id="${m.id}" ${isAdmin ? 'draggable="true"' : ''}>
   <div class="media-thumb" style="cursor:pointer;position:relative" data-lightbox-url="${m.url}" data-lightbox-type="youtube" data-yt-id="${ytId}">
     ${m.pinned ? '<div class="media-pinned-badge">📌</div>' : ''}
+    ${newBadge}
     <img src="${thumb}" alt="${esc(m.caption || '')}" loading="lazy" />
     <div class="media-play-overlay">▶</div>
   </div>
@@ -3364,10 +3382,22 @@ function renderMediaLightbox(url, type, ytId, mediaId) {
    ---------------------------------------------------------- */
 
 function renderCommunityMedia() {
-  const tours = state.tours || [];
   const isAdmin = state.currentCommunity &&
     (state.currentCommunity.admin_id === state.currentUser.id ||
      (state.currentCommunity.co_admin_ids || []).includes(state.currentUser.id));
+
+  // Tour-Sidebar: vergangene Touren oben (neueste zuerst), zukünftige unten
+  // (nächste zuerst). Touren ohne Datum sortieren ans Ende.
+  const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+  const past = [], future = [], undated = [];
+  for (const t of (state.tours || [])) {
+    if (!t.date) { undated.push(t); continue; }
+    const d = new Date(t.date + 'T12:00:00');
+    (d < todayStart ? past : future).push(t);
+  }
+  past.sort((a, b) => new Date(b.date) - new Date(a.date));   // newest past first
+  future.sort((a, b) => new Date(a.date) - new Date(b.date)); // soonest future first
+  const tours = [...past, ...future, ...undated];
 
   // Tour list sidebar
   const tourList = tours.length === 0
@@ -3436,11 +3466,14 @@ function _renderCommunityMediaCard(m, isAdmin) {
   const dateStr = dt.toLocaleDateString('de-DE', { day:'2-digit', month:'2-digit', year:'2-digit' });
   const isMe = m.user_id === state.currentUser.id;
   const canDelete = isMe || isAdmin;
+  const newSnap = state.mediaSeenAt?.[`cm:${state.currentCommunityId}`] || 0;
+  const newBadge = _isNewMedia(m, newSnap) ? '<div class="media-new-badge">NEU</div>' : '';
 
   return `
 <div class="media-card" data-media-id="${m.id}" ${isAdmin ? 'draggable="true"' : ''}>
   <div class="media-thumb" style="cursor:pointer;position:relative" data-cm-lightbox-url="${m.url}" data-cm-lightbox-type="youtube" data-cm-yt-id="${ytId || ''}">
     ${m.pinned ? '<div class="media-pinned-badge">📌</div>' : ''}
+    ${newBadge}
     <img src="${thumb}" alt="${esc(m.caption || '')}" loading="lazy" />
     <div class="media-play-overlay">▶</div>
   </div>
@@ -3461,14 +3494,18 @@ function renderTourMediaPreview(media) {
     return '<div style="text-align:center;padding:40px;color:var(--muted)">Keine Medien in dieser Tour.</div>';
   }
 
+  const newSnap = state.mediaSeenAt?.[`tm:${state.currentCommunityId}`] || 0;
+
   const gallery = media.map(m => {
     const dt = new Date(m.created_at);
     const dateStr = dt.toLocaleDateString('de-DE', { day:'2-digit', month:'2-digit', year:'2-digit' });
+    const newBadge = _isNewMedia(m, newSnap) ? '<div class="media-new-badge">NEU</div>' : '';
 
     if (m.media_type === 'image') {
       const thumb = m.url.replace('/upload/', '/upload/c_fill,w_400,h_300,q_auto/');
-      return `<div class="media-card" data-media-id="${m.id}"><div class="media-thumb" style="cursor:pointer" data-cm-lightbox-url="${m.url}" data-cm-lightbox-type="image">
+      return `<div class="media-card" data-media-id="${m.id}"><div class="media-thumb" style="cursor:pointer;position:relative" data-cm-lightbox-url="${m.url}" data-cm-lightbox-type="image">
         ${m.pinned ? '<div class="media-pinned-badge">📌</div>' : ''}
+        ${newBadge}
         <img src="${thumb}" loading="lazy" /></div>
         <div class="media-card-footer"><div class="media-card-info"><span class="media-card-user">${esc(m.username)}</span><span class="media-card-date">${dateStr}</span></div>
         ${m.caption ? `<div class="media-card-caption">${esc(m.caption)}</div>` : ''}</div></div>`;
@@ -3477,6 +3514,7 @@ function renderTourMediaPreview(media) {
       const thumb = m.thumbnail_url || m.url.replace('/upload/', '/upload/c_fill,w_400,h_300,so_1/');
       return `<div class="media-card" data-media-id="${m.id}"><div class="media-thumb" style="cursor:pointer;position:relative" data-cm-lightbox-url="${m.url}" data-cm-lightbox-type="video">
         ${m.pinned ? '<div class="media-pinned-badge">📌</div>' : ''}
+        ${newBadge}
         <img src="${thumb}" loading="lazy" /><div class="media-play-overlay">▶</div></div>
         <div class="media-card-footer"><div class="media-card-info"><span class="media-card-user">${esc(m.username)}</span><span class="media-card-date">${dateStr}</span></div>
         ${m.caption ? `<div class="media-card-caption">${esc(m.caption)}</div>` : ''}</div></div>`;
@@ -3486,6 +3524,7 @@ function renderTourMediaPreview(media) {
       const thumb = m.thumbnail_url || `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`;
       return `<div class="media-card" data-media-id="${m.id}"><div class="media-thumb" style="cursor:pointer;position:relative" data-cm-lightbox-url="${m.url}" data-cm-lightbox-type="youtube" data-cm-yt-id="${ytId}">
         ${m.pinned ? '<div class="media-pinned-badge">📌</div>' : ''}
+        ${newBadge}
         <img src="${thumb}" loading="lazy" /><div class="media-play-overlay">▶</div></div>
         <div class="media-card-footer"><div class="media-card-info"><span class="media-card-user">${esc(m.username)}</span><span class="media-card-date">${dateStr}</span></div>
         ${m.caption ? `<div class="media-card-caption">${esc(m.caption)}</div>` : ''}</div></div>`;
