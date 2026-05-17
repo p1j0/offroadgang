@@ -2089,63 +2089,104 @@ function _bindRemoveOpts() {
    Media tab events
    ---------------------------------------------------------- */
 
-function attachMediaEvents() {
-  /* File upload */
-  document.getElementById('media-file-input')?.addEventListener('change', async e => {
-    const files = [...e.target.files];
-    if (!files.length) return;
+async function _uploadTourMediaFiles(files) {
+  if (!files || !files.length) return;
 
-    for (const file of files) {
-      // Validate type
-      if (!ALLOWED_MEDIA_TYPES.includes(file.type)) {
-        toast(`Dateityp nicht erlaubt: ${file.type}`, 'error');
-        continue;
-      }
-      // Validate size
-      if (file.size > MAX_FILE_SIZE) {
-        toast(`Datei zu groß: ${(file.size / 1024 / 1024).toFixed(1)} MB (max ${MAX_FILE_SIZE / 1024 / 1024} MB)`, 'error');
-        continue;
-      }
-
-      const prog = document.getElementById('media-upload-progress');
-      const bar  = document.getElementById('media-upload-bar');
-      const txt  = document.getElementById('media-upload-text');
-      if (prog) prog.style.display = 'block';
-
-      try {
-        const result = await uploadToCloudinary(file, pct => {
-          if (bar) bar.style.width = pct + '%';
-          if (txt) txt.textContent = `Wird hochgeladen… ${pct}%`;
-        });
-
-        const isVideo = file.type.startsWith('video');
-        await saveTourMedia({
-          tour_id:       state.currentTourId,
-          user_id:       state.currentUser.id,
-          username:      state.currentUser.username,
-          media_type:    isVideo ? 'video' : 'image',
-          url:           result.secure_url,
-          thumbnail_url: result.eager?.[0]?.secure_url || '',
-          public_id:     result.public_id,
-          caption:       '',
-          file_size:     result.bytes || 0,
-        });
-
-        toast('✓ Hochgeladen');
-      } catch (err) {
-        toast(err.message, 'error');
-      }
-
-      if (prog) prog.style.display = 'none';
-      if (bar) bar.style.width = '0%';
+  for (const file of files) {
+    // Validate type
+    if (!ALLOWED_MEDIA_TYPES.includes(file.type)) {
+      toast(`Dateityp nicht erlaubt: ${file.type || 'unbekannt'}`, 'error');
+      continue;
+    }
+    // Validate size
+    if (file.size > MAX_FILE_SIZE) {
+      toast(`Datei zu groß: ${(file.size / 1024 / 1024).toFixed(1)} MB (max ${MAX_FILE_SIZE / 1024 / 1024} MB)`, 'error');
+      continue;
     }
 
+    const prog = document.getElementById('media-upload-progress');
+    const bar  = document.getElementById('media-upload-bar');
+    const txt  = document.getElementById('media-upload-text');
+    if (prog) prog.style.display = 'block';
+
+    try {
+      const result = await uploadToCloudinary(file, pct => {
+        if (bar) bar.style.width = pct + '%';
+        if (txt) txt.textContent = `Wird hochgeladen… ${pct}%`;
+      });
+
+      const isVideo = file.type.startsWith('video');
+      await saveTourMedia({
+        tour_id:       state.currentTourId,
+        user_id:       state.currentUser.id,
+        username:      state.currentUser.username,
+        media_type:    isVideo ? 'video' : 'image',
+        url:           result.secure_url,
+        thumbnail_url: result.eager?.[0]?.secure_url || '',
+        public_id:     result.public_id,
+        caption:       '',
+        file_size:     result.bytes || 0,
+      });
+
+      toast('✓ Hochgeladen');
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+
+    if (prog) prog.style.display = 'none';
+    if (bar) bar.style.width = '0%';
+  }
+
+  // Re-render media tab
+  _refreshMediaTab();
+}
+
+function attachMediaEvents() {
+  /* File upload via file picker */
+  document.getElementById('media-file-input')?.addEventListener('change', async e => {
+    const files = [...e.target.files];
+    await _uploadTourMediaFiles(files);
     // Reset input so same file can be re-uploaded
     e.target.value = '';
-
-    // Re-render media tab
-    _refreshMediaTab();
   });
+
+  /* Drag & drop upload — Workaround für macOS-PWAs (Foto-Mediathek-Picker
+     liefert ERR_ACCESS_DENIED) und ohnehin bequemer am Desktop. */
+  const dropZone = document.querySelector('#tab-content .tab-scroll');
+  if (dropZone && !dropZone.dataset.dropAttached) {
+    dropZone.dataset.dropAttached = '1';
+    let dragDepth = 0;
+    const hasFiles = e => {
+      const types = e.dataTransfer?.types;
+      if (!types) return false;
+      // DOMStringList in some browsers — both have includes()/contains()
+      return Array.from(types).includes('Files');
+    };
+    dropZone.addEventListener('dragenter', e => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      dragDepth++;
+      _showMediaDropOverlay();
+    });
+    dropZone.addEventListener('dragover', e => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+    });
+    dropZone.addEventListener('dragleave', e => {
+      if (!hasFiles(e)) return;
+      dragDepth = Math.max(0, dragDepth - 1);
+      if (dragDepth === 0) _hideMediaDropOverlay();
+    });
+    dropZone.addEventListener('drop', async e => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      dragDepth = 0;
+      _hideMediaDropOverlay();
+      const files = [...(e.dataTransfer?.files || [])];
+      await _uploadTourMediaFiles(files);
+    });
+  }
 
   /* YouTube link toggle */
   document.getElementById('media-yt-btn')?.addEventListener('click', () => {
@@ -2338,6 +2379,19 @@ function _refreshMediaTab() {
     tc.innerHTML = renderMediaTab();
     attachMediaEvents();
   }
+}
+
+function _showMediaDropOverlay() {
+  if (document.getElementById('media-drop-overlay')) return;
+  const o = document.createElement('div');
+  o.id = 'media-drop-overlay';
+  o.className = 'media-drop-overlay';
+  o.innerHTML = '<div class="media-drop-overlay-inner">📥<br>Datei(en) hier ablegen</div>';
+  document.body.appendChild(o);
+}
+
+function _hideMediaDropOverlay() {
+  document.getElementById('media-drop-overlay')?.remove();
 }
 
 /* ----------------------------------------------------------
