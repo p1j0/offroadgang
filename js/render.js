@@ -31,7 +31,7 @@ function renderAuth() {
   return `
 <div class="auth-screen">
   <div class="auth-branding">
-    <img src="img/logo.png" alt="MotoRoute" style="width:200px;margin-bottom:20px" />
+    <img src="img/logo.webp" alt="MotoRoute" width="400" height="399" style="width:200px;height:auto;margin-bottom:20px" decoding="async" />
     <div class="auth-branding-logo">MOTO<span>ROUTE</span></div>
     <div class="auth-branding-tagline">Motorrad-Touren gemeinsam entdecken und planen.</div>
     <div class="auth-feature">
@@ -118,7 +118,7 @@ function renderForgotPassword() {
   return `
 <div class="auth-screen">
   <div class="auth-branding">
-    <img src="img/logo.png" alt="MotoRoute" style="width:200px;margin-bottom:20px" />
+    <img src="img/logo.webp" alt="MotoRoute" width="400" height="399" style="width:200px;height:auto;margin-bottom:20px" decoding="async" />
     <div class="auth-branding-logo">MOTO<span>ROUTE</span></div>
     <div class="auth-branding-tagline">Passwort zurücksetzen</div>
   </div>
@@ -160,7 +160,7 @@ function renderResetPassword() {
   return `
 <div class="auth-screen">
   <div class="auth-branding">
-    <img src="img/logo.png" alt="MotoRoute" style="width:200px;margin-bottom:20px" />
+    <img src="img/logo.webp" alt="MotoRoute" width="400" height="399" style="width:200px;height:auto;margin-bottom:20px" decoding="async" />
     <div class="auth-branding-logo">MOTO<span>ROUTE</span></div>
     <div class="auth-branding-tagline">Neues Passwort setzen</div>
   </div>
@@ -209,7 +209,7 @@ function renderNav() {
   return `
 <nav class="nav">
   <div class="nav-logo" id="nav-logo" title="Zur Startseite">
-    <img src="img/logo.png" alt="MotoRoute" class="nav-logo-img" />
+    <img src="img/logo.webp" alt="MotoRoute" class="nav-logo-img" width="400" height="399" decoding="async" />
   </div>
   <div class="nav-page-header${state.view === 'tour' ? ' nav-ph-tour' : ''}" id="nav-page-header">${renderPageHeader()}</div>
   <div class="nav-user">
@@ -2219,7 +2219,7 @@ function renderCommunities() {
   return `
 <div class="page-form" style="max-width:560px">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;flex-wrap:wrap;gap:8px">
-    <div class="page-title" style="margin:0"><img src="img/logo.png" alt="" style="height:108px;vertical-align:middle;margin-right:14px" />RIDER GROUPS</div>
+    <div class="page-title" style="margin:0"><img src="img/logo.webp" alt="" width="400" height="399" style="height:108px;width:auto;vertical-align:middle;margin-right:14px" decoding="async" />RIDER GROUPS</div>
   </div>
   <div class="page-sub" style="margin-bottom:10px">
     Wähle eine Rider Group um loszulegen.

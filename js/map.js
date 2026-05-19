@@ -321,9 +321,10 @@ function downloadGPX(tour) {
    Map lifecycle
    ---------------------------------------------------------- */
 
-function initMap(tour) {
+async function initMap(tour) {
   const container = document.getElementById('map');
   if (!container) return;
+  await loadLeaflet();
 
   if (mapInstance) {
     try { mapInstance.stop(); } catch(e) {}

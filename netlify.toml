@@ -36,6 +36,12 @@
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
 
+# Vendored libs (Leaflet etc.) — long cache, version pinned in vendor path
+[[headers]]
+  for = "/vendor/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
 # manifest.json — short cache (changes rarely but shouldn't be stale)
 [[headers]]
   for = "/manifest.json"

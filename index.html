@@ -25,6 +25,9 @@
   <link rel="icon" href="/img/favicon-32x32.png?v=1" type="image/png" sizes="32x32" />
   <link rel="apple-touch-icon" href="/img/apple-touch-icon.png" />
 
+  <!-- Preload LCP image (logo shown immediately after JS boot on auth/loading screens) -->
+  <link rel="preload" as="image" href="img/logo.webp" fetchpriority="high" />
+
   <!-- Preconnect to external resources -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -32,39 +35,33 @@
   <link rel="dns-prefetch" href="https://cdnjs.cloudflare.com" />
   <link rel="dns-prefetch" href="https://cdn.jsdelivr.net" />
   <link
-    href="https://fonts.googleapis.com/css2?family=Archivo+Narrow:wght@400;500;600;700&family=Bebas+Neue&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap"
+    href="https://fonts.googleapis.com/css2?family=Archivo+Narrow:wght@400;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap"
     rel="stylesheet"
   />
 
-  <!-- Leaflet -->
-  <link
-    rel="stylesheet"
-    href="vendor/leaflet/leaflet.min.css"
-  />
-
-  <!-- App styles -->
+  <!-- App styles (Leaflet CSS is lazy-loaded on first map view via loadLeaflet()) -->
   <link rel="stylesheet" href="css/styles.css" />
   <link rel="stylesheet" href="css/theme-premium.css" />
 </head>
 <body>
   <div id="app"><div class="loading-screen">MOTOROUTE…</div></div>
 
-  <!-- CDN Libraries -->
-  <script src="vendor/leaflet/leaflet.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+  <!-- Vendored libraries (defer: keeps order, doesn't block parsing) -->
+  <!-- Leaflet is lazy-loaded on first map view (see loadLeaflet() in utils.js) -->
+  <script defer src="vendor/supabase/supabase-js-2.umd.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
 
-  <!-- App scripts – order matters (globals) -->
-  <script src="js/config.js"></script>
-  <script src="js/state.js"></script>
-  <script src="js/utils.js"></script>
-  <script src="js/gpx-cache.js"></script>
-  <script src="js/api.js"></script>
-  <script src="js/auth.js"></script>
-  <script src="js/map.js"></script>
-  <script src="js/render.js"></script>
-  <script src="js/events.js"></script>
-  <script src="js/pwa.js"></script>
-  <script src="js/app.js"></script>
+  <!-- App scripts – order matters (globals), defer preserves order -->
+  <script defer src="js/config.js"></script>
+  <script defer src="js/state.js"></script>
+  <script defer src="js/utils.js"></script>
+  <script defer src="js/gpx-cache.js"></script>
+  <script defer src="js/api.js"></script>
+  <script defer src="js/auth.js"></script>
+  <script defer src="js/map.js"></script>
+  <script defer src="js/render.js"></script>
+  <script defer src="js/events.js"></script>
+  <script defer src="js/pwa.js"></script>
+  <script defer src="js/app.js"></script>
 </body>
 </html>

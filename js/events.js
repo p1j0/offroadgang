@@ -874,8 +874,8 @@ function afterTabRender() {
     setTimeout(() => loadOverviewWeatherCard(), 80);
   }
   if (state.currentTab === 'map') {
-    setTimeout(() => {
-      initMap(state.currentTour);
+    setTimeout(async () => {
+      await initMap(state.currentTour);
       attachMapEvents();
       attachSidebarEvents();
       attachLazyFullRouteOnZoom();
@@ -926,9 +926,10 @@ function attachWeatherTabEvents() {
 /**
  * Re-render only the tab bar (to update badges) without touching tab content.
  */
-function _initOverviewMap() {
+async function _initOverviewMap() {
   const container = document.getElementById('tov-mini-map');
   if (!container) return;
+  await loadLeaflet();
 
   // Destroy previous instance if still mounted
   if (window._tovMapInstance) {
@@ -1252,8 +1253,8 @@ function attachLazyFullRouteOnZoom() {
       if (!state.currentTour?.gpx_route || state.currentTab !== 'map') return;
       const tc = document.getElementById('tab-content');
       if (tc) tc.innerHTML = renderTab(state.currentTour);
-      setTimeout(() => {
-        initMap(state.currentTour);
+      setTimeout(async () => {
+        await initMap(state.currentTour);
         if (restoreCenter && Number.isFinite(restoreZoom)) {
           mapInstance?.setView(restoreCenter, restoreZoom, { animate: false });
         }
@@ -1346,7 +1347,7 @@ function _refreshMapTab() {
   const tc = document.getElementById('tab-content');
   if (!tc) return;
   tc.innerHTML = renderTab(state.currentTour);
-  setTimeout(() => { initMap(state.currentTour); attachMapEvents(); }, 80);
+  setTimeout(async () => { await initMap(state.currentTour); attachMapEvents(); }, 80);
 }
 
 /* ----------------------------------------------------------
@@ -1863,9 +1864,10 @@ let _planMapInstance = null;
 let _planMapLayers   = [];
 const PLAN_FULL_ROUTE_ZOOM = 11;
 
-function _initPlanMap(restoreView = null) {
+async function _initPlanMap(restoreView = null) {
   const el = document.getElementById('plan-map');
   if (!el) return;
+  await loadLeaflet();
 
   // Destroy existing instance cleanly
   if (_planMapInstance) {
