@@ -17,6 +17,7 @@ const PRECACHE = [
   '/css/theme-premium.css',
   '/vendor/leaflet/leaflet.min.css',
   '/vendor/leaflet/leaflet.min.js',
+  '/vendor/supabase/supabase-js-2.umd.min.js',
   '/vendor/leaflet/images/marker-icon.png',
   '/vendor/leaflet/images/marker-icon-2x.png',
   '/vendor/leaflet/images/marker-shadow.png',
@@ -30,6 +31,7 @@ const PRECACHE = [
   '/js/render.js',
   '/js/events.js',
   '/js/app.js',
+  '/img/logo.webp',
   '/img/icon-192x192.png',
   '/img/icon-512x512.png',
   '/img/apple-touch-icon.png'

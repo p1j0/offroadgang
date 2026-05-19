@@ -1178,6 +1178,7 @@ async function openRainRadarModal() {
     const frames = [...pastFrames, ...nowcastFrames];
     if (!meta.host || !frames.length) throw new Error('Keine Radardaten verfügbar.');
 
+    await loadLeaflet();
     const map = L.map('rain-radar-map', {
       center: [resolved.latitude, resolved.longitude],
       zoom: 7,

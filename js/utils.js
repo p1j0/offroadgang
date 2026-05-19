@@ -3,6 +3,30 @@
    ============================================================ */
 
 /**
+ * Lazy-load Leaflet (JS + CSS) on first use.
+ * Why: Leaflet is ~155 KB and only needed for tour/plan/radar map views,
+ * which never appear on auth, home, or settings screens.
+ * Resolves to window.L. Idempotent — safe to call multiple times.
+ */
+let _leafletPromise = null;
+function loadLeaflet() {
+  if (window.L) return Promise.resolve(window.L);
+  if (_leafletPromise) return _leafletPromise;
+  _leafletPromise = new Promise((resolve, reject) => {
+    const css = document.createElement('link');
+    css.rel = 'stylesheet';
+    css.href = 'vendor/leaflet/leaflet.min.css';
+    document.head.appendChild(css);
+    const js = document.createElement('script');
+    js.src = 'vendor/leaflet/leaflet.min.js';
+    js.onload = () => resolve(window.L);
+    js.onerror = (e) => { _leafletPromise = null; reject(e); };
+    document.head.appendChild(js);
+  });
+  return _leafletPromise;
+}
+
+/**
  * Escape HTML special characters to prevent XSS.
  * @param {*} s
  * @returns {string}
